@@ -1,11 +1,16 @@
-export const DEFAULT_CHAT_MODEL = "moonshotai/kimi-k2.5";
+export const DEFAULT_CHAT_MODEL = "google/gemini-2.5-flash";
 
-export const titleModel = {
+export const titleModel: {
+  description: string;
+  id: string;
+  name: string;
+  provider: string;
+  gatewayOrder?: string[];
+} = {
   description: "Fast model for title generation",
-  gatewayOrder: ["fireworks", "bedrock"],
-  id: "moonshotai/kimi-k2.5",
-  name: "Kimi K2.5",
-  provider: "moonshotai",
+  id: "google/gemini-2.5-flash",
+  name: "Gemini 2.5 Flash",
+  provider: "google",
 };
 
 export type ModelCapabilities = {
@@ -25,41 +30,24 @@ export type ChatModel = {
 
 export const chatModels: ChatModel[] = [
   {
+    description: "Fast multimodal model with tool use and 1M token context",
+    id: "google/gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    provider: "google",
+  },
+  {
+    description: "Advanced reasoning multimodal model for complex tasks",
+    id: "google/gemini-2.5-pro",
+    name: "Gemini 2.5 Pro",
+    provider: "google",
+    reasoningEffort: "medium",
+  },
+  {
     description: "Fast and capable model with tool use",
     gatewayOrder: ["bedrock", "deepinfra"],
     id: "deepseek/deepseek-v3.2",
     name: "DeepSeek V3.2",
     provider: "deepseek",
-  },
-  {
-    description: "Moonshot AI flagship model",
-    gatewayOrder: ["fireworks", "bedrock"],
-    id: "moonshotai/kimi-k2.5",
-    name: "Kimi K2.5",
-    provider: "moonshotai",
-  },
-  {
-    description: "Compact reasoning model",
-    gatewayOrder: ["groq", "bedrock"],
-    id: "openai/gpt-oss-20b",
-    name: "GPT OSS 20B",
-    provider: "openai",
-    reasoningEffort: "low",
-  },
-  {
-    description: "Open-source 120B parameter model",
-    gatewayOrder: ["fireworks", "bedrock"],
-    id: "openai/gpt-oss-120b",
-    name: "GPT OSS 120B",
-    provider: "openai",
-    reasoningEffort: "low",
-  },
-  {
-    description: "Fast non-reasoning model with tool use",
-    gatewayOrder: ["xai"],
-    id: "xai/grok-4.1-fast-non-reasoning",
-    name: "Grok 4.1 Fast",
-    provider: "xai",
   },
 ];
 
@@ -68,6 +56,16 @@ export async function getCapabilities(): Promise<
 > {
   const results = await Promise.all(
     chatModels.map(async (model) => {
+      if (model.provider === "google") {
+        return [
+          model.id,
+          {
+            reasoning: model.reasoningEffort !== undefined,
+            tools: true,
+            vision: true,
+          },
+        ];
+      }
       try {
         const res = await fetch(
           `https://ai-gateway.vercel.sh/v1/models/${model.id}/endpoints`,
@@ -204,6 +202,10 @@ export async function getModelAvailability(
 
   if (!model) {
     return "unknown";
+  }
+
+  if (model.provider === "google") {
+    return "healthy";
   }
 
   try {
