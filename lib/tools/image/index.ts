@@ -51,8 +51,7 @@ export async function parseImageInput(source: string | Buffer): Promise<{
 
   const match = source.match(/^data:([^;]+);base64,(.+)$/);
   if (match) {
-    const mimeType = match[1];
-    const base64Data = match[2];
+    const [, mimeType, base64Data] = match;
     return {
       buffer: Buffer.from(base64Data, "base64"),
       mimeType,

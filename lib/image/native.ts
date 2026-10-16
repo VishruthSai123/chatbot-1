@@ -1,18 +1,18 @@
 import "server-only";
 
-import type sharp from "sharp";
+import type SharpModule from "sharp";
 import type { Sharp } from "sharp";
 
 import type { DpiOption, PhysicalUnit } from "./presets";
 import { physicalToPixels } from "./presets";
 
 // Lazy-load Sharp to prevent cold-start crashes in serverless environments
-let sharpInstance: typeof sharp | null = null;
+let sharpInstance: typeof SharpModule | null = null;
 
-export async function getSharp(): Promise<typeof sharp> {
+export async function getSharp(): Promise<typeof SharpModule> {
   if (!sharpInstance) {
     const mod = await import("sharp");
-    sharpInstance = (mod.default || mod) as unknown as typeof sharp;
+    sharpInstance = (mod.default || mod) as unknown as typeof SharpModule;
     try {
       sharpInstance.concurrency(1);
     } catch {
@@ -257,7 +257,6 @@ export async function compressImage({
     let low = 5;
     let high = 100;
     let bestBuffer: Buffer | null = null;
-    let bestQuality = quality;
 
     for (let i = 0; i < 8; i++) {
       const mid = Math.round((low + high) / 2);
@@ -269,7 +268,6 @@ export async function compressImage({
 
       if (testBuffer.length <= targetBytes) {
         bestBuffer = testBuffer;
-        bestQuality = mid;
         low = mid + 1;
       } else {
         high = mid - 1;
