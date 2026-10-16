@@ -14,6 +14,7 @@ import {
   getPresetByKey,
   type PhysicalUnit,
 } from "@/lib/image/presets";
+import { activeImageRegistry } from "@/lib/image/session-registry";
 import {
   executeCompress,
   executeCrop,
@@ -61,15 +62,56 @@ async function resolveImageSource(
     throw new Error("Unauthorized");
   }
 
-  // Sanitize imageUrl: Ignore internal AI model reference URLs (e.g. gemini.google.com/api/content/references)
+  // 1. Gather all candidate messages from context or database
+  let candidateMessages: any[] = messagesContext || [];
+  if (candidateMessages.length === 0 && chatId && isValidUUID(chatId)) {
+    try {
+      const dbMsgs = await getMessagesByChatId({ id: chatId });
+      candidateMessages = dbMsgs;
+    } catch (err) {
+      console.warn("Non-fatal: Failed to query chat messages for image:", err);
+    }
+  }
+
+  // Detect whether the user explicitly typed an external URL in their prompt
+  const [lastUserMsg] = candidateMessages
+    .filter((m: any) => m.role === "user")
+    .slice(-1);
+  const lastUserText = lastUserMsg?.parts
+    ? lastUserMsg.parts
+        .filter((p: any) => p.type === "text")
+        .map((p: any) => p.text)
+        .join(" ")
+    : typeof lastUserMsg?.content === "string"
+      ? lastUserMsg.content
+      : "";
+  const userExplicitlyTypedUrl = /https?:\/\/[^\s]+/i.test(lastUserText);
+
+  // Sanitize imageUrl: Ignore internal AI model reference URLs
   const cleanImageUrl =
     imageUrl && !isInternalModelUrl(imageUrl) ? imageUrl.trim() : undefined;
 
-  // 1. If documentId is a valid UUID, look up in database (continuous editing/chaining)
+  // 2. If an explicit document UUID was provided, look it up in active registry or database
   if (documentId && isValidUUID(documentId)) {
+    const cachedByDocId = activeImageRegistry.getActiveImage({ documentId });
+    if (cachedByDocId?.base64) {
+      return {
+        documentId,
+        source: cachedByDocId.base64,
+        title: cachedByDocId.title || "Photo",
+      };
+    }
+
     try {
       const doc = await getDocumentById({ id: documentId });
       if (doc && doc.userId === session.user.id && doc.content) {
+        activeImageRegistry.setActiveImage({
+          base64: doc.content,
+          chatId,
+          documentId: doc.id,
+          title: doc.title,
+          userId: session.user.id,
+        });
         return {
           documentId: doc.id,
           source: doc.content,
@@ -81,25 +123,14 @@ async function resolveImageSource(
     }
   }
 
-  // 2. Search conversation messages (attachments, uploaded files, or previous tool outputs)
-  let candidateMessages: any[] = messagesContext || [];
-  if (candidateMessages.length === 0 && chatId && isValidUUID(chatId)) {
-    try {
-      const dbMsgs = await getMessagesByChatId({ id: chatId });
-      candidateMessages = dbMsgs;
-    } catch (err) {
-      console.warn("Non-fatal: Failed to query chat messages for image:", err);
-    }
-  }
-
+  // 3. Search conversation messages in reverse chronological order
   if (candidateMessages.length > 0) {
-    // If documentId looks like a filename (e.g. "voiceflowclr.png"), search specifically for that
     const targetName =
       documentId && !isValidUUID(documentId)
         ? documentId.trim().toLowerCase()
         : null;
 
-    // A) First pass: Look for matching filename if targetName was given
+    // A) If a filename hint was passed, search for matching attachments or parts
     if (targetName) {
       for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
         const msg = candidateMessages[i];
@@ -137,9 +168,89 @@ async function resolveImageSource(
       }
     }
 
-    // B) Second pass: Grab the most recent image attachment, file part, or tool output from the conversation
+    // B) Grab the most recent tool output, active image, or attachment (NEWEST FIRST)
+    let candidateToolDocId: string | null = null;
+    let candidateToolTitle = "Processed Photo";
+
     for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
       const msg = candidateMessages[i];
+
+      // Check msg.parts (tool outputs and uploaded files)
+      if (Array.isArray(msg.parts)) {
+        for (const part of msg.parts) {
+          const isToolPart =
+            part.type?.startsWith("tool-image") ||
+            (part.type === "tool-invocation" &&
+              (part.toolName?.startsWith("image") ||
+                part.toolInvocation?.toolName?.startsWith("image")));
+
+          if (isToolPart) {
+            const out = (part.output || part.toolInvocation?.result) as
+              | Record<string, any>
+              | undefined;
+
+            if (out?.id && isValidUUID(out.id)) {
+              // Check in-memory registry first
+              const cached = activeImageRegistry.getActiveImage({
+                documentId: out.id,
+              });
+              if (cached?.base64) {
+                return {
+                  documentId: out.id,
+                  source: cached.base64,
+                  title: cached.title || "Processed Photo",
+                };
+              }
+
+              // Defer database lookup outside loop to satisfy noAwaitInLoops
+              if (!candidateToolDocId) {
+                candidateToolDocId = out.id;
+                candidateToolTitle = out.title || "Processed Photo";
+              }
+            }
+
+            const inlineContent =
+              out?.result?.dataUrl ||
+              out?.result?.base64 ||
+              out?.document?.content ||
+              out?.dataUrl ||
+              out?.base64 ||
+              out?.source;
+
+            if (inlineContent) {
+              return {
+                documentId: out?.id || generateUUID(),
+                source: inlineContent,
+                title: out?.title || out?.document?.title || "Processed Photo",
+              };
+            }
+          }
+
+          if (
+            (part.type === "file" || part.type === "image") &&
+            (part.url || part.data || part.image)
+          ) {
+            // Check active session registry first (has raw uploaded buffer)
+            const cached = activeImageRegistry.getActiveImage({
+              chatId,
+              userId: session.user.id,
+            });
+            if (cached?.base64) {
+              return {
+                documentId: cached.documentId || generateUUID(),
+                source: cached.base64,
+                title: cached.title || part.name || "Attached Photo",
+              };
+            }
+
+            return {
+              documentId: generateUUID(),
+              source: part.url || part.data || part.image,
+              title: part.name || "Attached Photo",
+            };
+          }
+        }
+      }
 
       // Check msg.attachments
       if (Array.isArray(msg.attachments)) {
@@ -150,6 +261,18 @@ async function resolveImageSource(
             (att.contentType?.startsWith("image/") ||
               /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(name))
           ) {
+            const cached = activeImageRegistry.getActiveImage({
+              chatId,
+              userId: session.user.id,
+            });
+            if (cached?.base64) {
+              return {
+                documentId: cached.documentId || generateUUID(),
+                source: cached.base64,
+                title: cached.title || name || "Attached Photo",
+              };
+            }
+
             return {
               documentId: generateUUID(),
               source: att.url,
@@ -158,60 +281,59 @@ async function resolveImageSource(
           }
         }
       }
+    }
 
-      // Check msg.parts
-      if (Array.isArray(msg.parts)) {
-        for (const part of msg.parts) {
-          if (part.type?.startsWith("tool-image") && part.output) {
-            const out = part.output as Record<string, any>;
-            const content =
-              out.result?.dataUrl ||
-              out.document?.content ||
-              out.dataUrl ||
-              out.source;
-            if (content) {
-              return {
-                documentId: out.id || generateUUID(),
-                source: content,
-                title: out.title || out.document?.title || "Processed Photo",
-              };
-            }
-          }
-
-          if (
-            (part.type === "file" || part.type === "image") &&
-            (part.url || part.data || part.image)
-          ) {
-            return {
-              documentId: generateUUID(),
-              source: part.url || part.data || part.image,
-              title: part.name || "Attached Photo",
-            };
-          }
+    // Lookup deferred candidate tool document from database
+    if (candidateToolDocId) {
+      try {
+        const doc = await getDocumentById({ id: candidateToolDocId });
+        if (doc?.content && doc.userId === session.user.id) {
+          activeImageRegistry.setActiveImage({
+            base64: doc.content,
+            chatId,
+            documentId: doc.id,
+            title: doc.title,
+            userId: session.user.id,
+          });
+          return {
+            documentId: doc.id,
+            source: doc.content,
+            title: doc.title || candidateToolTitle,
+          };
         }
+      } catch {
+        // non-fatal
       }
     }
   }
 
-  // 3. Direct valid external image URL provided
-  if (cleanImageUrl) {
-    const docId = isValidUUID(documentId)
-      ? (documentId as string)
-      : generateUUID();
+  // 4. Check active image in server-side session registry
+  const sessionCached = activeImageRegistry.getActiveImage({
+    chatId,
+    userId: session.user.id,
+  });
+  if (sessionCached?.base64) {
     return {
-      documentId: docId,
-      source: cleanImageUrl,
-      title: "Processed Photo",
+      documentId: sessionCached.documentId || generateUUID(),
+      source: sessionCached.base64,
+      title: sessionCached.title || "Photo",
     };
   }
 
-  // 4. Fall back to most recent image document in DB
+  // 5. Fall back to most recent image document in DB
   try {
     const latest = await getLatestDocumentByKind({
       kind: "image",
       userId: session.user.id,
     });
     if (latest?.content) {
+      activeImageRegistry.setActiveImage({
+        base64: latest.content,
+        chatId,
+        documentId: latest.id,
+        title: latest.title,
+        userId: session.user.id,
+      });
       return {
         documentId: latest.id,
         source: latest.content,
@@ -220,6 +342,17 @@ async function resolveImageSource(
     }
   } catch (err) {
     console.warn("Failed to query latest image document:", err);
+  }
+
+  // 6. Direct valid external image URL provided (if user explicitly typed it or nothing else was found)
+  if (cleanImageUrl && (userExplicitlyTypedUrl || !sessionCached)) {
+    const docId =
+      documentId && isValidUUID(documentId) ? documentId : generateUUID();
+    return {
+      documentId: docId,
+      source: cleanImageUrl,
+      title: "Processed Photo",
+    };
   }
 
   throw new Error(
@@ -293,14 +426,31 @@ export const imageResizePhysical = ({
           };
         }
 
-        const result = await executeResizePhysical(resolved.source, {
-          dpi: finalDpi,
-          fit: "cover",
-          format: "jpeg",
-          height: finalHeight,
-          quality: 95,
-          unit: finalUnit,
-          width: finalWidth,
+        const result = await executeResizePhysical(
+          resolved.source,
+          {
+            dpi: finalDpi,
+            fit: "cover",
+            format: "jpeg",
+            height: finalHeight,
+            quality: 95,
+            unit: finalUnit,
+            width: finalWidth,
+          },
+          {
+            chatId,
+            documentId: validDocId,
+            userId: session.user?.id as string,
+          }
+        );
+
+        // Pin active result in session registry immediately
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
         });
 
         // Save version to DB non-fatally
@@ -441,11 +591,28 @@ export const imageRemoveBg = ({
           ? resolved.documentId
           : generateUUID();
 
-        const result = await executeRemoveBg(resolved.source, {
-          color,
-          format: mode === "solid_color" ? "jpeg" : "png",
-          mode,
-          quality: 95,
+        const result = await executeRemoveBg(
+          resolved.source,
+          {
+            color,
+            format: mode === "solid_color" ? "jpeg" : "png",
+            mode,
+            quality: 95,
+          },
+          {
+            chatId,
+            documentId: validDocId,
+            userId: session.user?.id as string,
+          }
+        );
+
+        // Pin active result in session registry immediately
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
         });
 
         // Save version non-fatally
@@ -568,11 +735,28 @@ export const imageCrop = ({
           ? resolved.documentId
           : generateUUID();
 
-        const result = await executeCrop(resolved.source, {
-          height,
-          left,
-          top,
-          width,
+        const result = await executeCrop(
+          resolved.source,
+          {
+            height,
+            left,
+            top,
+            width,
+          },
+          {
+            chatId,
+            documentId: validDocId,
+            userId: session.user?.id as string,
+          }
+        );
+
+        // Pin active result in session registry immediately
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
         });
 
         try {
@@ -678,9 +862,26 @@ export const imageCompress = ({
           ? resolved.documentId
           : generateUUID();
 
-        const result = await executeCompress(resolved.source, {
-          quality,
-          targetSizeKb,
+        const result = await executeCompress(
+          resolved.source,
+          {
+            quality,
+            targetSizeKb,
+          },
+          {
+            chatId,
+            documentId: validDocId,
+            userId: session.user?.id as string,
+          }
+        );
+
+        // Pin active result in session registry immediately
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
         });
 
         try {

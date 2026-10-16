@@ -10,6 +10,7 @@ import {
   resizePhysicalImage,
   rotateImage,
 } from "@/lib/image/native";
+import { activeImageRegistry } from "@/lib/image/session-registry";
 import { downloadArtifact } from "@/lib/storage";
 import type {
   CompressInput,
@@ -21,6 +22,12 @@ import type {
   RotateInput,
 } from "./types";
 
+export type ImageFallbackContext = {
+  documentId?: string;
+  chatId?: string;
+  userId?: string;
+};
+
 /**
  * Extracts a Supabase storage key from an artifact URL, path, or signed URL.
  */
@@ -29,7 +36,19 @@ export function extractStorageKey(urlOrPath: string): string | null {
     return null;
   }
 
-  // 1. Matches: .../artifacts/<key>?... or artifacts/<key>
+  // 1. Matches: /object/(sign|public|authenticated)/artifacts/<key>?...
+  const objectMatch = urlOrPath.match(
+    /\/object\/(?:sign|public|authenticated)\/artifacts\/([^?#]+)/i
+  );
+  if (objectMatch?.[1]) {
+    try {
+      return decodeURIComponent(objectMatch[1]);
+    } catch {
+      return objectMatch[1];
+    }
+  }
+
+  // 2. Matches: .../artifacts/<key>?... or artifacts/<key>
   const match = urlOrPath.match(/(?:^|\/)artifacts\/([^?#]+)/i);
   if (match?.[1]) {
     try {
@@ -39,7 +58,7 @@ export function extractStorageKey(urlOrPath: string): string | null {
     }
   }
 
-  // 2. Matches direct storage key pattern: <uuid-or-id>/<subfolder>/<timestamp>-<filename>
+  // 3. Matches direct storage key pattern: <uuid-or-id>/<subfolder>/<timestamp>-<filename>
   const directKeyMatch = urlOrPath.match(
     /^([0-9a-fA-F-]{8,36}\/[^/?#]+\/[^?#]+)$/
   );
@@ -79,9 +98,13 @@ function inferMimeType(filenameOrExt: string): string {
 }
 
 /**
- * Parses an image source (HTTP URL, Supabase signed URL, data URL, raw base64, or Buffer) into a Node Buffer.
+ * Parses an image source (HTTP URL, Supabase signed URL, data URL, raw base64, or Buffer) into a Node Buffer,
+ * with automatic fallback to session memory registry if remote fetch or URL is invalid.
  */
-export async function parseImageInput(source: string | Buffer): Promise<{
+export async function parseImageInput(
+  source: string | Buffer | null | undefined,
+  fallbackContext?: ImageFallbackContext
+): Promise<{
   buffer: Buffer;
   mimeType: string;
 }> {
@@ -89,24 +112,64 @@ export async function parseImageInput(source: string | Buffer): Promise<{
     return { buffer: source, mimeType: "image/png" };
   }
 
-  if (typeof source !== "string" || !source.trim()) {
+  // Helper to recover from active image session registry
+  const tryFallback = (): { buffer: Buffer; mimeType: string } | null => {
+    if (!fallbackContext) {
+      return null;
+    }
+    const cached = activeImageRegistry.getActiveImage(fallbackContext);
+    if (cached?.base64) {
+      return {
+        buffer: Buffer.from(cached.base64, "base64"),
+        mimeType: cached.mimeType || "image/png",
+      };
+    }
+    return null;
+  };
+
+  if (!source || typeof source !== "string" || !source.trim()) {
+    const recovered = tryFallback();
+    if (recovered) {
+      return recovered;
+    }
     throw new Error("Invalid or empty image source provided.");
   }
 
   const trimmed = source.trim();
 
-  // Guard against hallucinated internal AI model reference URLs (e.g. Gemini internal content references)
+  // 1. Check if source is a Document UUID directly
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      trimmed
+    )
+  ) {
+    const cachedByDocId = activeImageRegistry.getActiveImage({
+      documentId: trimmed,
+    });
+    if (cachedByDocId?.base64) {
+      return {
+        buffer: Buffer.from(cachedByDocId.base64, "base64"),
+        mimeType: cachedByDocId.mimeType || "image/png",
+      };
+    }
+  }
+
+  // 2. Guard against hallucinated internal AI model reference URLs (e.g. Gemini internal content references)
   if (
     trimmed.includes("gemini.google.com") ||
     trimmed.includes("/api/content/references/") ||
     trimmed.includes("generativelanguage.googleapis.com")
   ) {
+    const recovered = tryFallback();
+    if (recovered) {
+      return recovered;
+    }
     throw new Error(
       "Invalid image source: received internal AI model reference URL instead of actual image data."
     );
   }
 
-  // 1. Check data URLs
+  // 3. Check data URLs
   const dataUrlMatch = trimmed.match(/^data:([^;]+).*?;base64,\s*([\s\S]+)$/i);
   if (dataUrlMatch) {
     const [, mimeType, base64Data] = dataUrlMatch;
@@ -117,7 +180,7 @@ export async function parseImageInput(source: string | Buffer): Promise<{
     };
   }
 
-  // 2. If it's a Supabase storage artifact (signed URL, public URL, or key), download directly via admin client
+  // 4. If it's a Supabase storage artifact (signed URL, public URL, or key), download directly via admin client
   const storageKey = extractStorageKey(trimmed);
   if (storageKey) {
     try {
@@ -128,13 +191,17 @@ export async function parseImageInput(source: string | Buffer): Promise<{
       };
     } catch (storageErr: any) {
       console.warn(
-        `Direct storage download for key "${storageKey}" failed, falling back to HTTP fetch:`,
+        `Direct storage download for key "${storageKey}" failed, checking fallbacks:`,
         storageErr?.message || storageErr
       );
+      const recovered = tryFallback();
+      if (recovered) {
+        return recovered;
+      }
     }
   }
 
-  // 3. Handle remote HTTP/HTTPS or relative URLs
+  // 5. Handle remote HTTP/HTTPS or relative URLs
   let fetchUrl = trimmed;
   if (fetchUrl.startsWith("/")) {
     const supabaseUrl =
@@ -169,6 +236,15 @@ export async function parseImageInput(source: string | Buffer): Promise<{
       });
 
       if (!response.ok) {
+        // Attempt recovery before throwing
+        const recovered = tryFallback();
+        if (recovered) {
+          console.warn(
+            `Remote image fetch failed with HTTP ${response.status} for ${validUrl}, recovered using active session image.`
+          );
+          return recovered;
+        }
+
         throw new Error(
           `Failed to fetch remote image: HTTP ${response.status} ${response.statusText}`
         );
@@ -182,16 +258,28 @@ export async function parseImageInput(source: string | Buffer): Promise<{
         mimeType,
       };
     } catch (err: any) {
+      const recovered = tryFallback();
+      if (recovered) {
+        console.warn(
+          `Image fetch error (${err.message}), recovered using active session image.`
+        );
+        return recovered;
+      }
+
       throw new Error(`Unable to fetch image from URL: ${err.message || err}`, {
         cause: err,
       });
     }
   }
 
-  // 4. Treat as plain base64 string
+  // 6. Treat as plain base64 string
   const cleanBase64 = trimmed.replace(/\s+/g, "");
   const buffer = Buffer.from(cleanBase64, "base64");
   if (buffer.length === 0) {
+    const recovered = tryFallback();
+    if (recovered) {
+      return recovered;
+    }
     throw new Error("Invalid or empty image data provided.");
   }
 
@@ -232,9 +320,10 @@ function formatResult(
  */
 export async function executeResizePhysical(
   input: string | Buffer,
-  params: ResizePhysicalInput
+  params: ResizePhysicalInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await resizePhysicalImage({
     dpi: params.dpi,
     fit: params.fit,
@@ -260,9 +349,10 @@ export async function executeResizePhysical(
  */
 export async function executeRemoveBg(
   input: string | Buffer,
-  params: RemoveBgInput
+  params: RemoveBgInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
 
   // 1. Run neural segmentation to extract transparent foreground
   const bgResult = await removeImageBackground(buffer);
@@ -303,9 +393,10 @@ export async function executeRemoveBg(
  */
 export async function executeCrop(
   input: string | Buffer,
-  params: CropInput
+  params: CropInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await cropImage({
     format: params.format ?? "jpeg",
     height: params.height,
@@ -329,9 +420,10 @@ export async function executeCrop(
  */
 export async function executeRotate(
   input: string | Buffer,
-  params: RotateInput
+  params: RotateInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await rotateImage({
     degrees: params.degrees ?? 0,
     flipHorizontal: params.flipHorizontal ?? false,
@@ -354,9 +446,10 @@ export async function executeRotate(
  */
 export async function executeCompress(
   input: string | Buffer,
-  params: CompressInput
+  params: CompressInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await compressImage({
     format: params.format ?? "jpeg",
     inputBuffer: buffer,
@@ -377,9 +470,10 @@ export async function executeCompress(
  */
 export async function executeConvert(
   input: string | Buffer,
-  params: ConvertInput
+  params: ConvertInput,
+  fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
-  const { buffer } = await parseImageInput(input);
+  const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await convertImage({
     inputBuffer: buffer,
     quality: params.quality,
@@ -397,7 +491,10 @@ export async function executeConvert(
 /**
  * Extract image metadata.
  */
-export async function executeGetMetadata(input: string | Buffer) {
-  const { buffer } = await parseImageInput(input);
+export async function executeGetMetadata(
+  input: string | Buffer,
+  fallbackContext?: ImageFallbackContext
+) {
+  const { buffer } = await parseImageInput(input, fallbackContext);
   return getImageMetadata(buffer);
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
+import { activeImageRegistry } from "@/lib/image/session-registry";
 import { uploadArtifact } from "@/lib/storage";
 
 const ALLOWED_MIME_TYPES = [
@@ -97,6 +98,27 @@ export async function POST(request: Request) {
         filename,
         userId: session.user.id,
       });
+
+      // Pin image buffer in memory session registry for instant tool access & zero-fetch fallbacks
+      if (file.type?.startsWith("image/")) {
+        try {
+          const base64 = Buffer.from(fileBuffer).toString("base64");
+          activeImageRegistry.setActiveImage({
+            base64,
+            chatId,
+            mimeType: file.type,
+            sourceUrl: data.url,
+            storageKey: data.storageKey,
+            title: filename,
+            userId: session.user.id,
+          });
+        } catch (regErr) {
+          console.warn(
+            "Non-fatal: Failed to pin image to active registry:",
+            regErr
+          );
+        }
+      }
 
       return NextResponse.json(data);
     } catch (uploadErr) {
