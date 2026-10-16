@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getDocumentById } from "@/lib/db/queries";
+import { getDocumentById, getLatestDocumentByKind } from "@/lib/db/queries";
 import { removeImageBackground } from "@/lib/image/background-removal";
 import {
   compressImage,
@@ -135,6 +135,41 @@ export async function parseImageInput(
     return null;
   };
 
+  /**
+   * Last-resort durable recovery: pull the newest persisted image Document for the
+   * user straight from Postgres. This is what makes image edits survive serverless
+   * cold starts, new sessions, reloads and expiring signed URLs — none of which the
+   * in-memory registry can cover.
+   */
+  const durableFallback = async (): Promise<{
+    buffer: Buffer;
+    mimeType: string;
+  } | null> => {
+    const userId = fallbackContext?.userId;
+    if (!userId) {
+      return tryFallback();
+    }
+    try {
+      const latest = await getLatestDocumentByKind({ kind: "image", userId });
+      if (latest?.content) {
+        const buffer = Buffer.from(latest.content, "base64");
+        if (buffer.length > 0) {
+          activeImageRegistry.setActiveImage({
+            base64: latest.content,
+            chatId: fallbackContext?.chatId,
+            documentId: latest.id,
+            title: latest.title,
+            userId,
+          });
+          return { buffer, mimeType: "image/png" };
+        }
+      }
+    } catch (err) {
+      console.warn("Non-fatal: durable image fallback query failed:", err);
+    }
+    return tryFallback();
+  };
+
   if (!source || typeof source !== "string" || !source.trim()) {
     const recovered = tryFallback();
     if (recovered) {
@@ -183,17 +218,21 @@ export async function parseImageInput(
   }
 
   // 2. Guard against hallucinated internal AI model reference URLs (e.g. Gemini internal content references)
+  const lowerSource = trimmed.toLowerCase();
   if (
-    trimmed.includes("gemini.google.com") ||
-    trimmed.includes("/api/content/references/") ||
-    trimmed.includes("generativelanguage.googleapis.com")
+    lowerSource.includes("gemini.google.com") ||
+    lowerSource.includes("/api/content/references") ||
+    lowerSource.includes("generativelanguage.googleapis.com") ||
+    lowerSource.includes("googleusercontent.com") ||
+    lowerSource.includes("googleapis.com") ||
+    lowerSource.startsWith("blob:")
   ) {
-    const recovered = tryFallback();
+    const recovered = await durableFallback();
     if (recovered) {
       return recovered;
     }
     throw new Error(
-      "Invalid image source: received internal AI model reference URL instead of actual image data."
+      "Invalid image source: received an internal AI model reference URL instead of actual image data."
     );
   }
 
@@ -222,7 +261,7 @@ export async function parseImageInput(
         `Direct storage download for key "${storageKey}" failed, checking fallbacks:`,
         storageErr?.message || storageErr
       );
-      const recovered = tryFallback();
+      const recovered = await durableFallback();
       if (recovered) {
         return recovered;
       }
@@ -265,10 +304,10 @@ export async function parseImageInput(
 
       if (!response.ok) {
         // Attempt recovery before throwing
-        const recovered = tryFallback();
+        const recovered = await durableFallback();
         if (recovered) {
           console.warn(
-            `Remote image fetch failed with HTTP ${response.status} for ${validUrl}, recovered using active session image.`
+            `Remote image fetch failed with HTTP ${response.status} for ${validUrl}, recovered using persisted image.`
           );
           return recovered;
         }
@@ -286,10 +325,10 @@ export async function parseImageInput(
         mimeType,
       };
     } catch (err: any) {
-      const recovered = tryFallback();
+      const recovered = await durableFallback();
       if (recovered) {
         console.warn(
-          `Image fetch error (${err.message}), recovered using active session image.`
+          `Image fetch error (${err.message}), recovered using persisted image.`
         );
         return recovered;
       }
@@ -304,7 +343,7 @@ export async function parseImageInput(
   const cleanBase64 = trimmed.replace(/\s+/g, "");
   const buffer = Buffer.from(cleanBase64, "base64");
   if (buffer.length === 0) {
-    const recovered = tryFallback();
+    const recovered = await durableFallback();
     if (recovered) {
       return recovered;
     }

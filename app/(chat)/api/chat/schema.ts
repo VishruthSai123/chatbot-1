@@ -6,6 +6,10 @@ const textPartSchema = z.object({
 });
 
 const filePartSchema = z.object({
+  // Durable Postgres Document id for uploaded images. Must be preserved through
+  // validation (zod strips unknown keys) so image tools can resolve bytes from the
+  // database instead of relying on expiring signed URLs.
+  documentId: z.uuid().optional(),
   mediaType: z.string(),
   name: z.string().optional(),
   type: z.literal("file"),

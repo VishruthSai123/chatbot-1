@@ -463,8 +463,10 @@ async function resolveImageSource(
     console.warn("Failed to query latest image document:", err);
   }
 
-  // 6. Direct valid external image URL provided (if user explicitly typed it or nothing else was found)
-  if (cleanImageUrl && (userExplicitlyTypedUrl || !sessionCached)) {
+  // 6. Direct valid external image URL — ONLY when the user explicitly typed a
+  // URL in their prompt. This prevents the model from echoing its own internal
+  // reference URLs (e.g. gemini.google.com content references) back into a fetch.
+  if (cleanImageUrl && userExplicitlyTypedUrl) {
     const docId =
       documentId && isValidUUID(documentId) ? documentId : generateUUID();
     return {

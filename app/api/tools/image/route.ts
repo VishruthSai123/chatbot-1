@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { guestRegex } from "@/lib/constants";
-import { getDocumentById, saveDocument } from "@/lib/db/queries";
+import {
+  getDocumentById,
+  getLatestDocumentByKind,
+  saveDocument,
+} from "@/lib/db/queries";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import {
   executeCompress,
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, image, documentId, title, params } = body;
+    const { action, image, documentId, chatId, title, params } = body;
 
     let imageSource = image;
     if (!imageSource && documentId) {
@@ -95,6 +99,28 @@ export async function POST(request: Request) {
       }
     }
 
+    // 4. Last-resort durable fallback: newest persisted image Document for the user.
+    // Keeps edits working across cold starts, reloads and expired signed URLs.
+    if (!imageSource) {
+      try {
+        const latest = await getLatestDocumentByKind({
+          kind: "image",
+          userId: session.user.id,
+        });
+        if (latest?.content) {
+          imageSource = latest.content;
+          activeImageRegistry.setActiveImage({
+            base64: latest.content,
+            documentId: latest.id,
+            title: latest.title,
+            userId: session.user.id,
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to resolve latest image document fallback:", err);
+      }
+    }
+
     if (!imageSource || typeof imageSource !== "string") {
       return NextResponse.json(
         { error: "Image data is required (dataUrl, URL, or base64)" },
@@ -103,6 +129,7 @@ export async function POST(request: Request) {
     }
 
     const fallbackContext = {
+      chatId,
       documentId,
       userId: session.user.id,
     };
