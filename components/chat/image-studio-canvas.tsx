@@ -197,8 +197,14 @@ export const ImageStudioCanvas = memo(function ImageStudioCanvas({
         });
 
         if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "Operation failed");
+          let errorMsg = "Operation failed";
+          try {
+            const errData = await response.json();
+            errorMsg = errData.error || errorMsg;
+          } catch {
+            errorMsg = `Server error (${response.status})`;
+          }
+          throw new Error(errorMsg);
         }
 
         const data = await response.json();

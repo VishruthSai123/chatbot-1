@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
+  serverExternalPackages: [
+    "sharp",
+    "@imgly/background-removal-node",
+    "onnxruntime-node",
+  ],
   experimental: {
     appNewScrollHandler: true,
     cachedNavigations: true,

@@ -13,11 +13,38 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+async function parseErrorResponse(response: Response): Promise<{ code: ErrorCode; cause?: string }> {
+  try {
+    const text = await response.text();
+    try {
+      const json = JSON.parse(text);
+      if (json && typeof json === 'object') {
+        return {
+          code: (json.code as ErrorCode) || 'bad_request:chat',
+          cause: json.cause || json.message,
+        };
+      }
+    } catch {
+      return {
+        code: 'bad_request:chat',
+        cause: `Server error (${response.status}): ${response.statusText || 'Internal Server Error'}`,
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  return {
+    code: 'bad_request:chat',
+    cause: `Server responded with ${response.status}`,
+  };
+}
+
 export const fetcher = async (url: string) => {
   const response = await fetch(url);
 
   if (!response.ok) {
-    const { code, cause } = await response.json();
+    const { code, cause } = await parseErrorResponse(response);
     throw new ChatbotError(code as ErrorCode, cause);
   }
 
@@ -32,7 +59,7 @@ export async function fetchWithErrorHandlers(
     const response = await fetch(input, init);
 
     if (!response.ok) {
-      const { code, cause } = await response.json();
+      const { code, cause } = await parseErrorResponse(response);
       throw new ChatbotError(code as ErrorCode, cause);
     }
 

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getSharp } from "./native";
+
 /**
  * Native background removal using @imgly/background-removal-node.
  *
@@ -53,7 +55,7 @@ export async function removeImageBackground(
   const outputBuffer = Buffer.from(arrayBuffer);
 
   // Extract dimensions from the output
-  const sharp = (await import("sharp")).default;
+  const sharp = await getSharp();
   const meta = await sharp(outputBuffer).metadata();
 
   return {

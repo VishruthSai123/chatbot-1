@@ -1,12 +1,12 @@
 import "server-only";
 
-import sharp from "sharp";
 import { removeImageBackground } from "@/lib/image/background-removal";
 import {
   compressImage,
   convertImage,
   cropImage,
   getImageMetadata,
+  getSharp,
   resizeImage,
   resizePhysicalImage,
   rotateImage,
@@ -132,6 +132,7 @@ export async function executeRemoveBg(
   const bgResult = await removeImageBackground(buffer);
 
   if (params.mode === "solid_color" && params.color) {
+    const sharp = await getSharp();
     // Composite transparent foreground over solid color background
     const compositeBuffer = await sharp({
       create: {

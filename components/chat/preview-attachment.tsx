@@ -53,6 +53,7 @@ export const PreviewAttachment = ({
             height={96}
             src={url}
             width={96}
+            unoptimized
           />
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
             <span className="rounded bg-sky-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow">

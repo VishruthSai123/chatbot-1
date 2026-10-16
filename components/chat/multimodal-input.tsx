@@ -290,8 +290,12 @@ function PureMultimodalInput({
           url,
         };
       }
-      const { error } = await response.json();
-      toast.error(error);
+      try {
+        const { error } = await response.json();
+        toast.error(error || "Upload failed");
+      } catch {
+        toast.error(`Upload failed (${response.status})`);
+      }
     } catch {
       toast.error("Failed to upload file, please try again!");
     }

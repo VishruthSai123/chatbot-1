@@ -1,12 +1,26 @@
 import "server-only";
 
-import sharp, { type Sharp } from "sharp";
+import type sharp from "sharp";
+import type { Sharp } from "sharp";
 
 import type { DpiOption, PhysicalUnit } from "./presets";
 import { physicalToPixels } from "./presets";
 
-// Limit Sharp thread pool in serverless to prevent thread starvation
-sharp.concurrency(1);
+// Lazy-load Sharp to prevent cold-start crashes in serverless environments
+let sharpInstance: typeof sharp | null = null;
+
+export async function getSharp(): Promise<typeof sharp> {
+  if (!sharpInstance) {
+    const mod = await import("sharp");
+    sharpInstance = (mod.default || mod) as unknown as typeof sharp;
+    try {
+      sharpInstance.concurrency(1);
+    } catch {
+      /* ignore */
+    }
+  }
+  return sharpInstance;
+}
 
 /**
  * Supported output image formats.
@@ -62,6 +76,7 @@ export async function resizeImage({
   format?: ImageFormat;
   quality?: number;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
   const pipeline = sharp(inputBuffer).resize(width, height, {
     fit: maintainAspectRatio ? fit : "fill",
     position: "centre",
@@ -106,6 +121,7 @@ export async function resizePhysicalImage({
   format?: ImageFormat;
   quality?: number;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
   const targetWidthPx = physicalToPixels(width, unit, dpi);
   const targetHeightPx = physicalToPixels(height, unit, dpi);
 
@@ -150,6 +166,7 @@ export async function cropImage({
   format?: ImageFormat;
   quality?: number;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
   const pipeline = sharp(inputBuffer).extract({
     left: Math.round(left),
     top: Math.round(top),
@@ -187,6 +204,7 @@ export async function rotateImage({
   format?: ImageFormat;
   quality?: number;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
   let pipeline = sharp(inputBuffer);
 
   if (degrees !== 0) {
@@ -231,6 +249,8 @@ export async function compressImage({
   quality?: number;
   format?: ImageFormat;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
+
   if (targetSizeKb) {
     // Iterative binary search for target file size
     const targetBytes = targetSizeKb * 1024;
@@ -305,6 +325,7 @@ export async function convertImage({
   targetFormat: ImageFormat;
   quality?: number;
 }): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
   const outputBuffer = await applyFormat(
     sharp(inputBuffer),
     targetFormat,
@@ -327,6 +348,7 @@ export async function convertImage({
 export async function getImageMetadata(
   inputBuffer: Buffer
 ): Promise<ImageMetadataResult> {
+  const sharp = await getSharp();
   const meta = await sharp(inputBuffer).metadata();
 
   return {
