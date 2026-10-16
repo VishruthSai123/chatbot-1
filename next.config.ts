@@ -55,18 +55,25 @@ const nextConfig: NextConfig = {
     },
     incomingRequests: false,
   },
-  outputFileTracingIncludes: {
-    "/api/chat": [
-      "./node_modules/sharp/**/*",
-      "./node_modules/@img/**/*",
-      "./node_modules/@imgly/**/*",
-      "./node_modules/onnxruntime-node/**/*",
+  outputFileTracingExcludes: {
+    "*": [
+      "./node_modules/onnxruntime-node/bin/napi-v3/darwin/**/*",
+      "./node_modules/onnxruntime-node/bin/napi-v3/win32/**/*",
+      "./node_modules/@img/sharp-win32-x64/**/*",
+      "./node_modules/@img/sharp-darwin-*/**/*",
+      "./node_modules/@playwright/**/*",
+      "./node_modules/@swc/core-win32-x64-msvc/**/*",
+      "./node_modules/@esbuild/win32-x64/**/*",
     ],
+  },
+  outputFileTracingIncludes: {
     "/api/tools/image": [
       "./node_modules/sharp/**/*",
-      "./node_modules/@img/**/*",
-      "./node_modules/@imgly/**/*",
-      "./node_modules/onnxruntime-node/**/*",
+      "./node_modules/@img/sharp-libvips-linux-x64/**/*",
+      "./node_modules/@img/sharp-linux-x64/**/*",
+      "./node_modules/@imgly/background-removal-node/**/*",
+      "./node_modules/onnxruntime-node/dist/**/*",
+      "./node_modules/onnxruntime-node/bin/napi-v3/linux/**/*",
     ],
   },
   poweredByHeader: false,
