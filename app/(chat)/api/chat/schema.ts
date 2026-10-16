@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const textPartSchema = z.object({
-  text: z.string().max(10000).default(""),
+  text: z.string().max(10_000).default(""),
   type: z.literal("text"),
 });
 

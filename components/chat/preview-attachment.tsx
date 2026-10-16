@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
 import Image from "next/image";
+import { useCallback } from "react";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Attachment } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
@@ -21,7 +21,9 @@ export const PreviewAttachment = ({
   const { setArtifact } = useArtifact();
 
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !contentType?.startsWith("image")) return;
+    if (isUploading || !contentType?.startsWith("image")) {
+      return;
+    }
     setArtifact({
       boundingBox: { height: 0, left: 0, top: 0, width: 0 },
       content: url,
@@ -42,18 +44,18 @@ export const PreviewAttachment = ({
     >
       {isImage ? (
         <button
-          type="button"
-          onClick={handleOpenStudio}
           className="size-full cursor-pointer focus:outline-none"
+          onClick={handleOpenStudio}
           title="Click to open in Image Studio"
+          type="button"
         >
           <Image
             alt={name ?? "attachment"}
             className="size-full object-cover transition-transform group-hover:scale-105"
             height={96}
             src={url}
-            width={96}
             unoptimized
+            width={96}
           />
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
             <span className="rounded bg-sky-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow">

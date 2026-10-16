@@ -36,22 +36,22 @@ export type ResizeFit = "cover" | "contain" | "fill" | "inside" | "outside";
 
 export interface ImageProcessingResult {
   buffer: Buffer;
-  width: number;
-  height: number;
-  format: string;
-  sizeBytes: number;
   density?: number;
+  format: string;
+  height: number;
+  sizeBytes: number;
+  width: number;
 }
 
 export interface ImageMetadataResult {
-  width: number;
-  height: number;
-  format: string;
   channels: number;
-  density?: number;
   colorSpace?: string;
-  sizeBytes: number;
+  density?: number;
+  format: string;
   hasAlpha: boolean;
+  height: number;
+  sizeBytes: number;
+  width: number;
 }
 
 // ─── Core Processing Functions ───────────────────────────────────────────────
@@ -88,11 +88,11 @@ export async function resizeImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? width,
-    height: meta.height ?? height,
-    format: meta.format ?? format,
-    sizeBytes: outputBuffer.length,
     density: meta.density,
+    format: meta.format ?? format,
+    height: meta.height ?? height,
+    sizeBytes: outputBuffer.length,
+    width: meta.width ?? width,
   };
 }
 
@@ -138,11 +138,11 @@ export async function resizePhysicalImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? targetWidthPx,
-    height: meta.height ?? targetHeightPx,
-    format: meta.format ?? format,
-    sizeBytes: outputBuffer.length,
     density: dpi,
+    format: meta.format ?? format,
+    height: meta.height ?? targetHeightPx,
+    sizeBytes: outputBuffer.length,
+    width: meta.width ?? targetWidthPx,
   };
 }
 
@@ -168,10 +168,10 @@ export async function cropImage({
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   const pipeline = sharp(inputBuffer).extract({
+    height: Math.round(height),
     left: Math.round(left),
     top: Math.round(top),
     width: Math.round(width),
-    height: Math.round(height),
   });
 
   const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
@@ -179,10 +179,10 @@ export async function cropImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? width,
-    height: meta.height ?? height,
     format: meta.format ?? format,
+    height: meta.height ?? height,
     sizeBytes: outputBuffer.length,
+    width: meta.width ?? width,
   };
 }
 
@@ -224,10 +224,10 @@ export async function rotateImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? 0,
-    height: meta.height ?? 0,
     format: meta.format ?? format,
+    height: meta.height ?? 0,
     sizeBytes: outputBuffer.length,
+    width: meta.width ?? 0,
   };
 }
 
@@ -258,8 +258,9 @@ export async function compressImage({
     let high = 100;
     let bestBuffer: Buffer | null = null;
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 8; i += 1) {
       const mid = Math.round((low + high) / 2);
+      // biome-ignore lint/performance/noAwaitInLoops: binary search requires sequential execution
       const testBuffer = await applyFormat(
         sharp(inputBuffer),
         format,
@@ -277,20 +278,16 @@ export async function compressImage({
     let finalBuffer = bestBuffer;
     if (!finalBuffer) {
       // Even minimum quality exceeds target — return lowest quality output
-      finalBuffer = await applyFormat(
-        sharp(inputBuffer),
-        format,
-        5
-      ).toBuffer();
+      finalBuffer = await applyFormat(sharp(inputBuffer), format, 5).toBuffer();
     }
 
     const meta = await sharp(finalBuffer).metadata();
     return {
       buffer: finalBuffer,
-      width: meta.width ?? 0,
-      height: meta.height ?? 0,
       format: meta.format ?? format,
+      height: meta.height ?? 0,
       sizeBytes: finalBuffer.length,
+      width: meta.width ?? 0,
     };
   }
 
@@ -304,10 +301,10 @@ export async function compressImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? 0,
-    height: meta.height ?? 0,
     format: meta.format ?? format,
+    height: meta.height ?? 0,
     sizeBytes: outputBuffer.length,
+    width: meta.width ?? 0,
   };
 }
 
@@ -333,10 +330,10 @@ export async function convertImage({
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? 0,
-    height: meta.height ?? 0,
     format: meta.format ?? targetFormat,
+    height: meta.height ?? 0,
     sizeBytes: outputBuffer.length,
+    width: meta.width ?? 0,
   };
 }
 
@@ -350,14 +347,14 @@ export async function getImageMetadata(
   const meta = await sharp(inputBuffer).metadata();
 
   return {
-    width: meta.width ?? 0,
-    height: meta.height ?? 0,
-    format: meta.format ?? "unknown",
     channels: meta.channels ?? 0,
-    density: meta.density,
     colorSpace: meta.space,
-    sizeBytes: inputBuffer.length,
+    density: meta.density,
+    format: meta.format ?? "unknown",
     hasAlpha: meta.hasAlpha ?? false,
+    height: meta.height ?? 0,
+    sizeBytes: inputBuffer.length,
+    width: meta.width ?? 0,
   };
 }
 
@@ -373,9 +370,9 @@ function applyFormat(
 ): Sharp {
   switch (format) {
     case "jpeg":
-      return pipeline.jpeg({ quality, mozjpeg: true });
+      return pipeline.jpeg({ mozjpeg: true, quality });
     case "png":
-      return pipeline.png({ quality, compressionLevel: 6 });
+      return pipeline.png({ compressionLevel: 6, quality });
     case "webp":
       return pipeline.webp({ quality });
     case "avif":

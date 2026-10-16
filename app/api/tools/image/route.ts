@@ -25,10 +25,7 @@ export async function POST(request: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -76,7 +73,7 @@ export async function POST(request: Request) {
       }
       case "get_metadata": {
         result = await executeGetMetadata(image);
-        return NextResponse.json({ success: true, metadata: result });
+        return NextResponse.json({ metadata: result, success: true });
       }
       default:
         return NextResponse.json(
@@ -89,10 +86,10 @@ export async function POST(request: Request) {
     if (documentId && result?.base64) {
       try {
         await saveDocument({
-          id: documentId,
-          title: title ?? "Image",
-          kind: "image",
           content: result.base64,
+          id: documentId,
+          kind: "image",
+          title: title ?? "Image",
           userId: session.user.id,
         });
       } catch (err) {
@@ -101,8 +98,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      success: true,
       result,
+      success: true,
     });
   } catch (error: any) {
     console.error("Error executing image tool:", error);

@@ -328,22 +328,7 @@ export async function POST(request: Request) {
             }),
             editDocument: editDocument({ dataStream, session }),
             getWeather,
-            requestSuggestions: requestSuggestions({
-              dataStream,
-              modelId: chatModel,
-              session,
-            }),
-            updateDocument: updateDocument({
-              dataStream,
-              modelId: chatModel,
-              session,
-            }),
-            imageResizePhysical: imageResizePhysical({
-              chatId: id,
-              dataStream,
-              session,
-            }),
-            imageRemoveBg: imageRemoveBg({
+            imageCompress: imageCompress({
               chatId: id,
               dataStream,
               session,
@@ -353,9 +338,24 @@ export async function POST(request: Request) {
               dataStream,
               session,
             }),
-            imageCompress: imageCompress({
+            imageRemoveBg: imageRemoveBg({
               chatId: id,
               dataStream,
+              session,
+            }),
+            imageResizePhysical: imageResizePhysical({
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            requestSuggestions: requestSuggestions({
+              dataStream,
+              modelId: chatModel,
+              session,
+            }),
+            updateDocument: updateDocument({
+              dataStream,
+              modelId: chatModel,
               session,
             }),
           },

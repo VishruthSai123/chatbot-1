@@ -15,9 +15,7 @@ import { getSharp } from "./native";
  */
 
 // Lazy-load the module to avoid increasing cold start time for non-BG-removal requests
-let removeBackgroundFn:
-  | ((blob: Blob) => Promise<Blob>)
-  | null = null;
+let removeBackgroundFn: ((blob: Blob) => Promise<Blob>) | null = null;
 
 async function getRemoveBackground() {
   if (!removeBackgroundFn) {
@@ -29,10 +27,10 @@ async function getRemoveBackground() {
 
 export interface BgRemovalResult {
   buffer: Buffer;
-  width: number;
-  height: number;
   format: "png";
+  height: number;
   sizeBytes: number;
+  width: number;
 }
 
 /**
@@ -60,9 +58,9 @@ export async function removeImageBackground(
 
   return {
     buffer: outputBuffer,
-    width: meta.width ?? 0,
-    height: meta.height ?? 0,
     format: "png",
+    height: meta.height ?? 0,
     sizeBytes: outputBuffer.length,
+    width: meta.width ?? 0,
   };
 }

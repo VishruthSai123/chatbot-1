@@ -1,13 +1,13 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
 import cn from "classnames";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 interface BeforeAfterSliderProps {
-  beforeSrc: string;
+  afterLabel?: string;
   afterSrc: string;
   beforeLabel?: string;
-  afterLabel?: string;
+  beforeSrc: string;
   className?: string;
 }
 
@@ -23,7 +23,9 @@ export const BeforeAfterSlider = memo(function InnerBeforeAfterSlider({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const handleMove = useCallback((clientX: number) => {
-    if (!containerRef.current) return;
+    if (!containerRef.current) {
+      return;
+    }
     const rect = containerRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const clampedX = Math.max(0, Math.min(x, rect.width));
@@ -33,7 +35,9 @@ export const BeforeAfterSlider = memo(function InnerBeforeAfterSlider({
 
   const handleTouchMove = useCallback(
     (e: TouchEvent) => {
-      if (!isDragging || e.touches.length === 0) return;
+      if (!isDragging || e.touches.length === 0) {
+        return;
+      }
       handleMove(e.touches[0].clientX);
     },
     [isDragging, handleMove]
@@ -41,7 +45,9 @@ export const BeforeAfterSlider = memo(function InnerBeforeAfterSlider({
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!isDragging) return;
+      if (!isDragging) {
+        return;
+      }
       handleMove(e.clientX);
     },
     [isDragging, handleMove]
@@ -67,37 +73,41 @@ export const BeforeAfterSlider = memo(function InnerBeforeAfterSlider({
   }, [isDragging, handleMouseMove, handleMouseUp, handleTouchMove]);
 
   return (
+    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: drag comparison slider
+    // biome-ignore lint/a11y/noStaticElementInteractions: drag comparison slider
     <div
-      ref={containerRef}
       className={cn(
         "relative select-none overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl",
         className
       )}
       onMouseDown={() => setIsDragging(true)}
       onTouchStart={() => setIsDragging(true)}
+      ref={containerRef}
       style={{ touchAction: "none" }}
     >
       {/* Background / After Image */}
       <picture>
         <img
-          src={afterSrc}
           alt={afterLabel}
           className="block h-full w-full object-contain pointer-events-none"
           draggable={false}
+          src={afterSrc}
         />
       </picture>
 
       {/* Foreground / Before Image (Clipped) */}
       <div
         className="absolute inset-0 overflow-hidden pointer-events-none"
-        style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
+        style={{
+          clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)`,
+        }}
       >
         <picture>
           <img
-            src={beforeSrc}
             alt={beforeLabel}
             className="block h-full w-full object-contain pointer-events-none"
             draggable={false}
+            src={beforeSrc}
           />
         </picture>
       </div>
@@ -116,10 +126,10 @@ export const BeforeAfterSlider = memo(function InnerBeforeAfterSlider({
             viewBox="0 0 24 24"
           >
             <path
+              d="M8 9l-4 3 4 3m8-6l4 3-4 3"
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M8 9l-4 3 4 3m8-6l4 3-4 3"
             />
           </svg>
         </div>
