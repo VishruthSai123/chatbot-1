@@ -71,6 +71,12 @@ const nextConfig: NextConfig = {
   },
   poweredByHeader: false,
   reactCompiler: true,
+  rewrites: async () => [
+    { destination: "/api/data/document", source: "/api/document" },
+    { destination: "/api/data/history", source: "/api/history" },
+    { destination: "/api/data/messages", source: "/api/messages" },
+    { destination: "/api/data/vote", source: "/api/vote" },
+  ],
   serverExternalPackages: [
     "sharp",
     "@imgly/background-removal-node",
