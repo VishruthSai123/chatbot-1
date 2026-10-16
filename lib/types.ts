@@ -3,6 +3,12 @@ import { z } from "zod";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import type { createDocument } from "./ai/tools/create-document";
 import type { getWeather } from "./ai/tools/get-weather";
+import type {
+  imageCompress,
+  imageCrop,
+  imageRemoveBg,
+  imageResizePhysical,
+} from "./ai/tools/image-tools";
 import type { requestSuggestions } from "./ai/tools/request-suggestions";
 import type { updateDocument } from "./ai/tools/update-document";
 import type { Suggestion } from "./db/schema";
@@ -19,12 +25,22 @@ type updateDocumentTool = InferUITool<ReturnType<typeof updateDocument>>;
 type requestSuggestionsTool = InferUITool<
   ReturnType<typeof requestSuggestions>
 >;
+type imageResizePhysicalTool = InferUITool<
+  ReturnType<typeof imageResizePhysical>
+>;
+type imageRemoveBgTool = InferUITool<ReturnType<typeof imageRemoveBg>>;
+type imageCropTool = InferUITool<ReturnType<typeof imageCrop>>;
+type imageCompressTool = InferUITool<ReturnType<typeof imageCompress>>;
 
 export type ChatTools = {
   getWeather: weatherTool;
   createDocument: createDocumentTool;
   updateDocument: updateDocumentTool;
   requestSuggestions: requestSuggestionsTool;
+  imageResizePhysical: imageResizePhysicalTool;
+  imageRemoveBg: imageRemoveBgTool;
+  imageCrop: imageCropTool;
+  imageCompress: imageCompressTool;
 };
 
 export type WaitingStatusData = {

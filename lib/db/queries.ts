@@ -402,6 +402,27 @@ export async function getDocumentById({ id }: { id: string }) {
   }
 }
 
+export async function getLatestDocumentByKind({
+  userId,
+  kind,
+}: {
+  userId: string;
+  kind: ArtifactKind;
+}) {
+  try {
+    const [latestDoc] = await db
+      .select()
+      .from(document)
+      .where(and(eq(document.userId, userId), eq(document.kind, kind)))
+      .orderBy(desc(document.createdAt))
+      .limit(1);
+
+    return latestDoc;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
 export async function deleteDocumentsByIdAfterTimestamp({
   id,
   timestamp,

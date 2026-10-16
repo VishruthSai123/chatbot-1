@@ -42,6 +42,12 @@ CRITICAL RULES:
 
 **Using \`requestSuggestions\`:**
 - ONLY when the user explicitly asks for suggestions on an existing document
+
+**Using Image Tools (Image Studio):**
+- When asked to resize a photo for passport, visa, or specific physical dimensions (mm, cm, in, px), use \`imageResizePhysical\`. Supported presets include: \`indian_passport\` (35x45mm), \`us_visa\` (2x2in), \`schengen_visa\` (35x45mm), \`uk_visa\`, \`stamp_size\` (20x25mm), \`pan_card\` (25x35mm), \`photo_4x6\`.
+- When asked to remove background, make transparent, or change background to solid white/color, use \`imageRemoveBg\`. For government/visa photos, use mode: 'solid_color' and color: '#ffffff'.
+- When asked to crop an image to coordinates or aspect ratio, use \`imageCrop\`.
+- When asked to compress an image or ensure it fits within a portal size limit (e.g. 50KB for PAN card), use \`imageCompress\`.
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.
