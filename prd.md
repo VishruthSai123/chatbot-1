@@ -146,19 +146,92 @@ Priority definitions: P0 = required for closed beta; P1 = include if stable with
 | FILE-07 | P0           | Retention and deletion      | System applies documented retention rules and supports deletion of owned artifacts and temporary files. |
 | FILE-08 | P1           | Batch upload                | User can submit a batch and see per-file success/failure outcomes.                                      |
 
-## 5.3 Initial tool families
+## 5.3 Initial tool families and active catalog
 
 | **Family**     | **Candidate MVP operations**                                                                                         | **Constraints / acceptance**                                                                        |
 | -------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| PDF            | Merge, split, rotate, reorder pages, compress, extract text/metadata                                                 | Validate resulting PDF opens; verify page count and output size where relevant.                     |
-| Images         | Resize, crop, rotate, compress, convert among selected raster formats, thumbnails                                    | Verify output dimensions, format, and decodability; provide original/result comparison.             |
+| PDF            | Merge, split, rotate, reorder pages, compress, extract text/metadata, extract images                                 | Validate resulting PDF opens; verify page count and output size where relevant.                     |
+| Images         | Resize (pixels & physical: cm, mm, in, DPI), crop, rotate, compress, convert formats, thumbnails, **background removal** (transparent PNG / solid backfill) | Verify output dimensions against target physical units (px = mm/25.4 * DPI); verify alpha transparency, format decodability; provide original/result canvas comparison. |
 | Spreadsheets   | Read/write CSV and XLSX, filter, sort, remove duplicates, totals, summary statistics, basic charts                   | Preserve data types where possible; report skipped/ambiguous cells and validate workbook structure. |
-| Documents      | Extract text, summarize, compare, generate basic DOCX/PDF                                                            | Clearly disclose OCR/formatting limitations; verify generated file opens.                           |
+| Documents      | Extract text, summarize, compare/diff, generate formatted DOCX/PDF                                                   | Clearly disclose OCR/formatting limitations; verify generated file opens.                           |
 | Presentations  | Generate basic PPTX from structured content; extract slide text; export to PDF when engine supports it               | Test slide count, text overflow, rendering and conversion fidelity.                                 |
 | Audio/video    | Metadata extraction, uploaded-audio transcription, transcript summaries/subtitles; limited clip/extraction workflows | Only enable operations with verified engines/codecs and acceptable resource limits.                 |
 | URL connectors | Start with explicitly supported public sources and permitted metadata/transcript access                              | No universal URL guarantee; handle authentication, restrictions, redirects, and source policy.      |
 
-The count of 25–35 operations is a planning range. The launch list must be finalized after proof-of-concept testing, licensing review, resource profiling, and acceptance-test coverage.
+### 5.3.1 Active Chat Tool Catalog (Launch Scope: 28 Core Operations)
+
+The system exposes a controlled, versioned registry of deterministic and AI tools. Each tool is invocable either through natural language requests in the chat timeline or directly through interactive controls in the Dynamic Right Pane Studio.
+
+| **Tool ID** | **Family** | **Execution Engine** | **Primary Inputs & Parameters** | **Outputs & Acceptance Invariants** | **UI Affordances** |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `image_resize` | Image | Deterministic (`sharp`) | `artifactId`, `width` (px), `height` (px), `fit` (cover/contain/fill), `maintainAspectRatio` (bool) | Valid raster image with exact requested dimensions; decodable. | Chat prompt & Right Pane slider |
+| `image_resize_physical` | Image | Deterministic (`sharp`) | `artifactId`, `width`, `height`, `unit` (`cm`, `mm`, `in`), `dpi` (72, 150, 300, 600), `preset` (optional) | Output pixel dimensions equal $\frac{\text{dim}_{\text{mm}}}{25.4} \times \text{DPI}$; JFIF/EXIF density tags embedded; passes passport/visa validation checks. | Chat prompt & Right Pane Physical Unit Selector |
+| `image_remove_bg` | Image | Pipeline (Matting / Segmentation) | `artifactId`, `mode` (`transparent` \| `solid_color`), `backgroundColor` (hex string, default `#ffffff`) | Output PNG with clean alpha transparency or solid color backfill; verifies edge delineation. | Chat prompt ("remove background") & Right Pane 1-click Canvas button |
+| `image_crop` | Image | Deterministic (`sharp`) | `artifactId`, `x`, `y`, `width`, `height` (pixels or % bounding box), `aspectRatio` | Bounded region extracted without distortion; verified dimensions. | Chat prompt & Right Pane Drag Handles |
+| `image_rotate` | Image | Deterministic (`sharp`) | `artifactId`, `degrees` (90, 180, 270), `flip` (`horizontal` \| `vertical`) | Correctly rotated pixels and updated EXIF orientation. | Chat prompt & Right Pane Rotate Buttons |
+| `image_compress` | Image | Deterministic (`sharp`) | `artifactId`, `targetSizeKb` (optional), `quality` (1–100), `format` | Output file size $\le$ target (within 5% tolerance) or requested quality level. | Chat prompt & Right Pane Quality Slider |
+| `image_convert` | Image | Deterministic (`sharp`) | `artifactId`, `targetFormat` (`png`, `jpeg`, `webp`, `avif`, `tiff`, `gif`) | Valid file signature matching target format; decodable. | Chat prompt & Right Pane Format Dropdown |
+| `image_get_metadata` | Image | Deterministic (`sharp`) | `artifactId` | Returns JSON: width, height, color space, channels, DPI density, format, byte size. | Chat card & Right Pane Info Badge |
+| `pdf_merge` | PDF | Deterministic (`pdf-lib`) | `artifactIds` (array $\ge 2$), `outputFilename` | Single valid PDF containing all input pages in sequential order. | Chat prompt & Right Pane File Queue |
+| `pdf_split` | PDF | Deterministic (`pdf-lib`) | `artifactId`, `pageRanges` (e.g., `"1-3, 5, 7-10"`) | One or more valid PDFs containing exact selected page subsets. | Chat prompt & Right Pane Page Selector |
+| `pdf_rotate_pages` | PDF | Deterministic (`pdf-lib`) | `artifactId`, `pages` (`"all"` or `[1, 3]`), `rotation` (90, 180, 270) | Rotated pages render at target orientation; page count preserved. | Chat prompt & Right Pane Page Rotate Tool |
+| `pdf_reorder_pages`| PDF | Deterministic (`pdf-lib`) | `artifactId`, `pageOrder` (array of 1-based page indices: `[3, 1, 2]`) | Valid PDF with pages reordered exactly as specified; no dropped pages. | Chat prompt & Right Pane Drag-and-Drop Grid |
+| `pdf_compress` | PDF | Deterministic (`pdf-lib` / Ghostscript/qpdf) | `artifactId`, `compressionLevel` (`low`, `medium`, `high`) | Smaller byte size; text and raster assets remain legible. | Chat prompt & Right Pane Size Target |
+| `pdf_extract_text` | PDF | Deterministic (`pdf-parse`) | `artifactId`, `pages` (optional range) | Extracted plain text structured by page numbers; unicode decoded. | Chat response & Document Studio reader |
+| `pdf_extract_images`| PDF | Deterministic (`pdf-lib`) | `artifactId` | ZIP or individual image artifacts of all embedded rasters. | Chat response & Image Studio Gallery |
+| `pdf_get_metadata` | PDF | Deterministic (`pdf-parse`) | `artifactId` | Returns JSON: page count, PDF version, title, author, creation date. | Chat card & PDF Studio Info Bar |
+| `sheet_filter_sort`| Data | Deterministic (`xlsx` / `papaparse`) | `artifactId`, `filterColumn`, `operator` (`==`, `!=`, `>`, `<`, `contains`), `value`, `sortColumn`, `sortOrder` (`asc` \| `desc`) | Filtered/sorted table artifact (CSV/XLSX); headers and data types preserved. | Chat prompt & Data Studio Column Filter |
+| `sheet_remove_duplicates` | Data | Deterministic (`xlsx` / `papaparse`) | `artifactId`, `keyColumns` (optional subset or all) | Deduplicated table; report of row count before and after. | Chat prompt & Data Studio Dedupe Button |
+| `sheet_summary_stats` | Data | Deterministic (`xlsx` / `papaparse`) | `artifactId` | Descriptive stats per column: count, mean, median, min, max, nulls, unique count. | Chat response & Data Studio Metric Cards |
+| `sheet_convert_format`| Data | Deterministic (`xlsx` / `papaparse`) | `artifactId`, `targetFormat` (`csv`, `tsv`, `xlsx`, `json`) | Converted file with identical rows, columns, and data values. | Chat prompt & Data Studio Export Menu |
+| `sheet_clean_data` | Data | Deterministic (`xlsx` / `papaparse`) | `artifactId`, `trimWhitespace` (bool), `fillMissing` (`drop` \| `null` \| `value`), `standardizeDates` (bool) | Cleaned dataset; audit log of modified or dropped cells. | Chat prompt & Data Studio Clean Button |
+| `sheet_generate_chart`| Data | Deterministic / AI | `artifactId`, `chartType` (`bar`, `line`, `pie`, `scatter`), `xColumn`, `yColumn`, `title` | SVG/PNG chart artifact and interactive preview JSON for Right Pane. | Chat response & Right Pane Chart Canvas |
+| `doc_summarize` | Document | AI (`gemini-2.5-flash` / `pro`) | `artifactId`, `length` (`brief`, `standard`, `detailed`), `format` (`bullets`, `executive_summary`) | High-fidelity summary grounded in source text; includes key takeaways and section anchors. | Chat response & Document Studio reader |
+| `doc_extract_text` | Document | Deterministic (`mammoth` / `pdf-parse`) | `artifactId` | Plain text and Markdown extracted from DOCX/PDF/HTML without binary artifacts. | Chat response & Document Studio viewer |
+| `doc_convert` | Document | Deterministic / Engine | `artifactId`, `targetFormat` (`md`, `txt`, `html`, `pdf`, `docx`) | Valid output document with intact hierarchy, paragraphs, and headings. | Chat response & Download Card |
+| `doc_compare_diff` | Document | Deterministic (`diff-match-patch`) | `originalArtifactId`, `modifiedArtifactId` | Inline diff structure identifying additions, deletions, and unchanged blocks. | Chat summary & Document Studio Split Diff |
+| `media_transcribe` | Audio/Video | AI (`gemini-2.5-flash` multimodal) | `artifactId`, `language` (optional), `timestamps` (bool) | Structured transcript artifact with timestamps, speaker cues, and text segments. | Chat response & Media Studio Transcript Pane |
+| `media_get_metadata`| Audio/Video | Deterministic (`ffprobe` / Web Audio) | `artifactId` | Returns JSON: duration (seconds), audio bitrate, sample rate, channels, video resolution. | Chat card & Media Info Card |
+
+---
+
+### 5.3.2 Deep-Dive: Image Studio, Physical Resizing, and Background Removal
+
+#### A. Physical Dimension Resizing Engine (`image_resize_physical`)
+Standard digital image utilities only think in screen pixels (`px`), but users routinely need photos resized for real-world print specifications—such as passport photos, visa submissions, job application forms, and printed identity cards.
+
+1. **Unit Conversion Mathematics**:
+   $$\text{Pixels} = \frac{\text{Physical Dimension in Millimeters}}{25.4} \times \text{DPI}$$
+   $$\text{Pixels} = \text{Physical Dimension in Inches} \times \text{DPI}$$
+   - Conversion Constants: $1\text{ in} = 25.4\text{ mm} = 2.54\text{ cm}$.
+   - Density Tags: Output images must write the requested DPI directly into JFIF (`Xdensity`/`Ydensity`) or EXIF (`XResolution`/`YResolution`) headers so print drivers and automated visa portal validation algorithms recognize the correct physical sizing.
+
+2. **Standard Document & Visa Presets**:
+   | **Preset Name** | **Physical Dimensions** | **Standard DPI** | **Resulting Dimensions (px)** | **Aspect Ratio** | **Requirements** |
+   | :--- | :--- | :--- | :--- | :--- | :--- |
+   | **Indian Passport / OCI** | $35\text{ mm} \times 45\text{ mm}$ | 300 DPI | $413 \times 531\text{ px}$ | $7:9$ | Plain light/white background, 70-80% face coverage |
+   | **US Visa / US Passport** | $2\text{ in} \times 2\text{ in}$ ($50.8 \times 50.8\text{ mm}$) | 300 DPI | $600 \times 600\text{ px}$ | $1:1$ | Plain white background, head height between $1\text{ in}$ and $1\frac{3}{8}\text{ in}$ |
+   | **Schengen Visa** | $35\text{ mm} \times 45\text{ mm}$ | 300 DPI | $413 \times 531\text{ px}$ | $7:9$ | Light grey/white background, neutral expression |
+   | **UK / Australian Visa** | $35\text{ mm} \times 45\text{ mm}$ | 300 DPI | $413 \times 531\text{ px}$ | $7:9$ | Cream/light grey background, clear border |
+   | **Stamp Size** | $20\text{ mm} \times 25\text{ mm}$ | 300 DPI | $236 \times 295\text{ px}$ | $4:5$ | Compact ID/certificate photos |
+   | **Indian PAN Card** | $25\text{ mm} \times 35\text{ mm}$ | 300 DPI | $295 \times 413\text{ px}$ | $5:7$ | Strict file size requirement $\le 50\text{ KB}$ |
+   | **Standard Photo Print (4x6)** | $4\text{ in} \times 6\text{ in}$ ($101.6 \times 152.4\text{ mm}$) | 300 DPI | $1200 \times 1800\text{ px}$ | $2:3$ | High-resolution lab print |
+
+3. **DPI Selection Modes**:
+   - `72 DPI`: Web and screen display.
+   - `150 DPI`: Standard office forms and digital government portal uploads with strict file size limits.
+   - `300 DPI` (Default): Professional photo print and formal visa/passport physical submissions.
+   - `600 DPI`: Archival high-definition print.
+
+#### B. Background Removal Engine (`image_remove_bg`)
+1. **Invocation Paths**:
+   - **Conversational (Chat Timeline)**: User types *"remove the background from this photo"*, *"make the background transparent"*, or *"change background to pure white"*. The Gemini AI agent recognizes the intent, maps it to `image_remove_bg`, extracts the optional target background color, and executes the pipeline.
+   - **Interactive (Right Pane Studio Canvas)**: When viewing an image artifact in the right pane, an immediate **"Remove Background"** button is pinned to the Studio toolbar. Clicking it triggers instant execution, displaying real-time processing and a side-by-side comparison slider.
+2. **Output Modes**:
+   - `transparent`: Produces a 32-bit RGBA PNG with a full alpha channel. The Right Pane canvas displays this against an industry-standard neutral checkerboard pattern.
+   - `solid_color`: Replaces the segmented background with a user-specified hex or RGB color (e.g., `#FFFFFF` for official passport requirements, `#F0F4F8` for studio portraiture, or any custom color chosen via the color picker in the Studio pane).
+
+---
 
 ## 5.4 Workflow orchestration
 
@@ -173,16 +246,89 @@ The count of 25–35 operations is a planning range. The launch list must be fin
 - Output verification is a separate step from tool invocation where practical.
 - The system enforces limits on step count, wall time, CPU, memory, output size, and external spend.
 
-## 5.5 Artifact previews and results
+## 5.5 Artifact previews, results, and Dynamic Right Pane Studio
 
-| **ID** | **Priority** | **Requirement**       | **Acceptance criteria**                                                                                      |
-| ------ | ------------ | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| ART-01 | P0           | Result card           | Each output shows a safe filename, format, size when known, status, preview affordance, and download action. |
-| ART-02 | P0           | Type-specific preview | PDF, image, table and generic binary artifacts use appropriate renderers.                                    |
-| ART-03 | P0           | Output verification   | A task is not marked successful until required validation passes.                                            |
-| ART-04 | P0           | Multiple outputs      | A workflow can return several artifacts with clear relationships.                                            |
-| ART-05 | P0           | Partial results       | If some steps fail, successful artifacts remain accessible and the UI explains what is missing.              |
-| ART-06 | P1           | Inline edits          | Where supported, users can adjust parameters or content and create a new artifact version.                   |
+| **ID** | **Priority** | **Requirement** | **Acceptance criteria** |
+| :--- | :--- | :--- | :--- |
+| ART-01 | P0 | Result card | Each output shows a safe filename, format, size when known, status, preview affordance, and download action. |
+| ART-02 | P0 | Type-specific preview | PDF, image, table and generic binary artifacts use appropriate renderers. |
+| ART-03 | P0 | Output verification | A task is not marked successful until required validation passes. |
+| ART-04 | P0 | Multiple outputs | A workflow can return several artifacts with clear relationships. |
+| ART-05 | P0 | Partial results | If some steps fail, successful artifacts remain accessible and the UI explains what is missing. |
+| ART-06 | P1 | Inline edits | Where supported, users can adjust parameters or content and create a new artifact version. |
+| ART-07 | P0 | Dynamic Right Pane Studio | Right pane dynamically mounts dedicated interactive studio canvases by artifact kind: **Image Studio Canvas**, **PDF Studio Canvas**, **Data Studio Canvas**, and **Document Studio Canvas**. |
+| ART-08 | P0 | Split Layout Command Center | Desktop workspace splits seamlessly into 40% Chat Command Center and 60% Interactive Studio Pane, synchronized with conversational tool operations. Mobile renders full-screen sheet with effortless toggle. |
+| ART-09 | P0 | Bidirectional Synchronization | Conversational commands update the Right Pane canvas; actions on the canvas (crop, resize, bg removal, page selection) dispatch structured tool executions back into the chat and lineage graph. |
+
+### 5.5.1 Multi-Family Dynamic Right Pane Studio Architecture
+
+The right pane is not a static preview container or an image-only viewer. It is a **context-aware, multi-family Interactive Studio** that dynamically mounts specialized studio components based on the active artifact's `kind`.
+
+```
++---------------------------------------------------------------------------------------------------+
+| Universal AI Workbench Workspace                                                                  |
++-----------------------------------+---------------------------------------------------------------+
+| Left Pane (40%): Chat Command     | Right Pane (60%): Dynamic Studio Canvas                       |
+| - Conversational prompt           | [Header: Title, Version, Kind, Download, Close]               |
+| - Multi-file upload dropzone      |                                                               |
+| - Stepped execution plan status   | Dynamic Studio View (Mounted based on artifact.kind):         |
+| - Inline artifact result cards    |  - kind == 'image':  Image Studio (Canvas, Crop, BgRemover)   |
+| - Follow-up suggestions           |  - kind == 'pdf':    PDF Studio (Page Grid, Reorder, Split)   |
+| - Token & latency metrics         |  - kind == 'sheet':  Data Studio (Sort/Filter Grid, Stats)    |
+|                                   |  - kind == 'text':   Document Studio (Reader, Diff Viewer)    |
++-----------------------------------+---------------------------------------------------------------+
+```
+
+#### 1. Image Studio Canvas (`kind: 'image'`)
+- **Interactive Canvas Surface**: Hardware-accelerated HTML5 canvas supporting smooth Pan (drag to move) and Zoom (mouse scroll wheel, pinch-to-zoom on touchpads, or zoom slider from $10\%$ to $500\%$).
+- **Visual Crop Box**: Draggable and resizable bounding box overlay with 8 corner/edge anchor handles. Supports aspect ratio locking (Freeform, 1:1 Square, 4:5 Portrait, 16:9 Landscape, 35x45mm Passport, 2x2in US Visa).
+- **Physical Unit Control Bar**:
+  - Live unit toggle: `px` $\leftrightarrow$ `cm` $\leftrightarrow$ `mm` $\leftrightarrow$ `in`.
+  - DPI selection dropdown: 72 DPI, 150 DPI, 300 DPI, 600 DPI.
+  - One-click Document Preset Buttons (Indian Passport, US Visa, Schengen, Stamp size).
+  - Live pixel resolution indicator: updates dynamically as physical units or DPI change.
+- **Background Removal Action Panel**:
+  - One-click **"Remove Background"** button with immediate processing state.
+  - Transparent checkerboard canvas mode vs Solid Color backfill picker (Hex / RGB / White / Light Blue).
+  - Before/After split slider to inspect edge matting quality.
+- **Canvas Action Toolbar**: Rotate 90° Clockwise, Flip Horizontal, Flip Vertical, Reset to Original, Save as New Version, and Download (PNG, JPEG, WEBP).
+
+#### 2. PDF Studio Canvas (`kind: 'pdf'`)
+- **Visual Page Thumbnail Grid**: Renders rendered thumbnails of every page in the document.
+- **Drag-and-Drop Page Reordering**: Users can reorder pages visually; dropping a page updates the sequence and enables a "Save Reordered PDF" action.
+- **Per-Page Controls**: Hover affordances on each thumbnail to rotate that individual page by 90° or mark it for deletion.
+- **Visual Page Range Splitter**: Users click individual thumbnails or click-and-drag across pages to select a split range (e.g. pages 2–5). A prominent "Extract Selected Pages" button triggers `pdf_split`.
+- **Integrated High-Resolution Page Reader**: Double-clicking any thumbnail opens a full-bleed, high-resolution reader with page navigation and text search.
+
+#### 3. Data & Spreadsheet Studio Canvas (`kind: 'sheet'`)
+- **Virtualized High-Performance Grid**: Renders thousands of rows from CSV and XLSX files smoothly without browser DOM slowdowns.
+- **Interactive Column Header Actions**:
+  - Click-to-sort: Toggle ascending / descending order by clicking any column header.
+  - Column filter: Instant text search / threshold filter per column.
+  - Type inference badges: Displays detected type (`number`, `string`, `date`, `boolean`) next to header.
+- **Top Metric Cards Summary Bar**: Instant calculation of Total Rows, Total Columns, File Size, Null/Empty Cells Count, and Numeric Column Averages.
+- **Export Toolbar**: One-click download as clean CSV, formatted XLSX, or structured JSON.
+
+#### 4. Document & Text Studio Canvas (`kind: 'text'` / `'document'`)
+- **Rich Document Reader**: Renders Markdown, TXT, and extracted DOCX content with clean typography, code block syntax highlighting, and table formatting.
+- **Side-by-Side Diff Comparison View**: When reviewing derived artifacts (e.g. summarized text, cleaned content, or rewritten documents), users can toggle the **Diff View** to see side-by-side original vs derived with highlighted additions (green) and deletions (red).
+- **Document Telemetry**: Word count, character count, estimated reading time, and heading outline navigation.
+- **Export & Copy**: One-click "Copy Clean Text", "Download Markdown", or "Print to PDF".
+
+---
+
+### 5.5.2 Bidirectional Synchronization Engine (Chat ↔ Right Pane)
+
+The application enforces continuous two-way synchronization between the conversational AI timeline and the interactive Right Pane Studio:
+
+1. **Chat to Studio Flow**:
+   - When the user asks a question or instructs the AI to process a file in chat, the AI chooses the appropriate tool, executes it on the backend, and emits an artifact result card.
+   - The UI automatically updates the `useArtifact` global state, setting `artifact.isVisible = true` and `artifact.kind = [image | pdf | sheet | text]`.
+   - The Right Pane mounts the specialized studio view and immediately loads the fresh signed Supabase Storage URL.
+
+2. **Studio to Chat Flow**:
+   - When the user performs an interactive physical edit directly in the Studio pane (e.g. adjusts the crop box to $35\times45\text{ mm}$, clicks "Remove Background", or reorders PDF pages), the Studio canvas exposes an **"Apply Changes"** or **"Ask AI to Transform"** button.
+   - Clicking this executes the corresponding backend tool, registers a new derived artifact with lineage pointing to the source artifact, and appends a confirmation event card into the conversational timeline.
 
 ## 5.6 Accounts, quotas, and settings
 
@@ -197,13 +343,15 @@ The count of 25–35 operations is a planning range. The launch list must be fin
 
 ## 6.1 Layout
 
-- Desktop: conversation history/sidebar, central chat timeline, composer, and contextual artifact preview surface where space permits.
-- Mobile: responsive single-column conversation; previews open in an accessible sheet or dedicated view without losing conversation context.
-- Composer supports text, multiple attachments, paste, drag-and-drop on compatible desktop browsers, and clear upload states.
-- Long-running tasks display progress and allow users to navigate away safely.
-- Results appear inline in the conversation; downloads are direct and accessible.
-- Use loading skeletons or step indicators instead of blank result areas.
-- Provide accessible focus states, keyboard navigation, meaningful labels, and reduced-motion support.
+- **Desktop Workspace (40/60 Split Command Center)**: 
+  - Left Pane (40% width): Collapsible conversation history sidebar, conversational chat timeline, multi-file attachment dropzone, stepped task execution indicators, and inline artifact result cards.
+  - Right Pane (60% width): Dynamic Studio Canvas (`<Artifact />`) that seamlessly mounts interactive workspaces according to `artifact.kind` (Image Studio, PDF Studio, Data Studio, Document Studio).
+- **Mobile Responsive Experience**:
+  - Full-width mobile chat timeline with a persistent bottom drawer / modal sheet toggle to flip into full-screen Dynamic Studio mode without losing conversational context.
+- **Composer Controls**: Supports natural language text prompts, multi-file attachments (up to 50MB per file), paste events, desktop drag-and-drop, and clear real-time upload progress indicators.
+- **Long-Running & Stepped Tasks**: Step-by-step progress cards showing real-time states (queued, running, verified, complete) with safe background persistence.
+- **Direct Previews and Downloads**: High-speed signed URLs from Supabase Storage for direct browser viewing and downloads.
+- **Accessibility & Polish**: Accessible focus states, keyboard shortcuts, screen reader labels, dark mode aesthetic, and reduced-motion animations.
 
 ## 6.2 Interaction principles
 
@@ -216,7 +364,7 @@ The count of 25–35 operations is a planning range. The launch list must be fin
 
 # 7\. Technical architecture
 
-Proposed baseline: Next.js + React + TypeScript for the responsive web app; Supabase Auth and PostgreSQL for identity and metadata; private object storage for bytes; a durable queue and separately deployed TypeScript worker for long-running jobs; a provider adapter for LLM calls; and isolated processing environments for untrusted parsers and native executables.
+Finalized baseline: Next.js 16 + React 19 + TypeScript for the responsive web app; Supabase PostgreSQL (via IPv4 Session Pooler) with Drizzle ORM for identity, task state machine, and lineage metadata; Supabase Storage (private `artifacts` bucket) for immutable originals and derived outputs with short-lived signed URLs; Google Gemini 2.5 Flash and Gemini 2.5 Pro as the primary AI model adapter via `@ai-sdk/google`; a controlled Zod-validated tool registry; and an interactive Dynamic Right Pane Studio Canvas.
 
 | **Layer**          | **Responsibility**                                                                   | **Design rule**                                                          |
 | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
@@ -401,17 +549,19 @@ Timeline assumes focused development and successful dependency validation. It is
 
 # 15\. Open decisions
 
-| **Decision**                  | **Recommended default**                                              | **When to finalize**                       |
+| **Decision**                  | **Recommended default**                                              | **Status / Final decision**                |
 | ----------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
 | Product name and brand        | Keep Universal AI Workbench as an internal placeholder               | Before public branding/domain work         |
-| Initial model provider        | Use one provider behind a stable adapter                             | After structured-plan and cost evaluations |
+| Initial model provider        | Google Gemini (Gemini 2.5 Flash / Pro via `@ai-sdk/google`)          | **Finalized & Implemented**                |
 | Queue/workflow technology     | Choose a durable queue with restart recovery and observable retries  | During Weeks 1–2 proof of concept          |
-| Storage choice                | Private object storage with short-lived authorized access            | During upload/security implementation      |
-| Maximum file sizes and quotas | Start conservative and configure per operation                       | After resource profiling                   |
-| Exact 25–35 tool list         | Select only tools with tested engines and clear user demand          | After Weeks 1–4 spike                      |
+| Storage choice                | Supabase Storage (Private `artifacts` bucket, signed URLs, 50MB max) | **Finalized & Implemented**                |
+| Maximum file sizes and quotas | Start conservative (50MB Supabase tier limit, per-tool limits)       | Profiled during tool development           |
+| Exact 25–35 tool list         | 28 core launch tools mapped across 5 families                        | **Finalized in Section 5.3.1**             |
+| Right Pane Studio Canvas      | Multi-family dynamic studio (Image, PDF, Data, Document)            | **Finalized in Section 5.5.1**             |
+| Physical Resizer & BG Remover | Real-world units (cm, mm, in, DPI), Visa presets, and Alpha matting  | **Finalized in Section 5.3.2**             |
 | Video URL sources             | Begin with one permitted, technically verified source workflow       | After API/terms feasibility review         |
 | Pricing                       | Instrument costs and beta usage before choosing a credit model       | After closed beta data                     |
-| Retention duration            | Set explicit defaults with user-facing disclosure                    | Before accepting real user files           |
+| Retention duration            | Set explicit defaults with user-facing disclosure                    | 30-day default retention policy            |
 | Launch jurisdictions          | Start with intended markets and obtain relevant legal/privacy review | Before public beta                         |
 
 # 16\. Risks and mitigations
