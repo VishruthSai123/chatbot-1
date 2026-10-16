@@ -56,13 +56,13 @@ const nextConfig: NextConfig = {
     incomingRequests: false,
   },
   outputFileTracingIncludes: {
-    "/*": [
+    "/api/chat": [
       "./node_modules/sharp/**/*",
       "./node_modules/@img/**/*",
       "./node_modules/@imgly/**/*",
       "./node_modules/onnxruntime-node/**/*",
     ],
-    "/api/**/*": [
+    "/api/tools/image": [
       "./node_modules/sharp/**/*",
       "./node_modules/@img/**/*",
       "./node_modules/@imgly/**/*",
