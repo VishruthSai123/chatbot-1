@@ -84,7 +84,10 @@ function PureMessages({
               addToolApprovalResponse={addToolApprovalResponse}
               chatId={chatId}
               isLoading={
-                status === "streaming" && messages.length - 1 === index
+                (status === "streaming" ||
+                  status === "submitted" ||
+                  Boolean(isLoading)) &&
+                messages.length - 1 === index
               }
               isReadonly={isReadonly}
               key={message.id}
@@ -103,9 +106,8 @@ function PureMessages({
             />
           ))}
 
-          {status === "submitted" && messages.at(-1)?.role !== "assistant" && (
-            <ThinkingMessage />
-          )}
+          {(status === "submitted" || status === "streaming") &&
+            messages.at(-1)?.role !== "assistant" && <ThinkingMessage />}
 
           <div
             className="min-h-[24px] min-w-[24px] shrink-0"

@@ -1,5 +1,6 @@
 "use client";
 import type { UseChatHelpers } from "@ai-sdk/react";
+import { Loader2 } from "lucide-react";
 import { useCallback } from "react";
 import type { Vote } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
@@ -25,14 +26,15 @@ import { Weather } from "./weather";
 
 function WaitingText() {
   const { waitingStatus } = useDataStream();
-  const waitingText = waitingStatus?.message ?? "Waiting...";
+  const waitingText = waitingStatus?.message ?? "Thinking...";
 
   return (
-    <div className="flex min-h-[calc(13px*1.65)] min-w-0 items-center text-[13px] leading-[1.65]">
+    <div className="flex min-h-[calc(13px*1.65)] min-w-0 items-center gap-2 text-[13px] leading-[1.65] text-muted-foreground">
+      <Loader2 className="size-3.5 animate-spin text-muted-foreground/80 shrink-0" />
       <Shimmer
         as="span"
-        className="font-medium whitespace-normal break-words"
-        duration={1}
+        className="font-medium whitespace-normal break-words text-foreground/80"
+        duration={1.2}
       >
         {waitingText}
       </Shimmer>
@@ -114,16 +116,18 @@ const PurePreviewMessage = ({
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
 
-  const hasAnyContent = message.parts?.some(
-    (part) =>
-      (part.type === "text" && part.text?.trim().length > 0) ||
-      (part.type === "reasoning" &&
-        "text" in part &&
-        part.text?.trim().length > 0) ||
-      part.type.startsWith("tool-") ||
-      (part as { type: string }).type === "error"
+  const hasAnyContent = Boolean(
+    message.parts?.some(
+      (part) =>
+        (part.type === "text" && Boolean(part.text?.trim().length)) ||
+        (part.type === "reasoning" &&
+          "text" in part &&
+          Boolean(part.text?.trim().length)) ||
+        part.type.startsWith("tool-") ||
+        (part as { type: string }).type === "error"
+    )
   );
-  const isThinking = isAssistant && isLoading && !hasAnyContent;
+  const isThinking = isAssistant && (isLoading || !hasAnyContent);
 
   const attachments = attachmentsFromMessage.length > 0 && (
     <div
@@ -398,11 +402,11 @@ const PurePreviewMessage = ({
 
       return (
         <div
-          className="w-[min(100%,450px)] flex items-center gap-2 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground"
+          className="w-[min(100%,450px)] flex items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
           key={toolCallId}
         >
-          <div className="size-2 rounded-full bg-sky-500 animate-pulse" />
-          Processing photo ({toolLabel})...
+          <Loader2 className="size-3.5 animate-spin text-sky-400 shrink-0" />
+          <span>Processing photo ({toolLabel})...</span>
         </div>
       );
     }
@@ -443,19 +447,20 @@ const PurePreviewMessage = ({
     />
   );
 
-  const content = isThinking ? (
-    <WaitingText />
-  ) : !hasAnyContent && isAssistant ? (
-    <div className="text-xs text-muted-foreground italic">
-      No response received. Please try again.
-    </div>
-  ) : (
-    <>
-      {attachments}
-      {parts}
-      {actions}
-    </>
-  );
+  const content =
+    isThinking || (isAssistant && isLoading) ? (
+      <WaitingText />
+    ) : !hasAnyContent && isAssistant ? (
+      <div className="text-xs text-muted-foreground italic flex items-center gap-1.5 py-1">
+        No response received. Please try again.
+      </div>
+    ) : (
+      <>
+        {attachments}
+        {parts}
+        {actions}
+      </>
+    );
 
   return (
     <div
