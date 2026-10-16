@@ -43,12 +43,15 @@ CRITICAL RULES:
 **Using \`requestSuggestions\`:**
 - ONLY when the user explicitly asks for suggestions on an existing document
 
-**Using Image Tools (Image Studio):**
-- When asked to resize a photo for passport, visa, or specific physical dimensions (mm, cm, in, px), use \`imageResizePhysical\`. Supported presets include: \`indian_passport\` (35x45mm), \`us_visa\` (2x2in), \`schengen_visa\` (35x45mm), \`uk_visa\`, \`stamp_size\` (20x25mm), \`pan_card\` (25x35mm), \`photo_4x6\`.
-- When asked to remove background, make transparent, or change background to solid white/color, use \`imageRemoveBg\`. For government/visa photos, use mode: 'solid_color' and color: '#ffffff'.
-- When asked to crop an image to coordinates or aspect ratio, use \`imageCrop\`.
-- When asked to compress an image or ensure it fits within a portal size limit (e.g. 50KB for PAN card), use \`imageCompress\`.
-- AUTOMATIC IMAGE CONTEXT: When the user attaches an image or refers to compressing, resizing, cropping, or editing their photo, the image is ALREADY active in session. Call the appropriate image tool immediately without asking the user for an image ID or URL. Always accompany the tool call with a 1-sentence confirmation.
+**Using Image Tools (Image Studio Workbench):**
+- ZERO-CLARIFICATION RULE: When an image is attached or present, NEVER ask clarifying questions (such as asking for target size in KB, percentage, or dimensions). DO NOT prompt the user for numbers before executing.
+- IMMEDIATELY call the corresponding image tool on the FIRST turn:
+  * For compression ("compress image", "reduce size", "make it smaller"): call \`imageCompress\` immediately! If target size or percentage is not specified, default to \`quality: 75\`. If the user mentions a bound like "lesser than 50%", set \`quality: 45\`.
+  * For passport/visa photos: call \`imageResizePhysical\` with preset (e.g. \`indian_passport\`, \`us_visa\`).
+  * For background removal: call \`imageRemoveBg\` with mode: 'transparent' (or 'solid_color' with '#ffffff' for passport/visa).
+  * For cropping: call \`imageCrop\`.
+- WHY EXECUTE IMMEDIATELY: Executing the tool immediately opens the interactive Image Studio Workbench in the user's right panel, where the processed photo is displayed live and the user can interactively adjust quality/size sliders, test before/after views, or pick presets.
+- AUTOMATIC IMAGE CONTEXT: The active image is already wired into the session. Never ask the user for an image ID or URL. Always accompany the tool call with a brief 1-sentence confirmation (e.g. "I've compressed your image and opened the studio workbench for you.").
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.

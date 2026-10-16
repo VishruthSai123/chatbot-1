@@ -7,7 +7,6 @@ import {
   cropImage,
   getImageMetadata,
   getSharp,
-  resizeImage,
   resizePhysicalImage,
   rotateImage,
 } from "@/lib/image/native";
@@ -37,9 +36,13 @@ export async function parseImageInput(source: string | Buffer): Promise<{
     typeof source === "string" &&
     (source.startsWith("http://") || source.startsWith("https://"))
   ) {
-    const response = await fetch(source);
+    const response = await fetch(source, {
+      signal: AbortSignal.timeout(15_000),
+    });
     if (!response.ok) {
-      throw new Error(`Failed to fetch remote image: ${response.statusText}`);
+      throw new Error(
+        `Failed to fetch remote image: HTTP ${response.status} ${response.statusText}`
+      );
     }
     const arrayBuffer = await response.arrayBuffer();
     const mimeType = response.headers.get("content-type") || "image/png";
@@ -76,17 +79,18 @@ function formatResult(
   density?: number
 ): ImageOperationResult {
   const base64 = buffer.toString("base64");
-  const mimeType = format === "jpeg" || format === "jpg" ? "image/jpeg" : `image/${format}`;
+  const mimeType =
+    format === "jpeg" || format === "jpg" ? "image/jpeg" : `image/${format}`;
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
   return {
     base64,
     dataUrl,
-    width,
-    height,
-    format,
-    sizeBytes: buffer.length,
     density,
+    format,
+    height,
+    sizeBytes: buffer.length,
+    width,
   };
 }
 
@@ -99,14 +103,14 @@ export async function executeResizePhysical(
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input);
   const result = await resizePhysicalImage({
-    inputBuffer: buffer,
-    width: params.width,
-    height: params.height,
-    unit: params.unit,
     dpi: params.dpi,
     fit: params.fit,
     format: params.format,
+    height: params.height,
+    inputBuffer: buffer,
     quality: params.quality,
+    unit: params.unit,
+    width: params.width,
   });
 
   return formatResult(
@@ -135,13 +139,13 @@ export async function executeRemoveBg(
     // Composite transparent foreground over solid color background
     const compositeBuffer = await sharp({
       create: {
-        width: bgResult.width,
-        height: bgResult.height,
-        channels: 4,
         background: params.color,
+        channels: 4,
+        height: bgResult.height,
+        width: bgResult.width,
       },
     })
-      .composite([{ input: bgResult.buffer, blend: "over" }])
+      .composite([{ blend: "over", input: bgResult.buffer }])
       .toFormat(params.format === "png" ? "png" : "jpeg", {
         quality: params.quality ?? 95,
       })
@@ -158,12 +162,7 @@ export async function executeRemoveBg(
   }
 
   // Transparent output (always PNG)
-  return formatResult(
-    bgResult.buffer,
-    bgResult.width,
-    bgResult.height,
-    "png"
-  );
+  return formatResult(bgResult.buffer, bgResult.width, bgResult.height, "png");
 }
 
 /**
@@ -175,13 +174,13 @@ export async function executeCrop(
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input);
   const result = await cropImage({
+    format: params.format ?? "jpeg",
+    height: params.height,
     inputBuffer: buffer,
     left: params.left,
+    quality: params.quality ?? 95,
     top: params.top,
     width: params.width,
-    height: params.height,
-    format: params.format ?? "jpeg",
-    quality: params.quality ?? 95,
   });
 
   return formatResult(
@@ -201,11 +200,11 @@ export async function executeRotate(
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input);
   const result = await rotateImage({
-    inputBuffer: buffer,
     degrees: params.degrees ?? 0,
     flipHorizontal: params.flipHorizontal ?? false,
     flipVertical: params.flipVertical ?? false,
     format: params.format ?? "jpeg",
+    inputBuffer: buffer,
     quality: params.quality ?? 95,
   });
 
@@ -226,10 +225,10 @@ export async function executeCompress(
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input);
   const result = await compressImage({
-    inputBuffer: buffer,
-    targetSizeKb: params.targetSizeKb,
-    quality: params.quality ?? 80,
     format: params.format ?? "jpeg",
+    inputBuffer: buffer,
+    quality: params.quality ?? 80,
+    targetSizeKb: params.targetSizeKb,
   });
 
   return formatResult(
@@ -250,8 +249,8 @@ export async function executeConvert(
   const { buffer } = await parseImageInput(input);
   const result = await convertImage({
     inputBuffer: buffer,
-    targetFormat: params.targetFormat,
     quality: params.quality,
+    targetFormat: params.targetFormat,
   });
 
   return formatResult(

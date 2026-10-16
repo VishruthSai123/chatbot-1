@@ -101,13 +101,15 @@ export function DocumentPreview({
 
   const document: Document | null = previewDocument
     ? previewDocument
-    : artifact.status === "streaming"
+    : ((artifact.documentId && artifact.documentId === result?.id) ||
+          artifact.status === "streaming") &&
+        artifact.content
       ? {
           content: artifact.content,
           createdAt: new Date(),
-          id: artifact.documentId,
-          kind: artifact.kind,
-          title: artifact.title,
+          id: artifact.documentId || result?.id || "doc",
+          kind: (artifact.kind || result?.kind || "text") as ArtifactKind,
+          title: artifact.title || result?.title || "Document",
           userId: "noop",
         }
       : null;

@@ -345,24 +345,40 @@ const PurePreviewMessage = ({
       type === "tool-imageCrop" ||
       type === "tool-imageCompress"
     ) {
-      const { toolCallId } = part as { toolCallId: string };
-      const output = (part as { output?: any }).output;
+      const { toolCallId, output } = part as {
+        toolCallId: string;
+        output?: any;
+      };
       const toolLabel =
         type === "tool-imageResizePhysical"
           ? "Resize Physical Photo"
           : type === "tool-imageRemoveBg"
-          ? "Remove Background"
-          : type === "tool-imageCrop"
-          ? "Crop Photo"
-          : "Compress Photo";
+            ? "Remove Background"
+            : type === "tool-imageCrop"
+              ? "Crop Photo"
+              : "Compress Photo";
 
-      if (output && "error" in output) {
+      const { state, errorText } = part as {
+        state?: string;
+        errorText?: string;
+      };
+
+      if (
+        state === "output-error" ||
+        errorText ||
+        (output && "error" in output)
+      ) {
+        const errorMsg =
+          errorText ||
+          (output && "error" in output
+            ? String(output.error)
+            : "An error occurred during photo processing.");
         return (
           <div
             className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
             key={toolCallId}
           >
-            Failed to process photo: {String(output.error)}
+            Failed to process photo: {errorMsg}
           </div>
         );
       }
@@ -378,11 +394,11 @@ const PurePreviewMessage = ({
                 title: toolLabel,
               }}
             />
-            {output.message && (
+            {output.message ? (
               <div className="text-xs text-muted-foreground px-1">
                 {output.message}
               </div>
-            )}
+            ) : null}
           </div>
         );
       }

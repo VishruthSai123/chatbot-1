@@ -12,7 +12,7 @@ export function DataStreamHandler() {
   const { dataStream, setDataStream } = useDataStream();
   const { mutate } = useSWRConfig();
 
-  const { artifact, setArtifact, setMetadata } = useArtifact();
+  const { setArtifact, setMetadata } = useArtifact();
 
   useEffect(() => {
     if (!dataStream?.length) {
@@ -60,6 +60,8 @@ export function DataStreamHandler() {
           case "data-kind":
             return {
               ...draftArtifact,
+              isVisible:
+                delta.data === "image" ? true : draftArtifact.isVisible,
               kind: delta.data,
               status: "streaming",
             };
@@ -82,7 +84,7 @@ export function DataStreamHandler() {
         }
       });
     }
-  }, [dataStream, setArtifact, setMetadata, artifact, setDataStream, mutate]);
+  }, [dataStream, setArtifact, setMetadata, setDataStream, mutate]);
 
   return null;
 }
