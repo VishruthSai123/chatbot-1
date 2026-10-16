@@ -1,0 +1,258 @@
+"use client";
+
+import { Download, SlidersHorizontal } from "lucide-react";
+import { useCallback } from "react";
+import { toast } from "sonner";
+import useSWR from "swr";
+import type { ImageToolMode } from "@/components/chat/artifact";
+import { useArtifact } from "@/hooks/use-artifact";
+import type { Document } from "@/lib/db/schema";
+import { cn, fetcher } from "@/lib/utils";
+
+export type ImageToolType =
+  | "tool-imageCompress"
+  | "tool-imageResizePhysical"
+  | "tool-imageCrop"
+  | "tool-imageRemoveBg";
+
+interface ImageToolCardProps {
+  isReadonly?: boolean;
+  output?: {
+    id?: string;
+    message?: string;
+    sizeKb?: number;
+    pixelDimensions?: string;
+    dimensions?: string;
+    dpi?: number;
+    mode?: string;
+    color?: string;
+    croppedDimensions?: string;
+    error?: string;
+  };
+  toolCallId: string;
+  toolType: ImageToolType;
+}
+
+const TOOL_CONFIG: Record<
+  ImageToolType,
+  {
+    label: string;
+    mode: ImageToolMode;
+    icon: string;
+  }
+> = {
+  "tool-imageCompress": {
+    icon: "🗜️",
+    label: "Compress Photo",
+    mode: "compress",
+  },
+  "tool-imageCrop": {
+    icon: "✂️",
+    label: "Crop Photo",
+    mode: "crop",
+  },
+  "tool-imageRemoveBg": {
+    icon: "✨",
+    label: "Remove Background",
+    mode: "remove_bg",
+  },
+  "tool-imageResizePhysical": {
+    icon: "📐",
+    label: "Resize Physical Photo",
+    mode: "resize",
+  },
+};
+
+export function ImageToolCard({
+  toolType,
+  toolCallId: _toolCallId,
+  output,
+  isReadonly,
+}: ImageToolCardProps) {
+  const { setArtifact } = useArtifact();
+  const config = TOOL_CONFIG[toolType] ?? {
+    icon: "🖼️",
+    label: "Image Processing",
+    mode: "compress" as ImageToolMode,
+  };
+
+  const documentId = output?.id;
+
+  const { data: documents } = useSWR<Document[]>(
+    documentId
+      ? `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`
+      : null,
+    fetcher
+  );
+
+  const docRecord = documents?.[0];
+  const imageBase64 = docRecord?.content;
+
+  const handleOpenInspector = useCallback(() => {
+    if (isReadonly) {
+      toast.error("Viewing documents in shared chats is not supported.");
+      return;
+    }
+
+    if (!documentId) {
+      return;
+    }
+
+    setArtifact((current) => ({
+      ...current,
+      content: imageBase64 || current.content,
+      documentId,
+      isVisible: true,
+      kind: "image",
+      status: "idle",
+      title: docRecord?.title || config.label,
+      toolMode: config.mode,
+    }));
+  }, [
+    isReadonly,
+    documentId,
+    setArtifact,
+    imageBase64,
+    docRecord?.title,
+    config.label,
+    config.mode,
+  ]);
+
+  const handleDownload = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!imageBase64) {
+        toast.error("Image data is still loading...");
+        return;
+      }
+
+      const mime = config.mode === "remove_bg" ? "image/png" : "image/jpeg";
+      const ext = config.mode === "remove_bg" ? "png" : "jpg";
+      const link = window.document.createElement("a");
+      link.href = imageBase64.startsWith("data:")
+        ? imageBase64
+        : `data:${mime};base64,${imageBase64}`;
+      link.download = `${config.mode}-${Date.now()}.${ext}`;
+      link.click();
+      toast.success("Download started");
+    },
+    [imageBase64, config.mode]
+  );
+
+  return (
+    <div
+      className={cn(
+        "group relative flex w-full max-w-[480px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90"
+      )}
+    >
+      {/* Top Header Row */}
+      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/40">
+        <div className="flex items-center gap-2">
+          <span className="text-sm select-none">{config.icon}</span>
+          <span className="text-xs font-semibold text-foreground tracking-tight">
+            {config.label}
+          </span>
+        </div>
+
+        {output?.sizeKb ? (
+          <span className="rounded bg-muted px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+            {output.sizeKb} KB
+          </span>
+        ) : null}
+      </div>
+
+      {/* Middle Body Row */}
+      <div className="flex items-start gap-3 py-2.5">
+        {/* Crisp Thumbnail */}
+        {/* Crisp Thumbnail Button */}
+        <button
+          className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-neutral-900 shadow-inner cursor-pointer"
+          onClick={handleOpenInspector}
+          type="button"
+        >
+          {imageBase64 ? (
+            // biome-ignore lint/performance/noImgElement: dynamic base64 preview
+            <img
+              alt={config.label}
+              className="size-full object-cover"
+              src={
+                imageBase64.startsWith("data:")
+                  ? imageBase64
+                  : `data:image/png;base64,${imageBase64}`
+              }
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-xs text-muted-foreground animate-pulse">
+              ...
+            </div>
+          )}
+        </button>
+
+        {/* Details & Telemetry */}
+        <div className="flex flex-1 flex-col justify-center gap-1 min-w-0">
+          <div className="truncate text-xs font-medium text-foreground">
+            {docRecord?.title || "Processed Photo"}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+            {output?.pixelDimensions ? (
+              <span>{output.pixelDimensions}</span>
+            ) : null}
+            {output?.croppedDimensions ? (
+              <span>{output.croppedDimensions}</span>
+            ) : null}
+            {output?.dimensions ? (
+              <>
+                <span>•</span>
+                <span>{output.dimensions}</span>
+              </>
+            ) : null}
+            {output?.dpi ? (
+              <>
+                <span>•</span>
+                <span>{output.dpi} DPI</span>
+              </>
+            ) : null}
+            {output?.mode ? (
+              <>
+                <span>•</span>
+                <span className="capitalize">
+                  {output.mode.replace("_", " ")}
+                </span>
+              </>
+            ) : null}
+          </div>
+
+          {output?.message ? (
+            <p className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/90">
+              {output.message}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Action Footer */}
+      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+        <button
+          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          onClick={handleDownload}
+          title="Download processed image"
+          type="button"
+        >
+          <Download className="size-3.5" />
+          Download
+        </button>
+
+        <button
+          className="inline-flex items-center gap-1.5 rounded-md bg-foreground/5 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors cursor-pointer border border-border/50"
+          onClick={handleOpenInspector}
+          title="Open focused controls in right pane"
+          type="button"
+        >
+          <SlidersHorizontal className="size-3.5" />
+          Open Controls
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 import type { InferUITool, UIMessage } from "ai";
 import { z } from "zod";
-import type { ArtifactKind } from "@/components/chat/artifact";
+import type { ArtifactKind, ImageToolMode } from "@/components/chat/artifact";
 import type { createDocument } from "./ai/tools/create-document";
 import type { getWeather } from "./ai/tools/get-weather";
 import type {
@@ -64,6 +64,7 @@ export type CustomUIDataTypes = {
   finish: null;
   "chat-title": string;
   "waiting-status": WaitingStatusData;
+  imageToolMode?: ImageToolMode;
 };
 
 export type ChatMessage = UIMessage<

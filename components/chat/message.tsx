@@ -17,6 +17,7 @@ import { useDataStream } from "./data-stream-provider";
 import { DocumentToolResult } from "./document";
 import { DocumentPreview } from "./document-preview";
 import { SparklesIcon } from "./icons";
+import { ImageToolCard, type ImageToolType } from "./image-tool-card";
 import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
 import { PreviewAttachment } from "./preview-attachment";
@@ -385,21 +386,13 @@ const PurePreviewMessage = ({
 
       if (output?.id) {
         return (
-          <div className="w-[min(100%,450px)] space-y-2" key={toolCallId}>
-            <DocumentPreview
-              isReadonly={isReadonly}
-              result={{
-                id: output.id,
-                kind: "image",
-                title: toolLabel,
-              }}
-            />
-            {output.message ? (
-              <div className="text-xs text-muted-foreground px-1">
-                {output.message}
-              </div>
-            ) : null}
-          </div>
+          <ImageToolCard
+            isReadonly={isReadonly}
+            key={toolCallId}
+            output={output}
+            toolCallId={toolCallId}
+            toolType={type as ImageToolType}
+          />
         );
       }
 

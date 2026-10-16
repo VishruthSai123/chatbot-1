@@ -66,6 +66,12 @@ export function DataStreamHandler() {
               status: "streaming",
             };
 
+          case "data-imageToolMode":
+            return {
+              ...draftArtifact,
+              toolMode: delta.data,
+            };
+
           case "data-clear":
             return {
               ...draftArtifact,

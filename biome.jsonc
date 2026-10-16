@@ -49,7 +49,8 @@
       },
       "performance": {
         "noBarrelFile": "off",
-        "useTopLevelRegex": "off"
+        "useTopLevelRegex": "off",
+        "noJsxPropsBind": "off"
       }
     }
   }

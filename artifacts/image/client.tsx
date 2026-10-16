@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { Artifact } from "@/components/chat/create-artifact";
 import { CopyIcon, RedoIcon, UndoIcon } from "@/components/chat/icons";
-import { ImageStudioCanvas } from "@/components/chat/image-studio-canvas";
+import { ImageWorkbench } from "@/components/chat/image/image-workbench";
 
 export const imageArtifact = new Artifact({
   actions: [
@@ -41,15 +41,17 @@ export const imageArtifact = new Artifact({
           viewBox="0 0 24 24"
         >
           <path
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
           />
         </svg>
       ),
       onClick: ({ content }) => {
-        if (!content) return;
+        if (!content) {
+          return;
+        }
         const link = document.createElement("a");
         link.href = content.startsWith("data:")
           ? content
@@ -63,7 +65,9 @@ export const imageArtifact = new Artifact({
       description: "Copy image to clipboard",
       icon: <CopyIcon size={18} />,
       onClick: ({ content }) => {
-        if (!content) return;
+        if (!content) {
+          return;
+        }
         const img = new Image();
         img.src = content.startsWith("data:")
           ? content
@@ -88,14 +92,15 @@ export const imageArtifact = new Artifact({
     },
   ],
   content: ({ title, content, isInline, onSaveContent }) => (
-    <ImageStudioCanvas
-      title={title}
+    <ImageWorkbench
       content={content}
       isInline={isInline}
       onSaveContent={onSaveContent}
+      title={title}
     />
   ),
-  description: "Native Image Studio with hardware-accelerated processing and neural background removal",
+  description:
+    "Native Image Workbench with dedicated contextual inspectors and neural background removal",
   kind: "image",
   onStreamPart: ({ streamPart, setArtifact }) => {
     if (streamPart.type === "data-imageDelta") {
@@ -104,6 +109,12 @@ export const imageArtifact = new Artifact({
         content: streamPart.data,
         isVisible: true,
         status: "idle",
+      }));
+    }
+    if ((streamPart as any).type === "data-imageToolMode") {
+      setArtifact((draftArtifact) => ({
+        ...draftArtifact,
+        toolMode: (streamPart as any).data,
       }));
     }
   },
@@ -117,13 +128,13 @@ export const imageArtifact = new Artifact({
       ),
       onClick: ({ sendMessage }) => {
         sendMessage({
-          role: "user",
           parts: [
             {
-              type: "text",
               text: "Resize this image to Indian Passport standard (35x45 mm at 300 DPI)",
+              type: "text",
             },
           ],
+          role: "user",
         });
       },
     },
@@ -136,13 +147,13 @@ export const imageArtifact = new Artifact({
       ),
       onClick: ({ sendMessage }) => {
         sendMessage({
-          role: "user",
           parts: [
             {
-              type: "text",
               text: "Resize this image to US Visa specification (2x2 inches at 300 DPI)",
+              type: "text",
             },
           ],
+          role: "user",
         });
       },
     },
@@ -155,13 +166,13 @@ export const imageArtifact = new Artifact({
       ),
       onClick: ({ sendMessage }) => {
         sendMessage({
-          role: "user",
           parts: [
             {
-              type: "text",
               text: "Remove the background of this image and make it transparent",
+              type: "text",
             },
           ],
+          role: "user",
         });
       },
     },

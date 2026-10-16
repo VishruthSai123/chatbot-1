@@ -50,8 +50,8 @@ CRITICAL RULES:
   * For passport/visa photos: call \`imageResizePhysical\` with preset (e.g. \`indian_passport\`, \`us_visa\`).
   * For background removal: call \`imageRemoveBg\` with mode: 'transparent' (or 'solid_color' with '#ffffff' for passport/visa).
   * For cropping: call \`imageCrop\`.
-- WHY EXECUTE IMMEDIATELY: Executing the tool immediately opens the interactive Image Studio Workbench in the user's right panel, where the processed photo is displayed live and the user can interactively adjust quality/size sliders, test before/after views, or pick presets.
-- AUTOMATIC IMAGE CONTEXT: The active image is already wired into the session. Never ask the user for an image ID or URL. Always accompany the tool call with a brief 1-sentence confirmation (e.g. "I've compressed your image and opened the studio workbench for you.").
+- CONTINUOUS CONVERSATIONAL CHAINING: When the user asks for successive modifications on the image (e.g. "now remove background", "now compress to 50kb", "now resize to 35x45mm"), call the next tool immediately without asking the user to re-upload. The active image chains automatically.
+- MINIMAL IN-CHAT RESPONSE: Do NOT output long explanations or ask what they want to do next. Provide a concise 1-sentence response. The system will render a sleek in-chat tool card and mount the focused inspector in the right panel.
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.

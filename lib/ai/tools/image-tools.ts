@@ -59,28 +59,56 @@ async function resolveImageSource(
     }
   }
 
-  // 3. Fall back to the most recent user message's image attachment if chatId is provided
+  // 3. Fall back to the most recent image in the chat (either from previous tool output or attachment)
   if (chatId) {
     try {
       const messages = await getMessagesByChatId({ id: chatId });
+      let foundOutputDocId: string | undefined;
+      let foundAttachmentUrl: { url: string; name?: string } | undefined;
+
       for (let i = messages.length - 1; i >= 0; i -= 1) {
         const msg = messages[i];
         if (Array.isArray(msg.parts)) {
           for (const part of msg.parts as any[]) {
+            if (part.type?.startsWith("tool-image") && part.output?.id) {
+              foundOutputDocId = part.output.id;
+              break;
+            }
             if (
+              !foundAttachmentUrl &&
               (part.type === "file" || part.type === "image") &&
               (part.url || part.data)
             ) {
-              const url = part.url || part.data;
-              const docId = generateUUID();
-              return {
-                documentId: docId,
-                source: url,
-                title: part.name || "Attached Photo",
+              foundAttachmentUrl = {
+                name: part.name,
+                url: part.url || part.data,
               };
             }
           }
         }
+        if (foundOutputDocId) {
+          break;
+        }
+      }
+
+      if (foundOutputDocId) {
+        const doc = await getDocumentById({ id: foundOutputDocId });
+        if (doc?.content) {
+          return {
+            documentId: doc.id,
+            source: doc.content,
+            title: doc.title,
+          };
+        }
+      }
+
+      if (foundAttachmentUrl) {
+        const docId = generateUUID();
+        return {
+          documentId: docId,
+          source: foundAttachmentUrl.url,
+          title: foundAttachmentUrl.name || "Attached Photo",
+        };
       }
     } catch (err) {
       console.warn("Failed to retrieve chat messages for image fallback:", err);
@@ -191,6 +219,11 @@ export const imageResizePhysical = ({
           transient: true,
           type: "data-title",
         });
+        dataStream.write({
+          data: "resize",
+          transient: true,
+          type: "data-imageToolMode",
+        });
         dataStream.write({ data: null, transient: true, type: "data-clear" });
         dataStream.write({
           data: result.base64,
@@ -206,6 +239,7 @@ export const imageResizePhysical = ({
           message: `Successfully resized image to ${finalWidth}×${finalHeight} ${finalUnit} (${result.width}×${result.height} px @ ${finalDpi} DPI).`,
           pixelDimensions: `${result.width}x${result.height} px`,
           sizeKb: Math.round(result.sizeBytes / 1024),
+          toolMode: "resize",
         };
       } catch (err: any) {
         console.error("Resize tool execution error:", err);
@@ -312,6 +346,11 @@ export const imageRemoveBg = ({
           transient: true,
           type: "data-title",
         });
+        dataStream.write({
+          data: "remove_bg",
+          transient: true,
+          type: "data-imageToolMode",
+        });
         dataStream.write({ data: null, transient: true, type: "data-clear" });
         dataStream.write({
           data: result.base64,
@@ -329,6 +368,7 @@ export const imageRemoveBg = ({
               : "Background removed with transparent alpha cutout.",
           mode,
           sizeKb: Math.round(result.sizeBytes / 1024),
+          toolMode: "remove_bg",
         };
       } catch (err: any) {
         console.error("RemoveBg tool execution error:", err);
@@ -395,6 +435,11 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
           transient: true,
           type: "data-title",
         });
+        dataStream.write({
+          data: "crop",
+          transient: true,
+          type: "data-imageToolMode",
+        });
         dataStream.write({ data: null, transient: true, type: "data-clear" });
         dataStream.write({
           data: result.base64,
@@ -407,6 +452,7 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
           croppedDimensions: `${result.width}x${result.height} px`,
           id: resolved.documentId,
           message: `Image cropped to ${result.width}×${result.height} px.`,
+          toolMode: "crop",
         };
       } catch (err: any) {
         console.error("Crop tool execution error:", err);
@@ -471,6 +517,11 @@ export const imageCompress = ({
           transient: true,
           type: "data-title",
         });
+        dataStream.write({
+          data: "compress",
+          transient: true,
+          type: "data-imageToolMode",
+        });
         dataStream.write({ data: null, transient: true, type: "data-clear" });
         dataStream.write({
           data: result.base64,
@@ -484,6 +535,7 @@ export const imageCompress = ({
           id: resolved.documentId,
           message: `Image compressed to ${finalSizeKb} KB.`,
           sizeKb: finalSizeKb,
+          toolMode: "compress",
         };
       } catch (err: any) {
         console.error("Compress tool execution error:", err);
