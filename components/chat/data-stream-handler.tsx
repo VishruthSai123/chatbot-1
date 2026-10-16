@@ -27,17 +27,14 @@ export function DataStreamHandler() {
         mutate(unstable_serialize(getChatHistoryPaginationKey));
         continue;
       }
-      const artifactDefinition = artifactDefinitions.find(
-        (currentArtifactDefinition) =>
-          currentArtifactDefinition.kind === artifact.kind
-      );
-
-      if (artifactDefinition?.onStreamPart) {
-        artifactDefinition.onStreamPart({
-          setArtifact,
-          setMetadata,
-          streamPart: delta,
-        });
+      for (const def of artifactDefinitions) {
+        if (def.onStreamPart) {
+          def.onStreamPart({
+            setArtifact,
+            setMetadata,
+            streamPart: delta,
+          });
+        }
       }
 
       setArtifact((draftArtifact) => {

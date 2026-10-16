@@ -119,7 +119,8 @@ const PurePreviewMessage = ({
       (part.type === "reasoning" &&
         "text" in part &&
         part.text?.trim().length > 0) ||
-      part.type.startsWith("tool-")
+      part.type.startsWith("tool-") ||
+      (part as { type: string }).type === "error"
   );
   const isThinking = isAssistant && isLoading && !hasAnyContent;
 
@@ -338,6 +339,87 @@ const PurePreviewMessage = ({
       );
     }
 
+    if (
+      type === "tool-imageResizePhysical" ||
+      type === "tool-imageRemoveBg" ||
+      type === "tool-imageCrop" ||
+      type === "tool-imageCompress"
+    ) {
+      const { toolCallId } = part as { toolCallId: string };
+      const output = (part as { output?: any }).output;
+      const toolLabel =
+        type === "tool-imageResizePhysical"
+          ? "Resize Physical Photo"
+          : type === "tool-imageRemoveBg"
+          ? "Remove Background"
+          : type === "tool-imageCrop"
+          ? "Crop Photo"
+          : "Compress Photo";
+
+      if (output && "error" in output) {
+        return (
+          <div
+            className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            key={toolCallId}
+          >
+            Failed to process photo: {String(output.error)}
+          </div>
+        );
+      }
+
+      if (output?.id) {
+        return (
+          <div className="w-[min(100%,450px)] space-y-2" key={toolCallId}>
+            <DocumentPreview
+              isReadonly={isReadonly}
+              result={{
+                id: output.id,
+                kind: "image",
+                title: toolLabel,
+              }}
+            />
+            {output.message && (
+              <div className="text-xs text-muted-foreground px-1">
+                {output.message}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className="w-[min(100%,450px)] flex items-center gap-2 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground"
+          key={toolCallId}
+        >
+          <div className="size-2 rounded-full bg-sky-500 animate-pulse" />
+          Processing photo ({toolLabel})...
+        </div>
+      );
+    }
+
+    if ((type as string) === "error") {
+      const err = part as { errorText?: string; error?: string };
+      const messageText =
+        err.errorText ||
+        err.error ||
+        "An error occurred during response generation.";
+
+      return (
+        <div
+          className="w-[min(100%,500px)] rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive flex flex-col gap-1 shadow-sm"
+          key={key}
+        >
+          <div className="font-semibold flex items-center gap-1.5">
+            <span>⚠ AI Response Interrupted</span>
+          </div>
+          <div className="text-destructive/90 leading-relaxed break-words">
+            {messageText}
+          </div>
+        </div>
+      );
+    }
+
     return null;
   });
 
@@ -354,6 +436,10 @@ const PurePreviewMessage = ({
 
   const content = isThinking ? (
     <WaitingText />
+  ) : !hasAnyContent && isAssistant ? (
+    <div className="text-xs text-muted-foreground italic">
+      No response received. Please try again.
+    </div>
   ) : (
     <>
       {attachments}

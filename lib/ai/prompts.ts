@@ -48,6 +48,7 @@ CRITICAL RULES:
 - When asked to remove background, make transparent, or change background to solid white/color, use \`imageRemoveBg\`. For government/visa photos, use mode: 'solid_color' and color: '#ffffff'.
 - When asked to crop an image to coordinates or aspect ratio, use \`imageCrop\`.
 - When asked to compress an image or ensure it fits within a portal size limit (e.g. 50KB for PAN card), use \`imageCompress\`.
+- AUTOMATIC IMAGE CONTEXT: When the user attaches an image or refers to compressing, resizing, cropping, or editing their photo, the image is ALREADY active in session. Call the appropriate image tool immediately without asking the user for an image ID or URL. Always accompany the tool call with a 1-sentence confirmation.
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.

@@ -301,7 +301,8 @@ export async function POST(request: Request) {
           onEnd() {
             stopWaitingStatus();
           },
-          onError() {
+          onError({ error }) {
+            console.error("streamText onError in route:", error);
             stopWaitingStatus();
           },
           providerOptions: {
@@ -315,7 +316,9 @@ export async function POST(request: Request) {
           stopWhen: isStepCount(5),
           telemetry: {
             functionId: "stream-text",
-            isEnabled: isProductionEnvironment,
+            isEnabled:
+              isProductionEnvironment &&
+              Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT),
           },
           tools: {
             createDocument: createDocument({
@@ -419,6 +422,7 @@ export async function POST(request: Request) {
         }
       },
       onError: (error) => {
+        console.error("createUIMessageStream onError:", error);
         if (
           error instanceof Error &&
           error.message?.includes(
@@ -427,7 +431,16 @@ export async function POST(request: Request) {
         ) {
           return "AI Gateway requires a valid credit card on file to service requests. Please visit https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card to add a card and unlock your free credits.";
         }
-        return "Oops, an error occurred!";
+        if (
+          error instanceof Error &&
+          error.message?.includes("Google Generative AI API key is missing")
+        ) {
+          return "Google Generative AI API key is missing. Please configure GOOGLE_GENERATIVE_AI_API_KEY in your Vercel Project Environment Variables.";
+        }
+        if (error instanceof Error && error.message) {
+          return error.message;
+        }
+        return "An error occurred while communicating with the AI model.";
       },
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
     });
