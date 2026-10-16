@@ -221,6 +221,10 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    optionalDependencies:
+      '@img/sharp-linux-x64':
+        specifier: ^0.35.5
+        version: 0.35.5
     devDependencies:
       '@biomejs/biome':
         specifier: 2.5.2
