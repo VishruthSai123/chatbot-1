@@ -91,10 +91,11 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const dragStartYRef = useRef<number | null>(null);
 
   const handleDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
     dragStartYRef.current = e.clientY;
     setIsDragging(true);
     try {
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
@@ -104,6 +105,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     if (dragStartYRef.current === null) {
       return;
     }
+    e.preventDefault();
     const deltaY = e.clientY - dragStartYRef.current;
     if (deltaY > 0) {
       setDragOffsetY(deltaY);
@@ -114,16 +116,17 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     if (dragStartYRef.current === null) {
       return;
     }
+    e.preventDefault();
     const deltaY = e.clientY - dragStartYRef.current;
     dragStartYRef.current = null;
     setIsDragging(false);
 
-    if (deltaY > 35) {
+    if (deltaY > 30) {
       setIsInspectorOpen(false);
     }
     setDragOffsetY(0);
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
@@ -133,32 +136,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     dragStartYRef.current = null;
     setIsDragging(false);
     setDragOffsetY(0);
-  }, []);
-
-  const dockStartYRef = useRef<number | null>(null);
-  const handleDockPointerDown = useCallback((e: React.PointerEvent) => {
-    dockStartYRef.current = e.clientY;
-    try {
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // Ignore
-    }
-  }, []);
-
-  const handleDockPointerUp = useCallback((e: React.PointerEvent) => {
-    if (dockStartYRef.current === null) {
-      return;
-    }
-    const deltaY = e.clientY - dockStartYRef.current;
-    dockStartYRef.current = null;
-    if (deltaY < -20) {
-      setIsInspectorOpen(true);
-    }
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // Ignore
-    }
   }, []);
 
   // ─── Image State ─────────────────────────────────────────────────────────────
@@ -694,44 +671,34 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </div>
           )}
 
-          {/* Floating Bottom Pill Navbar (Visible when inspector is minimized) */}
+          {/* Floating Bottom Pill Navbar (Fixed, 50% corner radius, icons only, no pills) */}
           {!isInspectorOpen && (
-            // biome-ignore lint/a11y/noStaticElementInteractions: bottom dock gesture
-            // biome-ignore lint/a11y/noNoninteractiveElementInteractions: bottom dock gesture
-            // biome-ignore lint/a11y/useKeyWithClickEvents: bottom dock gesture
-            <div
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 rounded-2xl border border-border/80 bg-card/95 px-3 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-black/10 animate-in fade-in slide-in-from-bottom-3 duration-200 cursor-pointer select-none"
-              onClick={() => setIsInspectorOpen(true)}
-              onPointerDown={handleDockPointerDown}
-              onPointerUp={handleDockPointerUp}
-            >
-              {/* Drag Up Handle Indicator */}
-              <div className="w-8 h-1 rounded-full bg-muted-foreground/30 hover:bg-muted-foreground/50 transition-colors mb-0.5" />
-              <div className="flex items-center gap-1">
-                {TOOL_MODES.map((mode) => {
-                  const isActive = activeToolMode === mode.key;
-                  return (
-                    <button
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
-                        isActive
-                          ? "bg-foreground text-background shadow-xs font-semibold"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                      key={mode.key}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToolModeChange(mode.key);
-                        setIsInspectorOpen(true);
-                      }}
-                      type="button"
-                    >
-                      <span className="text-sm select-none">{mode.icon}</span>
-                      <span className="text-xs">{mode.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center gap-2 rounded-full border border-border/80 bg-card/95 px-3 py-2 shadow-2xl backdrop-blur-xl ring-1 ring-black/10 max-w-[calc(100vw-32px)] w-auto select-none animate-in fade-in slide-in-from-bottom-3 duration-200">
+              {TOOL_MODES.map((mode) => {
+                const isActive = activeToolMode === mode.key;
+                return (
+                  <button
+                    aria-label={mode.label}
+                    className={cn(
+                      "size-10 sm:size-11 rounded-full flex items-center justify-center transition-all cursor-pointer",
+                      isActive
+                        ? "bg-foreground text-background shadow-sm scale-105"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
+                    )}
+                    key={mode.key}
+                    onClick={() => {
+                      handleToolModeChange(mode.key);
+                      setIsInspectorOpen(true);
+                    }}
+                    title={mode.label}
+                    type="button"
+                  >
+                    <span className="text-lg select-none leading-none">
+                      {mode.icon}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -740,7 +707,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         <div
           className={cn(
             // Mobile: Bottom Sheet with rounded top edges, border, backdrop blur, shadow, transform
-            "absolute inset-x-0 bottom-0 z-30 rounded-t-[28px] border-t border-x border-border/70 bg-card/95 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-300 ease-out",
+            "absolute inset-x-0 bottom-0 z-30 rounded-t-[28px] border-t border-x border-border/70 bg-card/95 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-300 ease-out overscroll-contain",
             // Desktop: Sidebar on the right
             "md:relative md:inset-auto md:w-80 lg:w-84 md:rounded-none md:border-t-0 md:border-x-0 md:border-l md:border-border/60 md:bg-card/60 md:shadow-none",
             isInspectorOpen
@@ -755,20 +722,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             transition: isDragging ? "none" : undefined,
           }}
         >
-          {/* Top Drag Handle (Mobile only - allows dragging down to minimize) */}
+          {/* Mobile Sheet Header with Tool Name and Exact Down Icon Button */}
           <div
-            className="flex md:hidden flex-col items-center pt-2.5 pb-1 cursor-grab active:cursor-grabbing touch-none select-none shrink-0"
-            onPointerCancel={handleDragCancel}
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-          >
-            <div className="w-12 h-1.5 rounded-full bg-muted-foreground/30 hover:bg-muted-foreground/50 transition-colors" />
-          </div>
-
-          {/* Mobile Sheet Header with Tool Name and Minimize Action */}
-          <div
-            className="flex md:hidden items-center justify-between px-4 py-1.5 border-b border-border/40 shrink-0 cursor-grab active:cursor-grabbing select-none"
+            className="flex md:hidden items-center justify-between px-4 py-3 border-b border-border/40 shrink-0 cursor-grab active:cursor-grabbing select-none touch-none overscroll-contain"
             onPointerCancel={handleDragCancel}
             onPointerDown={handleDragStart}
             onPointerMove={handleDragMove}
@@ -783,15 +739,16 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               </span>
             </div>
             <button
-              className="flex items-center gap-1 rounded-full bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              aria-label="Minimize"
+              className="size-8 rounded-full flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer border border-border/40"
               onClick={(e) => {
                 e.stopPropagation();
                 setIsInspectorOpen(false);
               }}
+              title="Minimize"
               type="button"
             >
-              <span>Minimize</span>
-              <ChevronDown className="size-3.5" />
+              <ChevronDown className="size-4" />
             </button>
           </div>
 
@@ -806,7 +763,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           </div>
 
           {/* Scrollable Inspector Body */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
             {activeToolMode === "compress" && (
               <CompressionInspector
                 documentId={documentId || artifact.documentId}

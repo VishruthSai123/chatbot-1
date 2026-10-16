@@ -325,9 +325,9 @@ export function ImageToolCard({
       ) : null}
 
       {/* Action Footer */}
-      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+      <div className="flex flex-wrap items-center justify-end gap-1.5 pt-2 border-t border-border/40">
         <button
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           onClick={handleRestore}
           title="Restore this image version to the canvas workbench"
           type="button"
@@ -337,7 +337,7 @@ export function ImageToolCard({
         </button>
 
         <button
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           onClick={handleDownload}
           title="Download processed image"
           type="button"
@@ -347,13 +347,13 @@ export function ImageToolCard({
         </button>
 
         <button
-          className="inline-flex items-center gap-1.5 rounded-md bg-foreground/5 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors cursor-pointer border border-border/50"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/5 px-3 py-1 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors cursor-pointer border border-border/50"
           onClick={handleOpenInspector}
-          title="Open focused controls in right pane"
+          title="Edit image in studio"
           type="button"
         >
           <SlidersHorizontal className="size-3.5" />
-          Open Controls
+          Edit
         </button>
       </div>
 

@@ -162,12 +162,12 @@ export const ResizerInspector = memo(function InnerResizerInspector({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label
-              className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+              className="text-xs font-medium text-foreground block"
               htmlFor="preset-select"
             >
-              Document Preset
+              Document preset
             </label>
-            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5">
+            <span className="text-xs font-medium text-muted-foreground rounded bg-muted/60 px-2 py-0.5 tabular-nums">
               {width}×{height} {unit}
             </span>
           </div>
@@ -205,16 +205,16 @@ export const ResizerInspector = memo(function InnerResizerInspector({
 
         {/* Dimensions & Unit */}
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Dimensions & Unit
+          <div className="text-xs font-medium text-foreground">
+            Dimensions & unit
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
-                W
+              <span className="text-xs font-medium text-muted-foreground block mb-1">
+                Width
               </span>
               <input
-                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
+                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs text-foreground tabular-nums focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
                 min="1"
                 onChange={(e) => {
                   setWidth(Number.parseFloat(e.target.value) || 0);
@@ -226,11 +226,11 @@ export const ResizerInspector = memo(function InnerResizerInspector({
               />
             </div>
             <div>
-              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
-                H
+              <span className="text-xs font-medium text-muted-foreground block mb-1">
+                Height
               </span>
               <input
-                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
+                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs text-foreground tabular-nums focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
                 min="1"
                 onChange={(e) => {
                   setHeight(Number.parseFloat(e.target.value) || 0);
@@ -242,12 +242,12 @@ export const ResizerInspector = memo(function InnerResizerInspector({
               />
             </div>
             <div>
-              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
-                UNIT
+              <span className="text-xs font-medium text-muted-foreground block mb-1">
+                Unit
               </span>
               <div className="relative">
                 <select
-                  className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-2 py-1.5 pr-6 text-xs font-mono text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
+                  className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-2 py-1.5 pr-6 text-xs text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
                   onChange={(e) => {
                     setUnit(e.target.value as PhysicalUnit);
                     setSelectedPreset("custom");
@@ -260,7 +260,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
               </div>
             </div>
           </div>
@@ -268,16 +268,14 @@ export const ResizerInspector = memo(function InnerResizerInspector({
 
         {/* Resolution (DPI) Segmented Bar */}
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Resolution
-          </div>
+          <div className="text-xs font-medium text-foreground">Resolution</div>
           <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg border border-border/60 bg-muted/20">
             {DPI_VALUES.map((val) => {
               const isActive = dpi === val;
               return (
                 <button
                   className={cn(
-                    "rounded-md py-1.5 text-center font-mono text-[11px] transition-all cursor-pointer",
+                    "rounded-md py-1.5 text-center text-xs font-medium tabular-nums transition-all cursor-pointer",
                     isActive
                       ? "bg-foreground text-background font-semibold shadow-xs"
                       : "text-muted-foreground hover:text-foreground"
@@ -294,16 +292,18 @@ export const ResizerInspector = memo(function InnerResizerInspector({
         </div>
 
         {/* Calculated Output Telemetry */}
-        <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px] space-y-1">
+        <div className="rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-xs space-y-1.5">
           <div className="flex justify-between items-center">
-            <span className="text-muted-foreground text-[10px]">OUTPUT</span>
-            <span className="font-semibold text-foreground">
+            <span className="text-muted-foreground text-xs">
+              Output dimensions
+            </span>
+            <span className="font-semibold text-foreground tabular-nums">
               {computedPxW} × {computedPxH} px
             </span>
           </div>
-          <div className="flex justify-between items-center text-[10px]">
-            <span className="text-muted-foreground">RATIO</span>
-            <span className="text-muted-foreground">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-muted-foreground">Aspect ratio</span>
+            <span className="text-muted-foreground font-medium tabular-nums">
               {height > 0 ? (width / height).toFixed(2) : "1.00"} : 1
             </span>
           </div>

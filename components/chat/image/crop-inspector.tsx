@@ -189,12 +189,12 @@ export const CropInspector = memo(function InnerCropInspector({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <label
-              className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+              className="text-xs font-medium text-foreground block"
               htmlFor="aspect-select"
             >
-              Aspect Ratio Lock
+              Aspect ratio lock
             </label>
-            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5">
+            <span className="text-xs font-medium text-muted-foreground rounded bg-muted/60 px-2 py-0.5 tabular-nums">
               {pixelWidth}×{pixelHeight} px
             </span>
           </div>
@@ -217,36 +217,40 @@ export const CropInspector = memo(function InnerCropInspector({
 
         {/* Crop Boundary Telemetry */}
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Crop Boundary
+          <div className="text-xs font-medium text-foreground">
+            Crop dimensions
           </div>
-          <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px] space-y-1.5">
+          <div className="rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-xs space-y-1.5">
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <span className="text-muted-foreground block text-[10px]">
-                  WIDTH
+                <span className="text-muted-foreground block text-xs">
+                  Width
                 </span>
-                <span className="font-semibold text-foreground text-xs">
+                <span className="font-semibold text-foreground text-xs tabular-nums">
                   {pixelWidth} px
                 </span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-[10px]">
-                  HEIGHT
+                <span className="text-muted-foreground block text-xs">
+                  Height
                 </span>
-                <span className="font-semibold text-foreground text-xs">
+                <span className="font-semibold text-foreground text-xs tabular-nums">
                   {pixelHeight} px
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-border/30 text-[10px]">
+            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-border/30 text-xs">
               <div>
-                <span className="text-muted-foreground">OFFSET X: </span>
-                <span className="text-foreground">{pixelLeft} px</span>
+                <span className="text-muted-foreground">Offset X: </span>
+                <span className="text-foreground font-medium tabular-nums">
+                  {pixelLeft} px
+                </span>
               </div>
               <div>
-                <span className="text-muted-foreground">OFFSET Y: </span>
-                <span className="text-foreground">{pixelTop} px</span>
+                <span className="text-muted-foreground">Offset Y: </span>
+                <span className="text-foreground font-medium tabular-nums">
+                  {pixelTop} px
+                </span>
               </div>
             </div>
           </div>

@@ -148,14 +148,14 @@ export const BackgroundRemovalInspector = memo(
           {/* Mode Selector (Segmented Bar) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Output Style
+              <div className="text-xs font-medium text-foreground">
+                Output style
               </div>
-              <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 uppercase">
-                {bgMode === "transparent" ? "Alpha PNG" : "Solid Color"}
+              <span className="text-xs font-medium text-muted-foreground rounded bg-muted/60 px-2 py-0.5">
+                {bgMode === "transparent" ? "Transparent PNG" : "Solid Color"}
               </span>
             </div>
-            <div className="grid grid-cols-2 rounded-lg bg-muted/40 p-0.5 border border-border/50 text-[11px] font-medium">
+            <div className="grid grid-cols-2 rounded-lg bg-muted/40 p-0.5 border border-border/50 text-xs font-medium">
               <button
                 className={cn(
                   "rounded-md py-1.5 transition-colors cursor-pointer text-center",
@@ -188,10 +188,10 @@ export const BackgroundRemovalInspector = memo(
             <div className="space-y-2">
               <div className="space-y-1.5">
                 <label
-                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+                  className="text-xs font-medium text-foreground block"
                   htmlFor="color-preset-select"
                 >
-                  Background Color
+                  Background color
                 </label>
                 <div className="relative">
                   <select

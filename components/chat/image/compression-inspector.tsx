@@ -160,27 +160,27 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
       <div className="space-y-3.5">
         {/* Telemetry Stats */}
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px]">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 text-xs">
           <div>
-            <span className="text-muted-foreground block text-[10px]">
-              CURRENT
+            <span className="text-muted-foreground block text-xs">
+              Current size
             </span>
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-foreground text-xs">
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="font-semibold text-foreground text-xs tabular-nums">
                 {approxCurrentKb} KB
               </span>
               {savingsPct !== null && (
-                <span className="rounded bg-emerald-500/15 px-1 py-0.5 font-mono text-[9px] font-bold text-emerald-400 border border-emerald-500/20">
+                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500 border border-emerald-500/20 tabular-nums">
                   -{savingsPct}%
                 </span>
               )}
             </div>
           </div>
           <div>
-            <span className="text-muted-foreground block text-[10px]">
-              ORIGINAL
+            <span className="text-muted-foreground block text-xs">
+              Original size
             </span>
-            <span className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground text-xs font-medium tabular-nums mt-0.5 block">
               {approxOriginalKb} KB
             </span>
           </div>
@@ -189,10 +189,10 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
         {/* Target Size Dropdown */}
         <div className="space-y-1.5">
           <label
-            className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+            className="text-xs font-medium text-foreground block"
             htmlFor="target-kb-select"
           >
-            Target File Size
+            Target file size
           </label>
           <div className="relative">
             <select
@@ -224,7 +224,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           {customKbInput !== "" && (
             <div className="pt-1">
               <input
-                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
+                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
                 onChange={(e) => {
                   setCustomKbInput(e.target.value);
                   const p = Number.parseInt(e.target.value, 10);
@@ -240,11 +240,9 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
 
         {/* Quality Slider */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[10px]">
-            <span className="font-semibold text-muted-foreground uppercase tracking-wider">
-              Visual Quality
-            </span>
-            <span className="font-mono text-foreground font-semibold">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-medium text-foreground">Visual quality</span>
+            <span className="text-foreground font-semibold tabular-nums">
               {quality}%
             </span>
           </div>
