@@ -1,6 +1,12 @@
 "use client";
 
-import { Download, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  Loader2,
+  RefreshCw,
+  SlidersHorizontal,
+} from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -114,58 +120,50 @@ export const BackgroundRemovalInspector = memo(
     }, [imageSrc, bgMode]);
 
     return (
-      <div className="flex h-full flex-col justify-between p-4 space-y-4 text-xs">
-        <div className="space-y-4">
+      <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
+        <div className="space-y-3.5">
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-border/50">
+          <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
             <div className="flex items-center gap-2">
-              <span className="text-base select-none">✨</span>
-              <div>
-                <div className="font-semibold text-foreground text-sm tracking-tight">
-                  Background Removal
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Neural subject segmentation & backfill
-                </div>
+              <span className="text-sm select-none">✨</span>
+              <div className="font-semibold text-foreground text-xs tracking-tight">
+                Background Removal
               </div>
             </div>
+            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 uppercase">
+              {bgMode === "transparent" ? "Alpha PNG" : "Solid Color"}
+            </span>
           </div>
 
-          {/* Mode Selector */}
+          {/* Mode Selector (Segmented Bar) */}
           <div className="space-y-1.5">
-            <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               Output Style
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 rounded-lg bg-muted/40 p-0.5 border border-border/50 text-[11px] font-medium">
               <button
                 className={cn(
-                  "flex flex-col items-start rounded-md border p-2 text-left transition-colors cursor-pointer",
+                  "rounded-md py-1.5 transition-colors cursor-pointer text-center",
                   bgMode === "transparent"
-                    ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                    : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-foreground text-background shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => setBgMode("transparent")}
                 type="button"
               >
-                <span className="text-[11px]">Transparent Cutout</span>
-                <span className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                  Alpha PNG
-                </span>
+                Transparent
               </button>
               <button
                 className={cn(
-                  "flex flex-col items-start rounded-md border p-2 text-left transition-colors cursor-pointer",
+                  "rounded-md py-1.5 transition-colors cursor-pointer text-center",
                   bgMode === "solid_color"
-                    ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                    : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-foreground text-background shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => setBgMode("solid_color")}
                 type="button"
               >
-                <span className="text-[11px]">Solid Color Backfill</span>
-                <span className="font-mono text-[10px] text-muted-foreground mt-0.5">
-                  Passport JPEG
-                </span>
+                Solid Color
               </button>
             </div>
           </div>
@@ -173,53 +171,71 @@ export const BackgroundRemovalInspector = memo(
           {/* Color Palette (When Solid Color is selected) */}
           {bgMode === "solid_color" && (
             <div className="space-y-2">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                Background Color
-              </div>
-              <div className="grid grid-cols-1 gap-1.5">
-                {QUICK_COLORS.map((c) => {
-                  const isSelected =
-                    bgColor.toLowerCase() === c.hex.toLowerCase();
-                  return (
-                    <button
-                      className={cn(
-                        "flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
-                        isSelected
-                          ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                          : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                      key={c.hex}
-                      onClick={() => setBgColor(c.hex)}
-                      type="button"
-                    >
-                      <div
-                        className="size-4 shrink-0 rounded-full border border-border shadow-sm"
-                        style={{ backgroundColor: c.hex }}
-                      />
-                      <span className="text-[11px] flex-1">{c.label}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground uppercase">
-                        {c.hex}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="space-y-1.5">
+                <label
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+                  htmlFor="color-preset-select"
+                >
+                  Background Color
+                </label>
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-3 py-2 pr-8 text-xs font-medium text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
+                    id="color-preset-select"
+                    onChange={(e) => setBgColor(e.target.value)}
+                    value={bgColor}
+                  >
+                    {QUICK_COLORS.map((c) => (
+                      <option key={c.hex} value={c.hex}>
+                        {c.label} ({c.hex})
+                      </option>
+                    ))}
+                    {!QUICK_COLORS.some(
+                      (c) => c.hex.toLowerCase() === bgColor.toLowerCase()
+                    ) && <option value={bgColor}>Custom ({bgColor})</option>}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                </div>
               </div>
 
-              {/* Custom Hex Color */}
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  className="size-7 rounded border border-border/50 bg-background cursor-pointer"
-                  onChange={(e) => setBgColor(e.target.value)}
-                  type="color"
-                  value={bgColor}
-                />
-                <input
-                  className="flex-1 rounded-md border border-border/50 bg-background/80 px-2.5 py-1 font-mono text-xs text-foreground focus:border-foreground/50 focus:outline-none uppercase"
-                  onChange={(e) => setBgColor(e.target.value)}
-                  placeholder="#ffffff"
-                  type="text"
-                  value={bgColor}
-                />
+              {/* Swatches + Hex Color Input */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1.5">
+                  {QUICK_COLORS.map((c) => {
+                    const isSelected =
+                      bgColor.toLowerCase() === c.hex.toLowerCase();
+                    return (
+                      <button
+                        className={cn(
+                          "size-5 rounded-full border transition-transform cursor-pointer",
+                          isSelected
+                            ? "ring-2 ring-foreground ring-offset-1 ring-offset-background scale-110"
+                            : "border-border/60 opacity-80 hover:opacity-100"
+                        )}
+                        key={c.hex}
+                        onClick={() => setBgColor(c.hex)}
+                        style={{ backgroundColor: c.hex }}
+                        title={c.label}
+                        type="button"
+                      />
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <input
+                    className="size-6 rounded border border-border/50 bg-background cursor-pointer p-0"
+                    onChange={(e) => setBgColor(e.target.value)}
+                    type="color"
+                    value={bgColor}
+                  />
+                  <input
+                    className="w-16 rounded-md border border-border/50 bg-background/80 px-1.5 py-0.5 font-mono text-[11px] text-foreground focus:border-foreground/50 focus:outline-none uppercase text-center"
+                    onChange={(e) => setBgColor(e.target.value)}
+                    type="text"
+                    value={bgColor}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -229,7 +245,7 @@ export const BackgroundRemovalInspector = memo(
             <div className="pt-1">
               <button
                 className={cn(
-                  "w-full flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
+                  "w-full flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
                   isComparing
                     ? "border-foreground/50 bg-foreground/10 text-foreground font-semibold"
                     : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -238,9 +254,7 @@ export const BackgroundRemovalInspector = memo(
                 type="button"
               >
                 <SlidersHorizontal className="size-3.5" />
-                {isComparing
-                  ? "Exit Before/After Comparison"
-                  : "Compare with Original"}
+                {isComparing ? "Exit Comparison" : "Compare with Original"}
               </button>
             </div>
           ) : null}
@@ -257,12 +271,12 @@ export const BackgroundRemovalInspector = memo(
             {isProcessing ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" />
-                Processing Background...
+                Processing...
               </>
             ) : (
               <>
                 <RefreshCw className="size-3.5" />
-                Process Background
+                Apply Background Removal
               </>
             )}
           </button>

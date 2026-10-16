@@ -1,6 +1,12 @@
 "use client";
 
-import { Download, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  Loader2,
+  RefreshCw,
+  SlidersHorizontal,
+} from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -15,13 +21,6 @@ interface CompressionInspectorProps {
   setIsComparing: (val: boolean) => void;
   setIsProcessing: (val: boolean) => void;
 }
-
-const PRESET_SIZES = [
-  { kb: 50, label: "50 KB (Govt/Portal)" },
-  { kb: 100, label: "100 KB" },
-  { kb: 200, label: "200 KB" },
-  { kb: 500, label: "500 KB" },
-];
 
 export const CompressionInspector = memo(function InnerCompressionInspector({
   documentId,
@@ -135,33 +134,28 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
       : null;
 
   return (
-    <div className="flex h-full flex-col justify-between p-4 space-y-4 text-xs">
-      <div className="space-y-4">
+    <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
+      <div className="space-y-3.5">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-border/50">
+        <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <span className="text-base select-none">🗜️</span>
-            <div>
-              <div className="font-semibold text-foreground text-sm tracking-tight">
-                Compression
-              </div>
-              <div className="text-[11px] text-muted-foreground">
-                Target file size & quality optimization
-              </div>
+            <span className="text-sm select-none">🗜️</span>
+            <div className="font-semibold text-foreground text-xs tracking-tight">
+              Compression
             </div>
           </div>
           {savingsPct !== null && (
-            <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-emerald-400 border border-emerald-500/20">
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
               -{savingsPct}%
             </span>
           )}
         </div>
 
         {/* Telemetry Stats */}
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/40 bg-muted/20 p-2.5 font-mono text-[11px]">
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px]">
           <div>
             <span className="text-muted-foreground block text-[10px]">
-              CURRENT SIZE
+              CURRENT
             </span>
             <span className="font-semibold text-foreground text-xs">
               {approxCurrentKb} KB
@@ -169,82 +163,73 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           </div>
           <div>
             <span className="text-muted-foreground block text-[10px]">
-              ORIGINAL SIZE
+              ORIGINAL
             </span>
-            <span className="text-foreground text-xs">
+            <span className="text-muted-foreground text-xs">
               {approxOriginalKb} KB
             </span>
           </div>
         </div>
 
-        {/* Target Size Presets */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            Target File Size (KB)
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {PRESET_SIZES.map((preset) => {
-              const isActive = targetKb === preset.kb && customKbInput === "";
-              return (
-                <button
-                  className={cn(
-                    "flex flex-col items-start rounded-md border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
-                    isActive
-                      ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                      : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                  key={preset.kb}
-                  onClick={() => {
-                    setTargetKb(preset.kb);
-                    setCustomKbInput("");
-                  }}
-                  type="button"
-                >
-                  <span className="text-[11px]">{preset.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Custom KB Input */}
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              className="flex-1 rounded-md border border-border/50 bg-background/80 px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-foreground/50 focus:outline-none"
+        {/* Target Size Dropdown */}
+        <div className="space-y-1.5">
+          <label
+            className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+            htmlFor="target-kb-select"
+          >
+            Target File Size
+          </label>
+          <div className="relative">
+            <select
+              className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-3 py-2 pr-8 text-xs font-medium text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
+              id="target-kb-select"
               onChange={(e) => {
-                setCustomKbInput(e.target.value);
-                const parsed = Number.parseInt(e.target.value, 10);
-                if (parsed > 0) {
-                  setTargetKb(parsed);
-                } else {
+                const val = e.target.value;
+                if (val === "custom") {
                   setTargetKb(null);
+                  setCustomKbInput("50");
+                } else {
+                  setTargetKb(Number(val));
+                  setCustomKbInput("");
                 }
               }}
-              placeholder="Custom KB..."
-              type="number"
-              value={customKbInput}
-            />
-            {customKbInput ? (
-              <button
-                className="text-[11px] text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setCustomKbInput("");
-                  setTargetKb(50);
-                }}
-                type="button"
-              >
-                Clear
-              </button>
-            ) : null}
+              value={customKbInput === "" ? String(targetKb ?? 50) : "custom"}
+            >
+              <option value="20">20 KB (Strict Portal Limit)</option>
+              <option value="50">50 KB (Passport / Visa Standard)</option>
+              <option value="100">100 KB (Fast Web Load)</option>
+              <option value="200">200 KB (Balanced)</option>
+              <option value="500">500 KB (High Quality)</option>
+              <option value="custom">Custom KB Limit...</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           </div>
+
+          {/* Inline Custom KB input if custom is chosen */}
+          {customKbInput !== "" && (
+            <div className="pt-1">
+              <input
+                className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
+                onChange={(e) => {
+                  setCustomKbInput(e.target.value);
+                  const p = Number.parseInt(e.target.value, 10);
+                  setTargetKb(p > 0 ? p : null);
+                }}
+                placeholder="Enter KB target (e.g. 75)..."
+                type="number"
+                value={customKbInput}
+              />
+            </div>
+          )}
         </div>
 
         {/* Quality Slider */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="font-medium text-muted-foreground uppercase tracking-wider">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-muted-foreground uppercase tracking-wider">
               Visual Quality
             </span>
-            <span className="font-mono text-foreground font-medium">
+            <span className="font-mono text-foreground font-semibold">
               {quality}%
             </span>
           </div>
@@ -257,71 +242,65 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
             type="range"
             value={quality}
           />
-          <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
-            <span>Smallest File</span>
-            <span>Maximum Fidelity</span>
-          </div>
         </div>
 
         {/* Output Format */}
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            Output Format
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Format
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg border border-border/60 bg-muted/20">
             <button
               className={cn(
-                "flex-1 rounded-md border px-2.5 py-1 text-center font-mono text-[11px] transition-colors cursor-pointer",
+                "rounded-md py-1.5 text-center font-mono text-[11px] transition-all cursor-pointer",
                 format === "jpeg"
-                  ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                  : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-foreground text-background font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
               )}
               onClick={() => setFormat("jpeg")}
               type="button"
             >
-              JPEG (Standard)
+              JPEG
             </button>
             <button
               className={cn(
-                "flex-1 rounded-md border px-2.5 py-1 text-center font-mono text-[11px] transition-colors cursor-pointer",
+                "rounded-md py-1.5 text-center font-mono text-[11px] transition-all cursor-pointer",
                 format === "webp"
-                  ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                  : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-foreground text-background font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
               )}
               onClick={() => setFormat("webp")}
               type="button"
             >
-              WebP (Modern)
+              WebP
             </button>
           </div>
         </div>
 
         {/* Before / After Slider Toggle */}
         {originalSrc ? (
-          <div className="pt-1">
-            <button
-              className={cn(
-                "w-full flex items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
-                isComparing
-                  ? "border-foreground/50 bg-foreground/10 text-foreground font-semibold"
-                  : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-              onClick={() => setIsComparing(!isComparing)}
-              type="button"
-            >
-              <SlidersHorizontal className="size-3.5" />
-              {isComparing
-                ? "Exit Before/After Comparison"
-                : "Compare with Original"}
-            </button>
-          </div>
+          <button
+            className={cn(
+              "w-full flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors cursor-pointer",
+              isComparing
+                ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
+                : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+            onClick={() => setIsComparing(!isComparing)}
+            type="button"
+          >
+            <SlidersHorizontal className="size-3.5" />
+            <span>
+              {isComparing ? "Exit Comparison" : "Compare with Original"}
+            </span>
+          </button>
         ) : null}
       </div>
 
       {/* Footer Actions */}
-      <div className="space-y-2 pt-3 border-t border-border/50">
+      <div className="space-y-2 pt-2.5 border-t border-border/50">
         <button
-          className="w-full flex items-center justify-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50 cursor-pointer shadow-sm"
+          className="w-full flex items-center justify-center gap-2 rounded-lg bg-foreground px-3.5 py-2 text-xs font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50 cursor-pointer shadow-xs"
           disabled={isProcessing}
           onClick={handleRecompress}
           type="button"
@@ -329,12 +308,12 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           {isProcessing ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
-              Compressing...
+              <span>Compressing...</span>
             </>
           ) : (
             <>
               <RefreshCw className="size-3.5" />
-              Re-compress Photo
+              <span>Apply Compression</span>
             </>
           )}
         </button>
@@ -345,7 +324,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           type="button"
         >
           <Download className="size-3.5" />
-          Download Photo
+          <span>Download Photo</span>
         </button>
       </div>
     </div>

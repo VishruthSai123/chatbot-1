@@ -412,7 +412,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
       {/* ─── Main Content: Canvas on Left, Inspector on Right ──────────────── */}
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
         {/* Left: Focused Image Canvas Area */}
-        <div className="relative flex flex-1 items-center justify-center overflow-auto p-4 bg-zinc-950/40">
+        <div className="relative flex flex-1 items-center justify-center overflow-auto p-4 bg-zinc-950/40 min-h-[200px] max-h-[42vh] md:max-h-none">
           {isComparing && originalBase64 ? (
             <div className="size-full max-h-[75vh] flex items-center justify-center">
               <BeforeAfterSlider
@@ -497,7 +497,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         </div>
 
         {/* Right: Focused Inspector Panel (Only mounts the active tool) */}
-        <div className="w-full md:w-80 shrink-0 border-t md:border-t-0 md:border-l border-border/60 bg-card/40 backdrop-blur-md overflow-y-auto">
+        <div className="w-full md:w-80 lg:w-84 shrink-0 flex-1 md:flex-none border-t md:border-t-0 md:border-l border-border/60 bg-card/40 backdrop-blur-md overflow-y-auto">
           {activeToolMode === "compress" && (
             <CompressionInspector
               documentId={documentId || artifact.documentId}

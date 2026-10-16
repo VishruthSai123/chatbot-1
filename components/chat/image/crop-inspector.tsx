@@ -1,10 +1,9 @@
 "use client";
 
-import { Crop, Download, Loader2, RotateCcw } from "lucide-react";
+import { ChevronDown, Crop, Download, Loader2, RotateCcw } from "lucide-react";
 import { memo, useCallback } from "react";
 import { toast } from "sonner";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
-import { cn } from "@/lib/utils";
 
 export interface CropBox {
   height: number; // percentage 0 - 100
@@ -161,93 +160,81 @@ export const CropInspector = memo(function InnerCropInspector({
   }, [imageSrc]);
 
   return (
-    <div className="flex h-full flex-col justify-between p-4 space-y-4 text-xs">
-      <div className="space-y-4">
+    <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
+      <div className="space-y-3.5">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-border/50">
+        <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
           <div className="flex items-center gap-2">
-            <span className="text-base select-none">✂️</span>
-            <div>
-              <div className="font-semibold text-foreground text-sm tracking-tight">
-                Crop & Framing
-              </div>
-              <div className="text-[11px] text-muted-foreground">
-                Aspect ratio locks & rectangular bounds
-              </div>
+            <span className="text-sm select-none">✂️</span>
+            <div className="font-semibold text-foreground text-xs tracking-tight">
+              Crop & Framing
             </div>
           </div>
+          <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5">
+            {pixelWidth}×{pixelHeight} px
+          </span>
         </div>
 
-        {/* Aspect Ratio Presets */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+        {/* Aspect Ratio Lock Dropdown */}
+        <div className="space-y-1.5">
+          <label
+            className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+            htmlFor="aspect-select"
+          >
             Aspect Ratio Lock
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {CROP_ASPECT_PRESETS.map((preset) => {
-              const isActive = selectedAspect === preset.key;
-              return (
-                <button
-                  className={cn(
-                    "flex flex-col items-start rounded-md border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
-                    isActive
-                      ? "border-foreground/40 bg-foreground/10 text-foreground font-semibold"
-                      : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                  key={preset.key}
-                  onClick={() => handleSelectAspect(preset.key)}
-                  type="button"
-                >
-                  <span className="text-[11px] font-medium">
-                    {preset.displayName}
-                  </span>
-                </button>
-              );
-            })}
+          </label>
+          <div className="relative">
+            <select
+              className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-3 py-2 pr-8 text-xs font-medium text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
+              id="aspect-select"
+              onChange={(e) => handleSelectAspect(e.target.value)}
+              value={selectedAspect}
+            >
+              {CROP_ASPECT_PRESETS.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {preset.displayName}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           </div>
         </div>
 
-        {/* Coordinates Readout */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+        {/* Crop Boundary Telemetry */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Crop Boundary
           </div>
-          <div className="rounded-lg border border-border/40 bg-muted/20 p-2.5 font-mono text-[11px] space-y-1.5">
+          <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px] space-y-1.5">
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-muted-foreground block text-[10px]">
-                  CROP WIDTH
+                  WIDTH
                 </span>
-                <span className="font-semibold text-foreground">
+                <span className="font-semibold text-foreground text-xs">
                   {pixelWidth} px
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground block text-[10px]">
-                  CROP HEIGHT
+                  HEIGHT
                 </span>
-                <span className="font-semibold text-foreground">
+                <span className="font-semibold text-foreground text-xs">
                   {pixelHeight} px
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/30 text-[10px]">
+            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-border/30 text-[10px]">
               <div>
-                <span className="text-muted-foreground">X (LEFT): </span>
+                <span className="text-muted-foreground">OFFSET X: </span>
                 <span className="text-foreground">{pixelLeft} px</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Y (TOP): </span>
+                <span className="text-muted-foreground">OFFSET Y: </span>
                 <span className="text-foreground">{pixelTop} px</span>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Helper Note */}
-        <div className="rounded-md border border-border/30 bg-muted/10 p-2 text-[11px] text-muted-foreground leading-relaxed">
-          Tip: Drag the crop box on the image canvas to reposition, or drag its
-          corner handle to resize.
         </div>
       </div>
 
@@ -279,7 +266,7 @@ export const CropInspector = memo(function InnerCropInspector({
             type="button"
           >
             <RotateCcw className="size-3.5" />
-            Reset Box
+            Reset
           </button>
           <button
             className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
