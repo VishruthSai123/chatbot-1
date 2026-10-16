@@ -6,6 +6,7 @@ import {
   getDocumentById,
   getLatestDocumentByKind,
   getMessagesByChatId,
+  isValidUUID,
   saveDocument,
 } from "@/lib/db/queries";
 import {
@@ -26,6 +27,7 @@ type ImageToolsProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
   chatId?: string;
+  messages?: ChatMessage[];
 };
 
 function checkIsGuest(session: Session): boolean {
@@ -38,7 +40,8 @@ async function resolveImageSource(
   session: Session,
   documentId?: string,
   imageUrl?: string,
-  chatId?: string
+  chatId?: string,
+  messagesContext?: ChatMessage[]
 ): Promise<{ source: string; documentId: string; title: string }> {
   if (!session.user?.id) {
     throw new Error("Unauthorized");
@@ -46,7 +49,9 @@ async function resolveImageSource(
 
   // 1. Direct image URL provided
   if (imageUrl) {
-    const docId = documentId || generateUUID();
+    const docId = isValidUUID(documentId)
+      ? (documentId as string)
+      : generateUUID();
     return {
       documentId: docId,
       source: imageUrl,
@@ -54,71 +59,132 @@ async function resolveImageSource(
     };
   }
 
-  // 2. Document by ID
-  if (documentId) {
-    const doc = await getDocumentById({ id: documentId });
-    if (doc && doc.userId === session.user.id && doc.content) {
-      return {
-        documentId: doc.id,
-        source: doc.content,
-        title: doc.title,
-      };
+  // 2. If documentId is a valid UUID, look up in database
+  if (documentId && isValidUUID(documentId)) {
+    try {
+      const doc = await getDocumentById({ id: documentId });
+      if (doc && doc.userId === session.user.id && doc.content) {
+        return {
+          documentId: doc.id,
+          source: doc.content,
+          title: doc.title,
+        };
+      }
+    } catch (docErr) {
+      console.warn("Non-fatal: Document lookup error:", docErr);
     }
   }
 
-  // 3. Fall back to the most recent image in the chat (either from previous tool output or attachment)
-  if (chatId) {
+  // 3. Fall back to conversation messages (attachments, files, or previous tool outputs)
+  // Normalize candidate messages from in-memory context or DB
+  let candidateMessages: any[] = messagesContext || [];
+  if (candidateMessages.length === 0 && chatId && isValidUUID(chatId)) {
     try {
-      const messages = await getMessagesByChatId({ id: chatId });
-      let foundOutputDocId: string | undefined;
-      let foundAttachmentUrl: { url: string; name?: string } | undefined;
+      const dbMsgs = await getMessagesByChatId({ id: chatId });
+      candidateMessages = dbMsgs;
+    } catch (err) {
+      console.warn("Non-fatal: Failed to query chat messages for image:", err);
+    }
+  }
 
-      for (let i = messages.length - 1; i >= 0; i -= 1) {
-        const msg = messages[i];
-        if (Array.isArray(msg.parts)) {
-          for (const part of msg.parts as any[]) {
-            if (part.type?.startsWith("tool-image") && part.output?.id) {
-              foundOutputDocId = part.output.id;
-              break;
-            }
+  if (candidateMessages.length > 0) {
+    // If documentId looks like a filename (e.g. "voiceflowclr.png"), search specifically for that
+    const targetName =
+      documentId && !isValidUUID(documentId)
+        ? documentId.trim().toLowerCase()
+        : null;
+
+    // A) First pass: Look for matching filename if targetName was given
+    if (targetName) {
+      for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
+        const msg = candidateMessages[i];
+        if (Array.isArray(msg.attachments)) {
+          for (const att of msg.attachments) {
+            const name = (att.name || att.pathname || "").toLowerCase();
             if (
-              !foundAttachmentUrl &&
-              (part.type === "file" || part.type === "image") &&
-              (part.url || part.data || part.image)
+              att.url &&
+              (name.includes(targetName) || targetName.includes(name))
             ) {
-              foundAttachmentUrl = {
-                name: part.name,
-                url: part.url || part.data || part.image,
+              return {
+                documentId: generateUUID(),
+                source: att.url,
+                title: att.name || documentId || "Attached Photo",
               };
             }
           }
         }
-        if (foundOutputDocId) {
-          break;
+        if (Array.isArray(msg.parts)) {
+          for (const part of msg.parts) {
+            const name = (part.name || "").toLowerCase();
+            const url = part.url || part.data || part.image;
+            if (
+              url &&
+              (name.includes(targetName) || targetName.includes(name))
+            ) {
+              return {
+                documentId: generateUUID(),
+                source: url,
+                title: part.name || documentId || "Attached Photo",
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // B) Second pass: Grab the most recent image attachment, file part, or tool output
+    for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
+      const msg = candidateMessages[i];
+
+      // Check msg.attachments
+      if (Array.isArray(msg.attachments)) {
+        for (const att of msg.attachments) {
+          const name = att.name || att.pathname || "";
+          if (
+            att.url &&
+            (att.contentType?.startsWith("image/") ||
+              /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(name))
+          ) {
+            return {
+              documentId: generateUUID(),
+              source: att.url,
+              title: name || "Attached Photo",
+            };
+          }
         }
       }
 
-      if (foundOutputDocId) {
-        const doc = await getDocumentById({ id: foundOutputDocId });
-        if (doc?.content) {
-          return {
-            documentId: doc.id,
-            source: doc.content,
-            title: doc.title,
-          };
+      // Check msg.parts
+      if (Array.isArray(msg.parts)) {
+        for (const part of msg.parts) {
+          if (part.type?.startsWith("tool-image") && part.output) {
+            const out = part.output as Record<string, any>;
+            const content =
+              out.result?.dataUrl ||
+              out.document?.content ||
+              out.dataUrl ||
+              out.source;
+            if (content) {
+              return {
+                documentId: out.id || generateUUID(),
+                source: content,
+                title: out.title || out.document?.title || "Processed Photo",
+              };
+            }
+          }
+
+          if (
+            (part.type === "file" || part.type === "image") &&
+            (part.url || part.data || part.image)
+          ) {
+            return {
+              documentId: generateUUID(),
+              source: part.url || part.data || part.image,
+              title: part.name || "Attached Photo",
+            };
+          }
         }
       }
-
-      if (foundAttachmentUrl) {
-        const docId = generateUUID();
-        return {
-          documentId: docId,
-          source: foundAttachmentUrl.url,
-          title: foundAttachmentUrl.name || "Attached Photo",
-        };
-      }
-    } catch (err) {
-      console.warn("Failed to retrieve chat messages for image fallback:", err);
     }
   }
 
@@ -148,6 +214,7 @@ export const imageResizePhysical = ({
   session,
   dataStream,
   chatId,
+  messages,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -172,10 +239,20 @@ export const imageResizePhysical = ({
 
         let resolved: { source: string; documentId: string; title: string };
         try {
-          resolved = await resolveImageSource(session, id, imageUrl, chatId);
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
         } catch (err: any) {
           return { error: err.message };
         }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
 
         let finalWidth = width;
         let finalHeight = height;
@@ -213,7 +290,7 @@ export const imageResizePhysical = ({
         try {
           await saveDocument({
             content: result.base64,
-            id: resolved.documentId,
+            id: validDocId,
             kind: "image",
             title: resolved.title,
             userId: session.user?.id as string,
@@ -225,7 +302,7 @@ export const imageResizePhysical = ({
         // Emit UI updates to open Right Pane studio
         dataStream.write({ data: "image", transient: true, type: "data-kind" });
         dataStream.write({
-          data: resolved.documentId,
+          data: validDocId,
           transient: true,
           type: "data-id",
         });
@@ -250,7 +327,7 @@ export const imageResizePhysical = ({
         return {
           dimensions: `${finalWidth}x${finalHeight} ${finalUnit}`,
           dpi: finalDpi,
-          id: resolved.documentId,
+          id: validDocId,
           message: `Successfully resized image to ${finalWidth}×${finalHeight} ${finalUnit} (${result.width}×${result.height} px @ ${finalDpi} DPI).`,
           pixelDimensions: `${result.width}x${result.height} px`,
           sizeKb: Math.round(result.sizeBytes / 1024),
@@ -308,6 +385,7 @@ export const imageRemoveBg = ({
   session,
   dataStream,
   chatId,
+  messages,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -329,10 +407,20 @@ export const imageRemoveBg = ({
 
         let resolved: { source: string; documentId: string; title: string };
         try {
-          resolved = await resolveImageSource(session, id, imageUrl, chatId);
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
         } catch (err: any) {
           return { error: err.message };
         }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
 
         const result = await executeRemoveBg(resolved.source, {
           color,
@@ -345,7 +433,7 @@ export const imageRemoveBg = ({
         try {
           await saveDocument({
             content: result.base64,
-            id: resolved.documentId,
+            id: validDocId,
             kind: "image",
             title: resolved.title,
             userId: session.user?.id as string,
@@ -360,7 +448,7 @@ export const imageRemoveBg = ({
         // Emit UI updates
         dataStream.write({ data: "image", transient: true, type: "data-kind" });
         dataStream.write({
-          data: resolved.documentId,
+          data: validDocId,
           transient: true,
           type: "data-id",
         });
@@ -384,7 +472,7 @@ export const imageRemoveBg = ({
 
         return {
           color: mode === "solid_color" ? color : "transparent",
-          id: resolved.documentId,
+          id: validDocId,
           message:
             mode === "solid_color"
               ? `Background removed and filled with solid color (${color}).`
@@ -415,7 +503,12 @@ export const imageRemoveBg = ({
     }),
   });
 
-export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
+export const imageCrop = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
   tool({
     description:
       "Crop an image to specified rectangular coordinates (left, top, width, height).",
@@ -431,10 +524,20 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
 
         let resolved: { source: string; documentId: string; title: string };
         try {
-          resolved = await resolveImageSource(session, id, imageUrl, chatId);
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
         } catch (err: any) {
           return { error: err.message };
         }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
 
         const result = await executeCrop(resolved.source, {
           height,
@@ -446,7 +549,7 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
         try {
           await saveDocument({
             content: result.base64,
-            id: resolved.documentId,
+            id: validDocId,
             kind: "image",
             title: resolved.title,
             userId: session.user?.id as string,
@@ -457,7 +560,7 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
 
         dataStream.write({ data: "image", transient: true, type: "data-kind" });
         dataStream.write({
-          data: resolved.documentId,
+          data: validDocId,
           transient: true,
           type: "data-id",
         });
@@ -481,7 +584,7 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
 
         return {
           croppedDimensions: `${result.width}x${result.height} px`,
-          id: resolved.documentId,
+          id: validDocId,
           message: `Image cropped to ${result.width}×${result.height} px.`,
           toolMode: "crop",
         };
@@ -504,6 +607,7 @@ export const imageCompress = ({
   session,
   dataStream,
   chatId,
+  messages,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -520,10 +624,20 @@ export const imageCompress = ({
 
         let resolved: { source: string; documentId: string; title: string };
         try {
-          resolved = await resolveImageSource(session, id, imageUrl, chatId);
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
         } catch (err: any) {
           return { error: err.message };
         }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
 
         const result = await executeCompress(resolved.source, {
           quality,
@@ -533,7 +647,7 @@ export const imageCompress = ({
         try {
           await saveDocument({
             content: result.base64,
-            id: resolved.documentId,
+            id: validDocId,
             kind: "image",
             title: resolved.title,
             userId: session.user?.id as string,
@@ -547,7 +661,7 @@ export const imageCompress = ({
 
         dataStream.write({ data: "image", transient: true, type: "data-kind" });
         dataStream.write({
-          data: resolved.documentId,
+          data: validDocId,
           transient: true,
           type: "data-id",
         });
@@ -571,7 +685,7 @@ export const imageCompress = ({
 
         const finalSizeKb = Math.round(result.sizeBytes / 1024);
         return {
-          id: resolved.documentId,
+          id: validDocId,
           message: `Image compressed to ${finalSizeKb} KB.`,
           sizeKb: finalSizeKb,
           toolMode: "compress",

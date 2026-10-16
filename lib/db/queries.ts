@@ -33,8 +33,24 @@ import {
 } from "./schema";
 import { generateHashedPassword } from "./utils";
 
-const client = postgres(process.env.POSTGRES_URL ?? "");
+const client = postgres(process.env.POSTGRES_URL ?? "", {
+  prepare: false,
+  ssl:
+    process.env.NODE_ENV === "production" ||
+    process.env.POSTGRES_URL?.includes("supabase.com")
+      ? "require"
+      : undefined,
+});
 const db = drizzle(client);
+
+export function isValidUUID(str?: string | null): boolean {
+  if (!str || typeof str !== "string") {
+    return false;
+  }
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    str
+  );
+}
 
 export async function getUser(email: string): Promise<User[]> {
   try {
@@ -214,6 +230,9 @@ export async function getChatsByUserId({
 }
 
 export async function getChatById({ id }: { id: string }) {
+  if (!isValidUUID(id)) {
+    return null;
+  }
   try {
     const [selectedChat] = await db.select().from(chat).where(eq(chat.id, id));
     if (!selectedChat) {
@@ -255,6 +274,9 @@ export async function updateMessage({
 }
 
 export async function getMessagesByChatId({ id }: { id: string }) {
+  if (!isValidUUID(id)) {
+    return [];
+  }
   try {
     return await db
       .select()
@@ -320,13 +342,14 @@ export async function saveDocument({
   content: string;
   userId: string;
 }) {
+  const validId = isValidUUID(id) ? id : generateUUID();
   try {
     return await db
       .insert(document)
       .values({
         content,
         createdAt: new Date(),
-        id,
+        id: validId,
         kind,
         title,
         userId,
@@ -346,6 +369,9 @@ export async function updateDocumentContent({
   id: string;
   content: string;
 }) {
+  if (!isValidUUID(id)) {
+    return [];
+  }
   try {
     const docs = await db
       .select()
@@ -375,6 +401,9 @@ export async function updateDocumentContent({
 }
 
 export async function getDocumentsById({ id }: { id: string }) {
+  if (!isValidUUID(id)) {
+    return [];
+  }
   try {
     const documents = await db
       .select()
@@ -389,6 +418,9 @@ export async function getDocumentsById({ id }: { id: string }) {
 }
 
 export async function getDocumentById({ id }: { id: string }) {
+  if (!isValidUUID(id)) {
+    return;
+  }
   try {
     const [selectedDocument] = await db
       .select()
@@ -430,6 +462,9 @@ export async function deleteDocumentsByIdAfterTimestamp({
   id: string;
   timestamp: Date;
 }) {
+  if (!isValidUUID(id)) {
+    return [];
+  }
   try {
     await db
       .delete(suggestion)

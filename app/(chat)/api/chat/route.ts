@@ -331,21 +331,25 @@ export async function POST(request: Request) {
             imageCompress: imageCompress({
               chatId: id,
               dataStream,
+              messages: uiMessages,
               session,
             }),
             imageCrop: imageCrop({
               chatId: id,
               dataStream,
+              messages: uiMessages,
               session,
             }),
             imageRemoveBg: imageRemoveBg({
               chatId: id,
               dataStream,
+              messages: uiMessages,
               session,
             }),
             imageResizePhysical: imageResizePhysical({
               chatId: id,
               dataStream,
+              messages: uiMessages,
               session,
             }),
             requestSuggestions: requestSuggestions({
