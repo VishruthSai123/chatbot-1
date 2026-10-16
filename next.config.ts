@@ -23,11 +23,6 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
-  serverExternalPackages: [
-    "sharp",
-    "@imgly/background-removal-node",
-    "onnxruntime-node",
-  ],
   experimental: {
     appNewScrollHandler: true,
     cachedNavigations: true,
@@ -60,8 +55,27 @@ const nextConfig: NextConfig = {
     },
     incomingRequests: false,
   },
+  outputFileTracingIncludes: {
+    "/*": [
+      "./node_modules/sharp/**/*",
+      "./node_modules/@img/**/*",
+      "./node_modules/@imgly/**/*",
+      "./node_modules/onnxruntime-node/**/*",
+    ],
+    "/api/**/*": [
+      "./node_modules/sharp/**/*",
+      "./node_modules/@img/**/*",
+      "./node_modules/@imgly/**/*",
+      "./node_modules/onnxruntime-node/**/*",
+    ],
+  },
   poweredByHeader: false,
   reactCompiler: true,
+  serverExternalPackages: [
+    "sharp",
+    "@imgly/background-removal-node",
+    "onnxruntime-node",
+  ],
 };
 
 export default withBotId(nextConfig);

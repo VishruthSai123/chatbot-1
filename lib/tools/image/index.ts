@@ -156,7 +156,7 @@ export async function executeRemoveBg(
       compositeBuffer,
       meta.width ?? bgResult.width,
       meta.height ?? bgResult.height,
-      meta.format ?? params.format,
+      meta.format ?? params.format ?? "jpeg",
       meta.density
     );
   }
