@@ -1,7 +1,15 @@
-"use client";
-
-import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Maximize2,
+  Redo2,
+  Undo2,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { ImageToolMode } from "@/components/chat/artifact";
 import { useArtifact } from "@/hooks/use-artifact";
 import { cn } from "@/lib/utils";
@@ -13,10 +21,13 @@ import { ResizerInspector } from "./resizer-inspector";
 
 interface ImageWorkbenchProps {
   content: string; // base64 string or dataUrl
+  currentVersionIndex?: number;
   documentId?: string;
+  handleVersionChange?: (type: "next" | "prev" | "toggle" | "latest") => void;
   isInline?: boolean;
   onSaveContent?: (newBase64: string, debounce: boolean) => void;
   title: string;
+  totalVersions?: number;
 }
 
 const TOOL_MODES: {
@@ -36,6 +47,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   documentId,
   isInline: _isInline = false,
   onSaveContent,
+  currentVersionIndex = 0,
+  handleVersionChange,
+  totalVersions = 1,
 }: ImageWorkbenchProps) {
   const { artifact, setArtifact } = useArtifact();
 
@@ -214,6 +228,52 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     };
   }, [cropDragMode]);
 
+  const canUndo = (currentVersionIndex ?? 0) > 0;
+  const canRedo = (currentVersionIndex ?? 0) < (totalVersions ?? 1) - 1;
+
+  const handleCopy = useCallback(() => {
+    if (!currentBase64) {
+      return;
+    }
+    try {
+      const src = formatSrc(currentBase64);
+      const img = new Image();
+      img.src = src;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            navigator.clipboard.write([
+              new ClipboardItem({ "image/png": blob }),
+            ]);
+            toast.success("Image copied to clipboard!");
+          }
+        }, "image/png");
+      };
+    } catch {
+      toast.error("Failed to copy image to clipboard");
+    }
+  }, [currentBase64, formatSrc]);
+
+  const handleDownload = useCallback(() => {
+    if (!currentBase64) {
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = formatSrc(currentBase64);
+    link.download = `superiorai-image-${Date.now()}.png`;
+    link.click();
+    toast.success("Download started!");
+  }, [currentBase64, formatSrc]);
+
+  const handleClose = useCallback(() => {
+    setArtifact((prev) => ({ ...prev, isVisible: false }));
+  }, [setArtifact]);
+
   // Image update handler from inspectors
   const handleUpdateImage = useCallback(
     (newBase64: string) => {
@@ -256,15 +316,40 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           })}
         </div>
 
-        {/* Dimension & Zoom Controls */}
+        {/* Dimension, History, Zoom, Copy, Download, Close Controls */}
         <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
           {naturalWidth > 0 && naturalHeight > 0 && (
-            <span className="hidden sm:inline-block rounded bg-muted/60 px-2 py-0.5">
+            <span className="hidden sm:inline-block rounded bg-muted/60 px-2 py-0.5 text-[10px]">
               {naturalWidth} × {naturalHeight} px
             </span>
           )}
 
-          <div className="flex items-center gap-1 border-l border-border/40 pl-2">
+          {/* History Undo / Redo */}
+          {handleVersionChange && (totalVersions ?? 1) > 1 && (
+            <div className="flex items-center gap-0.5 border-l border-border/40 pl-1.5">
+              <button
+                className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                disabled={!canUndo}
+                onClick={() => handleVersionChange("prev")}
+                title="Undo (Previous Version)"
+                type="button"
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+              <button
+                className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                disabled={!canRedo}
+                onClick={() => handleVersionChange("next")}
+                title="Redo (Next Version)"
+                type="button"
+              >
+                <Redo2 className="size-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
             <button
               className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer"
               onClick={handleZoomOut}
@@ -273,7 +358,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             >
               <ZoomOut className="size-3.5" />
             </button>
-            <span className="w-8 text-center">{Math.round(zoom * 100)}%</span>
+            <span className="w-8 text-center text-[10px] tabular-nums">
+              {Math.round(zoom * 100)}%
+            </span>
             <button
               className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer"
               onClick={handleZoomIn}
@@ -285,10 +372,38 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             <button
               className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer ml-0.5"
               onClick={handleResetZoom}
-              title="Reset Zoom"
+              title="Fit to Screen"
               type="button"
             >
               <Maximize2 className="size-3.5" />
+            </button>
+          </div>
+
+          {/* Quick Actions: Copy, Download, Close */}
+          <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
+            <button
+              className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              onClick={handleCopy}
+              title="Copy Image to Clipboard"
+              type="button"
+            >
+              <Copy className="size-3.5" />
+            </button>
+            <button
+              className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              onClick={handleDownload}
+              title="Download Image"
+              type="button"
+            >
+              <Download className="size-3.5" />
+            </button>
+            <button
+              className="rounded p-1 hover:bg-destructive/20 hover:text-destructive cursor-pointer transition-colors ml-0.5"
+              onClick={handleClose}
+              title="Close Workbench"
+              type="button"
+            >
+              <X className="size-3.5" />
             </button>
           </div>
         </div>

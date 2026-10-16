@@ -386,6 +386,7 @@ function PureArtifact({
           }
           currentVersionIndex={currentVersionIndex}
           getDocumentContentById={getDocumentContentById}
+          handleVersionChange={handleVersionChange}
           isCurrentVersion={isCurrentVersion}
           isInline={false}
           isLoading={isDocumentsFetching && !artifact.content}
@@ -396,9 +397,10 @@ function PureArtifact({
           status={artifact.status}
           suggestions={[]}
           title={artifact.title}
+          totalVersions={documents?.length ?? 1}
         />
         <AnimatePresence>
-          {isCurrentVersion ? (
+          {isCurrentVersion && artifact.kind !== "image" ? (
             <Toolbar
               artifactActions={
                 <ArtifactActions

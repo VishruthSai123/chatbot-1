@@ -47,6 +47,8 @@ type ArtifactContent<M = any> = {
   isLoading: boolean;
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
+  handleVersionChange?: (type: "next" | "prev" | "toggle" | "latest") => void;
+  totalVersions?: number;
 };
 
 type InitializeParameters<M = any> = {
