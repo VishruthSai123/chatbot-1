@@ -159,30 +159,22 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
   return (
     <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
       <div className="space-y-3.5">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <span className="text-sm select-none">🗜️</span>
-            <div className="font-semibold text-foreground text-xs tracking-tight">
-              Compression
-            </div>
-          </div>
-          {savingsPct !== null && (
-            <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
-              -{savingsPct}%
-            </span>
-          )}
-        </div>
-
         {/* Telemetry Stats */}
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px]">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/40 bg-muted/20 px-3 py-2 font-mono text-[11px]">
           <div>
             <span className="text-muted-foreground block text-[10px]">
               CURRENT
             </span>
-            <span className="font-semibold text-foreground text-xs">
-              {approxCurrentKb} KB
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-foreground text-xs">
+                {approxCurrentKb} KB
+              </span>
+              {savingsPct !== null && (
+                <span className="rounded bg-emerald-500/15 px-1 py-0.5 font-mono text-[9px] font-bold text-emerald-400 border border-emerald-500/20">
+                  -{savingsPct}%
+                </span>
+              )}
+            </div>
           </div>
           <div>
             <span className="text-muted-foreground block text-[10px]">

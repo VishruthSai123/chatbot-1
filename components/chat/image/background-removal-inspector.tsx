@@ -145,23 +145,15 @@ export const BackgroundRemovalInspector = memo(
     return (
       <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
         <div className="space-y-3.5">
-          {/* Header */}
-          <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
-            <div className="flex items-center gap-2">
-              <span className="text-sm select-none">✨</span>
-              <div className="font-semibold text-foreground text-xs tracking-tight">
-                Background Removal
-              </div>
-            </div>
-            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 uppercase">
-              {bgMode === "transparent" ? "Alpha PNG" : "Solid Color"}
-            </span>
-          </div>
-
           {/* Mode Selector (Segmented Bar) */}
           <div className="space-y-1.5">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Output Style
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Output Style
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 uppercase">
+                {bgMode === "transparent" ? "Alpha PNG" : "Solid Color"}
+              </span>
             </div>
             <div className="grid grid-cols-2 rounded-lg bg-muted/40 p-0.5 border border-border/50 text-[11px] font-medium">
               <button

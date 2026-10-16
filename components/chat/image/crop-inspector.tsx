@@ -185,27 +185,19 @@ export const CropInspector = memo(function InnerCropInspector({
   return (
     <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
       <div className="space-y-3.5">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-2.5 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <span className="text-sm select-none">✂️</span>
-            <div className="font-semibold text-foreground text-xs tracking-tight">
-              Crop & Framing
-            </div>
-          </div>
-          <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5">
-            {pixelWidth}×{pixelHeight} px
-          </span>
-        </div>
-
         {/* Aspect Ratio Lock Dropdown */}
         <div className="space-y-1.5">
-          <label
-            className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
-            htmlFor="aspect-select"
-          >
-            Aspect Ratio Lock
-          </label>
+          <div className="flex items-center justify-between">
+            <label
+              className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block"
+              htmlFor="aspect-select"
+            >
+              Aspect Ratio Lock
+            </label>
+            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5">
+              {pixelWidth}×{pixelHeight} px
+            </span>
+          </div>
           <div className="relative">
             <select
               className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-3 py-2 pr-8 text-xs font-medium text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"

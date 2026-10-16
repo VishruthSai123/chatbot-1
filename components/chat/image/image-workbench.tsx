@@ -5,14 +5,15 @@ import {
   Lock,
   Maximize2,
   Redo2,
+  SlidersHorizontal,
   Undo2,
-  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ImageToolMode } from "@/components/chat/artifact";
+import { ArtifactCloseButton } from "@/components/chat/artifact-close-button";
 import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
@@ -83,6 +84,82 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     },
     [setArtifact]
   );
+
+  // ─── Drag-to-Minimize / Gesture State ─────────────────────────────────────────
+  const [dragOffsetY, setDragOffsetY] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const dragStartYRef = useRef<number | null>(null);
+
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    dragStartYRef.current = e.clientY;
+    setIsDragging(true);
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const handleDragMove = useCallback((e: React.PointerEvent) => {
+    if (dragStartYRef.current === null) {
+      return;
+    }
+    const deltaY = e.clientY - dragStartYRef.current;
+    if (deltaY > 0) {
+      setDragOffsetY(deltaY);
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.PointerEvent) => {
+    if (dragStartYRef.current === null) {
+      return;
+    }
+    const deltaY = e.clientY - dragStartYRef.current;
+    dragStartYRef.current = null;
+    setIsDragging(false);
+
+    if (deltaY > 35) {
+      setIsInspectorOpen(false);
+    }
+    setDragOffsetY(0);
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    dragStartYRef.current = null;
+    setIsDragging(false);
+    setDragOffsetY(0);
+  }, []);
+
+  const dockStartYRef = useRef<number | null>(null);
+  const handleDockPointerDown = useCallback((e: React.PointerEvent) => {
+    dockStartYRef.current = e.clientY;
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  const handleDockPointerUp = useCallback((e: React.PointerEvent) => {
+    if (dockStartYRef.current === null) {
+      return;
+    }
+    const deltaY = e.clientY - dockStartYRef.current;
+    dockStartYRef.current = null;
+    if (deltaY < -20) {
+      setIsInspectorOpen(true);
+    }
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   // ─── Image State ─────────────────────────────────────────────────────────────
   const [currentBase64, setCurrentBase64] = useState<string>(content);
@@ -329,10 +406,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     toast.success("Download started!");
   }, [currentBase64, formatSrc]);
 
-  const handleClose = useCallback(() => {
-    setArtifact((prev) => ({ ...prev, isVisible: false }));
-  }, [setArtifact]);
-
   // Image update handler from inspectors
   const handleUpdateImage = useCallback(
     (newBase64: string) => {
@@ -352,23 +425,32 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
   return (
     <div className="flex h-full w-full flex-col bg-background text-foreground overflow-hidden">
-      {/* ─── Top Header (Clean on mobile, feature-rich on desktop) ──────── */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-3.5 backdrop-blur-sm">
-        {/* Mobile: Clean active tool label */}
-        <div className="flex md:hidden items-center gap-2 min-w-0">
-          <span className="text-base select-none">{activeToolObj?.icon}</span>
-          <span className="font-semibold text-xs text-foreground tracking-tight truncate">
-            {activeToolObj?.label}
-          </span>
-          {naturalWidth > 0 && naturalHeight > 0 && (
-            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 shrink-0">
-              {naturalWidth}×{naturalHeight}
-            </span>
-          )}
+      {/* ─── Unified Studio Header ──────── */}
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-3 backdrop-blur-sm">
+        {/* Left: Close Button + Title + Version + Dimensions */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          <ArtifactCloseButton />
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-xs md:text-sm text-foreground tracking-tight truncate max-w-[130px] sm:max-w-[200px] md:max-w-xs">
+                {artifact.title || title || "image.png"}
+              </span>
+              {(totalVersions ?? 1) > 1 && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted-foreground shrink-0">
+                  v{(currentVersionIndex ?? 0) + 1}/{totalVersions}
+                </span>
+              )}
+            </div>
+            {naturalWidth > 0 && naturalHeight > 0 && (
+              <span className="font-mono text-[10px] text-muted-foreground truncate leading-none">
+                {naturalWidth} × {naturalHeight} px
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Desktop: Tool Mode Switcher */}
-        <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+        {/* Center: Tool Mode Switcher (Desktop) */}
+        <div className="hidden md:flex items-center gap-1.5 rounded-xl bg-muted/30 p-1 border border-border/40">
           {TOOL_MODES.map((mode) => {
             const isActive = activeToolMode === mode.key;
             return (
@@ -376,7 +458,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
                   isActive
-                    ? "bg-foreground text-background shadow-sm font-semibold"
+                    ? "bg-foreground text-background shadow-xs font-semibold"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
                 key={mode.key}
@@ -393,20 +475,13 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           })}
         </div>
 
-        {/* Actions: Undo/Redo, Zoom (Desktop), Copy, Download, Close */}
-        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-          {/* Desktop Dimension Tag */}
-          {naturalWidth > 0 && naturalHeight > 0 && (
-            <span className="hidden lg:inline-block rounded bg-muted/60 px-2 py-0.5 text-[10px]">
-              {naturalWidth} × {naturalHeight} px
-            </span>
-          )}
-
+        {/* Right: History Undo/Redo, Desktop Zoom, Quick Actions, Inspector Toggle */}
+        <div className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
           {/* History Undo / Redo */}
           {handleVersionChange && (totalVersions ?? 1) > 1 && (
-            <div className="flex items-center gap-0.5 border-l border-border/40 pl-1.5">
+            <div className="flex items-center gap-0.5 pr-1">
               <button
-                className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                className="rounded-lg p-1.5 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
                 disabled={!canUndo}
                 onClick={() => handleVersionChange("prev")}
                 title="Undo (Previous Version)"
@@ -415,7 +490,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 <Undo2 className="size-3.5" />
               </button>
               <button
-                className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                className="rounded-lg p-1.5 hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-30 disabled:pointer-events-none transition-colors"
                 disabled={!canRedo}
                 onClick={() => handleVersionChange("next")}
                 title="Redo (Next Version)"
@@ -457,7 +532,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </button>
           </div>
 
-          {/* Quick Actions: Copy (Desktop), Download, Close */}
+          {/* Quick Actions: Copy (Desktop), Download */}
           <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
             <button
               className="hidden sm:inline-flex rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
@@ -476,12 +551,15 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               <Download className="size-3.5" />
             </button>
             <button
-              className="rounded p-1 hover:bg-destructive/20 hover:text-destructive cursor-pointer transition-colors ml-0.5"
-              onClick={handleClose}
-              title="Close Workbench"
+              className={cn(
+                "hidden md:flex rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors ml-0.5",
+                isInspectorOpen && "bg-muted text-foreground"
+              )}
+              onClick={() => setIsInspectorOpen((prev) => !prev)}
+              title={isInspectorOpen ? "Hide Inspector" : "Show Inspector"}
               type="button"
             >
-              <X className="size-3.5" />
+              <SlidersHorizontal className="size-3.5" />
             </button>
           </div>
         </div>
@@ -616,123 +694,181 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </div>
           )}
 
-          {/* Floating Bottom Pill Navbar (Visible when inspector is minimized or on mobile) */}
+          {/* Floating Bottom Pill Navbar (Visible when inspector is minimized) */}
           {!isInspectorOpen && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border border-border/80 bg-background/95 p-1 shadow-2xl backdrop-blur-xl ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-150">
-              {TOOL_MODES.map((mode) => {
-                const isActive = activeToolMode === mode.key;
-                return (
-                  <button
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
-                      isActive
-                        ? "bg-foreground text-background shadow-sm font-semibold"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                    key={mode.key}
-                    onClick={() => {
-                      handleToolModeChange(mode.key);
-                      setIsInspectorOpen(true);
-                    }}
-                    type="button"
-                  >
-                    <span className="text-sm select-none">{mode.icon}</span>
-                    <span className="text-xs">{mode.label}</span>
-                  </button>
-                );
-              })}
+            // biome-ignore lint/a11y/noStaticElementInteractions: bottom dock gesture
+            // biome-ignore lint/a11y/noNoninteractiveElementInteractions: bottom dock gesture
+            // biome-ignore lint/a11y/useKeyWithClickEvents: bottom dock gesture
+            <div
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1 rounded-2xl border border-border/80 bg-card/95 px-3 py-1.5 shadow-2xl backdrop-blur-xl ring-1 ring-black/10 animate-in fade-in slide-in-from-bottom-3 duration-200 cursor-pointer select-none"
+              onClick={() => setIsInspectorOpen(true)}
+              onPointerDown={handleDockPointerDown}
+              onPointerUp={handleDockPointerUp}
+            >
+              {/* Drag Up Handle Indicator */}
+              <div className="w-8 h-1 rounded-full bg-muted-foreground/30 hover:bg-muted-foreground/50 transition-colors mb-0.5" />
+              <div className="flex items-center gap-1">
+                {TOOL_MODES.map((mode) => {
+                  const isActive = activeToolMode === mode.key;
+                  return (
+                    <button
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
+                        isActive
+                          ? "bg-foreground text-background shadow-xs font-semibold"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                      key={mode.key}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToolModeChange(mode.key);
+                        setIsInspectorOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <span className="text-sm select-none">{mode.icon}</span>
+                      <span className="text-xs">{mode.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Right / Bottom: Focused Inspector Panel (Collapsible Drawer on Mobile) */}
+        {/* Right / Bottom: Focused Inspector Panel (Rounded Bottom Sheet on Mobile, Sidebar on Desktop) */}
         <div
           className={cn(
-            "w-full md:w-80 lg:w-84 shrink-0 border-t md:border-t-0 md:border-l border-border/60 bg-card/60 backdrop-blur-xl transition-all duration-300 ease-in-out flex flex-col",
+            // Mobile: Bottom Sheet with rounded top edges, border, backdrop blur, shadow, transform
+            "absolute inset-x-0 bottom-0 z-30 rounded-t-[28px] border-t border-x border-border/70 bg-card/95 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.5)] flex flex-col transition-all duration-300 ease-out",
+            // Desktop: Sidebar on the right
+            "md:relative md:inset-auto md:w-80 lg:w-84 md:rounded-none md:border-t-0 md:border-x-0 md:border-l md:border-border/60 md:bg-card/60 md:shadow-none",
             isInspectorOpen
-              ? "max-h-[50vh] md:max-h-none opacity-100 overflow-y-auto"
-              : "max-h-0 md:max-h-none opacity-0 md:opacity-100 overflow-hidden pointer-events-none md:pointer-events-auto"
+              ? "translate-y-0 opacity-100 pointer-events-auto max-h-[62vh] md:max-h-none md:h-full"
+              : "translate-y-full md:translate-y-0 md:w-0 md:opacity-0 md:overflow-hidden pointer-events-none md:pointer-events-none"
           )}
+          style={{
+            transform:
+              isInspectorOpen && dragOffsetY > 0
+                ? `translateY(${dragOffsetY}px)`
+                : undefined,
+            transition: isDragging ? "none" : undefined,
+          }}
         >
-          {/* Mobile Drawer Header with Minimize Action */}
-          <div className="flex md:hidden items-center justify-between px-3.5 py-2 border-b border-border/50 bg-muted/20 shrink-0">
+          {/* Top Drag Handle (Mobile only - allows dragging down to minimize) */}
+          <div
+            className="flex md:hidden flex-col items-center pt-2.5 pb-1 cursor-grab active:cursor-grabbing touch-none select-none shrink-0"
+            onPointerCancel={handleDragCancel}
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+          >
+            <div className="w-12 h-1.5 rounded-full bg-muted-foreground/30 hover:bg-muted-foreground/50 transition-colors" />
+          </div>
+
+          {/* Mobile Sheet Header with Tool Name and Minimize Action */}
+          <div
+            className="flex md:hidden items-center justify-between px-4 py-1.5 border-b border-border/40 shrink-0 cursor-grab active:cursor-grabbing select-none"
+            onPointerCancel={handleDragCancel}
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base select-none">
+                {activeToolObj?.icon}
+              </span>
+              <span className="font-semibold text-xs text-foreground tracking-tight">
+                {activeToolObj?.label} Settings
+              </span>
+            </div>
+            <button
+              className="flex items-center gap-1 rounded-full bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsInspectorOpen(false);
+              }}
+              type="button"
+            >
+              <span>Minimize</span>
+              <ChevronDown className="size-3.5" />
+            </button>
+          </div>
+
+          {/* Desktop Sidebar Header */}
+          <div className="hidden md:flex items-center justify-between px-3.5 py-2.5 border-b border-border/50 bg-muted/20 shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-sm select-none">{activeToolObj?.icon}</span>
               <span className="font-semibold text-xs text-foreground tracking-tight">
                 {activeToolObj?.label} Settings
               </span>
             </div>
-            <button
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-              onClick={() => setIsInspectorOpen(false)}
-              type="button"
-            >
-              <ChevronDown className="size-3.5" />
-              <span>Minimize</span>
-            </button>
           </div>
 
-          {activeToolMode === "compress" && (
-            <CompressionInspector
-              documentId={documentId || artifact.documentId}
-              imageSrc={currentBase64}
-              isComparing={isComparing}
-              isGuest={isGuest}
-              isProcessing={isProcessing}
-              onRequireAuth={() => setShowAuthModal(true)}
-              onUpdateImage={handleUpdateImage}
-              originalSrc={originalBase64}
-              setIsComparing={setIsComparing}
-              setIsProcessing={setIsProcessing}
-            />
-          )}
+          {/* Scrollable Inspector Body */}
+          <div className="flex-1 overflow-y-auto">
+            {activeToolMode === "compress" && (
+              <CompressionInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isComparing={isComparing}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsComparing={setIsComparing}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
 
-          {activeToolMode === "resize" && (
-            <ResizerInspector
-              documentId={documentId || artifact.documentId}
-              imageSrc={currentBase64}
-              isGuest={isGuest}
-              isProcessing={isProcessing}
-              onRequireAuth={() => setShowAuthModal(true)}
-              onUpdateImage={handleUpdateImage}
-              originalSrc={originalBase64}
-              setIsProcessing={setIsProcessing}
-            />
-          )}
+            {activeToolMode === "resize" && (
+              <ResizerInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
 
-          {activeToolMode === "crop" && (
-            <CropInspector
-              cropBox={cropBox}
-              documentId={documentId || artifact.documentId}
-              imageSrc={currentBase64}
-              isGuest={isGuest}
-              isProcessing={isProcessing}
-              naturalHeight={naturalHeight}
-              naturalWidth={naturalWidth}
-              onRequireAuth={() => setShowAuthModal(true)}
-              onUpdateImage={handleUpdateImage}
-              originalSrc={originalBase64}
-              selectedAspect={selectedAspect}
-              setCropBox={setCropBox}
-              setIsProcessing={setIsProcessing}
-              setSelectedAspect={setSelectedAspect}
-            />
-          )}
+            {activeToolMode === "crop" && (
+              <CropInspector
+                cropBox={cropBox}
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                naturalHeight={naturalHeight}
+                naturalWidth={naturalWidth}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                selectedAspect={selectedAspect}
+                setCropBox={setCropBox}
+                setIsProcessing={setIsProcessing}
+                setSelectedAspect={setSelectedAspect}
+              />
+            )}
 
-          {activeToolMode === "remove_bg" && (
-            <BackgroundRemovalInspector
-              documentId={documentId || artifact.documentId}
-              imageSrc={currentBase64}
-              isComparing={isComparing}
-              isGuest={isGuest}
-              isProcessing={isProcessing}
-              onRequireAuth={() => setShowAuthModal(true)}
-              onUpdateImage={handleUpdateImage}
-              originalSrc={originalBase64}
-              setIsComparing={setIsComparing}
-              setIsProcessing={setIsProcessing}
-            />
-          )}
+            {activeToolMode === "remove_bg" && (
+              <BackgroundRemovalInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isComparing={isComparing}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsComparing={setIsComparing}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
+          </div>
         </div>
       </div>
 

@@ -20,7 +20,7 @@ import { textArtifact } from "@/artifacts/text/client";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document, Vote } from "@/lib/db/schema";
 import type { Attachment, ChatMessage } from "@/lib/types";
-import { fetcher } from "@/lib/utils";
+import { cn, fetcher } from "@/lib/utils";
 import { useSidebar } from "../ui/sidebar";
 import { ArtifactActions } from "./artifact-actions";
 import { ArtifactCloseButton } from "./artifact-close-button";
@@ -331,7 +331,7 @@ function PureArtifact({
 
   const artifactPanel = (
     <>
-      {sidebarState !== "collapsed" && (
+      {sidebarState !== "collapsed" && artifact.kind !== "image" && (
         <div className="flex h-[calc(3.5rem+1px)] shrink-0 items-center justify-between border-b border-border/50 px-4">
           <div className="flex items-center gap-3">
             <ArtifactCloseButton />
@@ -373,7 +373,12 @@ function PureArtifact({
         </div>
       )}
       <div
-        className="relative flex-1 overflow-y-auto bg-background"
+        className={cn(
+          "relative flex-1 bg-background",
+          artifact.kind === "image"
+            ? "overflow-hidden flex flex-col"
+            : "overflow-y-auto"
+        )}
         data-slot="artifact-content"
         onScroll={handleArtifactScroll}
         ref={artifactContentRef}
@@ -428,7 +433,7 @@ function PureArtifact({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {!isCurrentVersion && (
+        {!isCurrentVersion && artifact.kind !== "image" && (
           <VersionFooter
             currentVersionIndex={currentVersionIndex}
             documents={documents}
