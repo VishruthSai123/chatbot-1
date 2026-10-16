@@ -95,6 +95,17 @@ export async function parseImageInput(source: string | Buffer): Promise<{
 
   const trimmed = source.trim();
 
+  // Guard against hallucinated internal AI model reference URLs (e.g. Gemini internal content references)
+  if (
+    trimmed.includes("gemini.google.com") ||
+    trimmed.includes("/api/content/references/") ||
+    trimmed.includes("generativelanguage.googleapis.com")
+  ) {
+    throw new Error(
+      "Invalid image source: received internal AI model reference URL instead of actual image data."
+    );
+  }
+
   // 1. Check data URLs
   const dataUrlMatch = trimmed.match(/^data:([^;]+).*?;base64,\s*([\s\S]+)$/i);
   if (dataUrlMatch) {

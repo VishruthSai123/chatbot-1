@@ -36,6 +36,20 @@ function checkIsGuest(session: Session): boolean {
   );
 }
 
+function isInternalModelUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") {
+    return false;
+  }
+  const lower = url.toLowerCase();
+  return (
+    lower.includes("gemini.google.com") ||
+    lower.includes("generativelanguage.googleapis.com") ||
+    lower.includes("googleapis.com") ||
+    lower.includes("/api/content/references") ||
+    lower.includes("googleusercontent.com")
+  );
+}
+
 async function resolveImageSource(
   session: Session,
   documentId?: string,
@@ -47,19 +61,11 @@ async function resolveImageSource(
     throw new Error("Unauthorized");
   }
 
-  // 1. Direct image URL provided
-  if (imageUrl) {
-    const docId = isValidUUID(documentId)
-      ? (documentId as string)
-      : generateUUID();
-    return {
-      documentId: docId,
-      source: imageUrl,
-      title: "Processed Photo",
-    };
-  }
+  // Sanitize imageUrl: Ignore internal AI model reference URLs (e.g. gemini.google.com/api/content/references)
+  const cleanImageUrl =
+    imageUrl && !isInternalModelUrl(imageUrl) ? imageUrl.trim() : undefined;
 
-  // 2. If documentId is a valid UUID, look up in database
+  // 1. If documentId is a valid UUID, look up in database (continuous editing/chaining)
   if (documentId && isValidUUID(documentId)) {
     try {
       const doc = await getDocumentById({ id: documentId });
@@ -75,8 +81,7 @@ async function resolveImageSource(
     }
   }
 
-  // 3. Fall back to conversation messages (attachments, files, or previous tool outputs)
-  // Normalize candidate messages from in-memory context or DB
+  // 2. Search conversation messages (attachments, uploaded files, or previous tool outputs)
   let candidateMessages: any[] = messagesContext || [];
   if (candidateMessages.length === 0 && chatId && isValidUUID(chatId)) {
     try {
@@ -132,7 +137,7 @@ async function resolveImageSource(
       }
     }
 
-    // B) Second pass: Grab the most recent image attachment, file part, or tool output
+    // B) Second pass: Grab the most recent image attachment, file part, or tool output from the conversation
     for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
       const msg = candidateMessages[i];
 
@@ -186,6 +191,18 @@ async function resolveImageSource(
         }
       }
     }
+  }
+
+  // 3. Direct valid external image URL provided
+  if (cleanImageUrl) {
+    const docId = isValidUUID(documentId)
+      ? (documentId as string)
+      : generateUUID();
+    return {
+      documentId: docId,
+      source: cleanImageUrl,
+      title: "Processed Photo",
+    };
   }
 
   // 4. Fall back to most recent image document in DB
@@ -352,12 +369,14 @@ export const imageResizePhysical = ({
         .string()
         .optional()
         .describe(
-          "ID of the image artifact. If omitted, uses active/recent image."
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
         ),
       imageUrl: z
         .string()
         .optional()
-        .describe("Direct URL or signed URL of the image to process"),
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
       preset: z
         .enum([
           "indian_passport",
@@ -494,8 +513,18 @@ export const imageRemoveBg = ({
         .describe(
           "Hex color code when mode is 'solid_color' (e.g. '#ffffff' for passport/visa compliance)"
         ),
-      id: z.string().optional().describe("ID of the image artifact"),
-      imageUrl: z.string().optional().describe("Direct URL of the image"),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
       mode: z
         .enum(["transparent", "solid_color"])
         .optional()
@@ -595,8 +624,18 @@ export const imageCrop = ({
     },
     inputSchema: z.object({
       height: z.number().positive(),
-      id: z.string().optional(),
-      imageUrl: z.string().optional(),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
       left: z.number().min(0),
       top: z.number().min(0),
       width: z.number().positive(),
@@ -696,8 +735,18 @@ export const imageCompress = ({
       }
     },
     inputSchema: z.object({
-      id: z.string().optional(),
-      imageUrl: z.string().optional(),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
       quality: z.number().min(1).max(100).optional().default(80),
       targetSizeKb: z
         .number()
