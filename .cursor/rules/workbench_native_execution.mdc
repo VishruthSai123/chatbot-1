@@ -1,0 +1,32 @@
+---
+description: Universal AI Workbench - Native-First Execution & Architecture Rules
+globs: "**/*.{ts,tsx}"
+alwaysApply: true
+---
+
+# Universal AI Workbench: Native-First & Studio Architecture Rules
+
+## 1. Zero Third-Party SaaS Processing APIs
+- NEVER introduce external paid transformation APIs (e.g. CloudConvert, ConvertAPI, remove.bg API, external OCR SaaS).
+- All deterministic file operations MUST run natively:
+  - **Image Processing**: Use `sharp` on the server and HTML5 Canvas in the browser.
+  - **Background Removal**: Use native neural segmentation (`@imgly/background-removal-node` or client canvas segmentation).
+  - **PDF Operations**: Use `pdf-lib` (pure JS, zero native binaries) and `pdf-parse`.
+  - **Spreadsheets / Data**: Use `papaparse` and `xlsx` (SheetJS) / `exceljs`.
+  - **Documents / Text**: Use `mammoth` (DOCX parser) and `diff-match-patch`.
+  - **Media Telemetry**: Use `music-metadata`.
+- External AI calls are strictly reserved for **Google Gemini 2.5 Flash / Pro** via `@ai-sdk/google` for semantic planning, summarization, and multimodal speech understanding.
+
+## 2. Dynamic Right Pane Studio Architecture
+- The Right Pane (`<Artifact />`) is a multi-family dynamic interactive studio, NOT just an image viewer:
+  - `kind: 'image'`: Interactive HTML5 Canvas, Crop handles, Physical unit selector (`cm`, `mm`, `in`, `DPI`), Passport/Visa presets, 1-click Background Remover, Before/After split slider.
+  - `kind: 'pdf'`: Visual multi-page thumbnail grid, drag-and-drop reordering, per-page rotate/delete, visual page range selector for splitting.
+  - `kind: 'sheet'`: Virtualized interactive data table (`react-data-grid`), column sorting, column filtering, summary metrics cards.
+  - `kind: 'text'`: Rich document reader, side-by-side diff comparison, word & reading telemetry.
+- Enforce bidirectional synchronization between Chat and Right Pane Studio.
+
+## 3. Storage & Lineage Rules
+- All user uploads and generated outputs MUST be stored privately in the Supabase Storage `artifacts` bucket.
+- Access MUST be mediated via short-lived signed URLs.
+- Originals are immutable; derived artifacts must record their parent lineage in the `Artifact` table (`parentArtifactId`).
+- Every tool MUST validate inputs and outputs with Zod schemas.
