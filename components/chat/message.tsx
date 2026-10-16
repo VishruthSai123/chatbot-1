@@ -406,7 +406,13 @@ const PurePreviewMessage = ({
           key={toolCallId}
         >
           <Loader2 className="size-3.5 animate-spin text-sky-400 shrink-0" />
-          <span>Processing photo ({toolLabel})...</span>
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            {`Processing photo (${toolLabel})...`}
+          </Shimmer>
         </div>
       );
     }

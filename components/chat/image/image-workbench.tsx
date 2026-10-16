@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Copy,
   Download,
   Maximize2,
@@ -36,7 +37,7 @@ const TOOL_MODES: {
   icon: string;
 }[] = [
   { icon: "🗜️", key: "compress", label: "Compress" },
-  { icon: "📐", key: "resize", label: "Resize (DPI)" },
+  { icon: "📐", key: "resize", label: "Resize" },
   { icon: "✂️", key: "crop", label: "Crop" },
   { icon: "✨", key: "remove_bg", label: "Remove BG" },
 ];
@@ -57,11 +58,13 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const [activeToolMode, setActiveToolMode] = useState<ImageToolMode>(
     artifact.toolMode || "compress"
   );
+  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
 
   // Sync when artifact.toolMode changes externally from tool calls
   useEffect(() => {
     if (artifact.toolMode && artifact.toolMode !== activeToolMode) {
       setActiveToolMode(artifact.toolMode);
+      setIsInspectorOpen(true);
     }
   }, [artifact.toolMode, activeToolMode]);
 
@@ -128,9 +131,60 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isComparing, setIsComparing] = useState<boolean>(false);
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
-  const handleResetZoom = () => setZoom(1);
+  const handleZoomIn = useCallback(
+    () => setZoom((z) => Math.min(z + 0.25, 3)),
+    []
+  );
+  const handleZoomOut = useCallback(
+    () => setZoom((z) => Math.max(z - 0.25, 0.5)),
+    []
+  );
+  const handleResetZoom = useCallback(() => setZoom(1), []);
+
+  // ─── Touch Pinch-to-Zoom & Double-Tap ────────────────────────────────────────
+  const touchStartDistRef = useRef<number | null>(null);
+  const touchStartZoomRef = useRef<number>(1);
+  const lastTapRef = useRef<number>(0);
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchStartDistRef.current = dist;
+        touchStartZoomRef.current = zoom;
+      } else if (e.touches.length === 1) {
+        const now = Date.now();
+        if (now - lastTapRef.current < 300) {
+          // Double tap toggle between 1x and 2x
+          setZoom((z) => (z > 1.2 ? 1 : 2));
+        }
+        lastTapRef.current = now;
+      }
+    },
+    [zoom]
+  );
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartDistRef.current !== null) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const ratio = currentDist / touchStartDistRef.current;
+      const nextZoom = Math.max(
+        0.5,
+        Math.min(3, touchStartZoomRef.current * ratio)
+      );
+      setZoom(Number(nextZoom.toFixed(2)));
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    touchStartDistRef.current = null;
+  }, []);
 
   // ─── Crop Box State ──────────────────────────────────────────────────────────
   const [cropBox, setCropBox] = useState<CropBox>({
@@ -289,12 +343,27 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     [onSaveContent, setArtifact]
   );
 
+  const activeToolObj = TOOL_MODES.find((m) => m.key === activeToolMode);
+
   return (
     <div className="flex h-full w-full flex-col bg-background text-foreground overflow-hidden">
-      {/* ─── Top Contextual Header ────────────────────────────────────────── */}
+      {/* ─── Top Header (Clean on mobile, feature-rich on desktop) ──────── */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-3.5 backdrop-blur-sm">
-        {/* Tool Mode Indicator & Switcher */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+        {/* Mobile: Clean active tool label */}
+        <div className="flex md:hidden items-center gap-2 min-w-0">
+          <span className="text-base select-none">{activeToolObj?.icon}</span>
+          <span className="font-semibold text-xs text-foreground tracking-tight truncate">
+            {activeToolObj?.label}
+          </span>
+          {naturalWidth > 0 && naturalHeight > 0 && (
+            <span className="font-mono text-[10px] text-muted-foreground rounded bg-muted/60 px-1.5 py-0.5 shrink-0">
+              {naturalWidth}×{naturalHeight}
+            </span>
+          )}
+        </div>
+
+        {/* Desktop: Tool Mode Switcher */}
+        <div className="hidden md:flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
           {TOOL_MODES.map((mode) => {
             const isActive = activeToolMode === mode.key;
             return (
@@ -302,11 +371,14 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
                   isActive
-                    ? "bg-foreground text-background shadow-sm"
+                    ? "bg-foreground text-background shadow-sm font-semibold"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
                 key={mode.key}
-                onClick={() => handleToolModeChange(mode.key)}
+                onClick={() => {
+                  handleToolModeChange(mode.key);
+                  setIsInspectorOpen(true);
+                }}
                 type="button"
               >
                 <span className="text-xs select-none">{mode.icon}</span>
@@ -316,10 +388,11 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           })}
         </div>
 
-        {/* Dimension, History, Zoom, Copy, Download, Close Controls */}
-        <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+        {/* Actions: Undo/Redo, Zoom (Desktop), Copy, Download, Close */}
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+          {/* Desktop Dimension Tag */}
           {naturalWidth > 0 && naturalHeight > 0 && (
-            <span className="hidden sm:inline-block rounded bg-muted/60 px-2 py-0.5 text-[10px]">
+            <span className="hidden lg:inline-block rounded bg-muted/60 px-2 py-0.5 text-[10px]">
               {naturalWidth} × {naturalHeight} px
             </span>
           )}
@@ -348,8 +421,8 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </div>
           )}
 
-          {/* Zoom Controls */}
-          <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
+          {/* Desktop Zoom Controls */}
+          <div className="hidden md:flex items-center gap-1 border-l border-border/40 pl-1.5">
             <button
               className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer"
               onClick={handleZoomOut}
@@ -379,10 +452,10 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </button>
           </div>
 
-          {/* Quick Actions: Copy, Download, Close */}
+          {/* Quick Actions: Copy (Desktop), Download, Close */}
           <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
             <button
-              className="rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
+              className="hidden sm:inline-flex rounded p-1 hover:bg-muted hover:text-foreground cursor-pointer transition-colors"
               onClick={handleCopy}
               title="Copy Image to Clipboard"
               type="button"
@@ -410,9 +483,33 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
       </div>
 
       {/* ─── Main Content: Canvas on Left, Inspector on Right ──────────────── */}
-      <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+      <div className="relative flex flex-1 overflow-hidden flex-col md:flex-row">
         {/* Left: Focused Image Canvas Area */}
-        <div className="relative flex flex-1 items-center justify-center overflow-auto p-4 bg-zinc-950/40 min-h-[200px] max-h-[42vh] md:max-h-none">
+        <div
+          className="relative flex flex-1 items-center justify-center overflow-auto p-4 bg-zinc-950/40 min-h-[220px]"
+          onTouchEnd={handleTouchEnd}
+          onTouchMove={handleTouchMove}
+          onTouchStart={handleTouchStart}
+        >
+          {/* Mobile Zoom Pill */}
+          <div className="absolute top-3 left-3 z-20 flex md:hidden items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2 py-0.5 shadow-sm backdrop-blur-md text-[10px] font-mono select-none">
+            <button
+              className="px-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={handleZoomOut}
+              type="button"
+            >
+              -
+            </button>
+            <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button
+              className="px-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={handleZoomIn}
+              type="button"
+            >
+              +
+            </button>
+          </div>
+
           {isComparing && originalBase64 ? (
             <div className="size-full max-h-[75vh] flex items-center justify-center">
               <BeforeAfterSlider
@@ -494,10 +591,63 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               </div>
             </div>
           )}
+
+          {/* Floating Bottom Pill Navbar (Visible when inspector is minimized or on mobile) */}
+          {!isInspectorOpen && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border border-border/80 bg-background/95 p-1 shadow-2xl backdrop-blur-xl ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-150">
+              {TOOL_MODES.map((mode) => {
+                const isActive = activeToolMode === mode.key;
+                return (
+                  <button
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
+                      isActive
+                        ? "bg-foreground text-background shadow-sm font-semibold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                    key={mode.key}
+                    onClick={() => {
+                      handleToolModeChange(mode.key);
+                      setIsInspectorOpen(true);
+                    }}
+                    type="button"
+                  >
+                    <span className="text-sm select-none">{mode.icon}</span>
+                    <span className="text-xs">{mode.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Right: Focused Inspector Panel (Only mounts the active tool) */}
-        <div className="w-full md:w-80 lg:w-84 shrink-0 flex-1 md:flex-none border-t md:border-t-0 md:border-l border-border/60 bg-card/40 backdrop-blur-md overflow-y-auto">
+        {/* Right / Bottom: Focused Inspector Panel (Collapsible Drawer on Mobile) */}
+        <div
+          className={cn(
+            "w-full md:w-80 lg:w-84 shrink-0 border-t md:border-t-0 md:border-l border-border/60 bg-card/60 backdrop-blur-xl transition-all duration-300 ease-in-out flex flex-col",
+            isInspectorOpen
+              ? "max-h-[50vh] md:max-h-none opacity-100 overflow-y-auto"
+              : "max-h-0 md:max-h-none opacity-0 md:opacity-100 overflow-hidden pointer-events-none md:pointer-events-auto"
+          )}
+        >
+          {/* Mobile Drawer Header with Minimize Action */}
+          <div className="flex md:hidden items-center justify-between px-3.5 py-2 border-b border-border/50 bg-muted/20 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm select-none">{activeToolObj?.icon}</span>
+              <span className="font-semibold text-xs text-foreground tracking-tight">
+                {activeToolObj?.label} Settings
+              </span>
+            </div>
+            <button
+              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+              onClick={() => setIsInspectorOpen(false)}
+              type="button"
+            >
+              <ChevronDown className="size-3.5" />
+              <span>Minimize</span>
+            </button>
+          </div>
+
           {activeToolMode === "compress" && (
             <CompressionInspector
               documentId={documentId || artifact.documentId}

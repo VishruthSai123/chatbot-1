@@ -1,21 +1,19 @@
 import "server-only";
 
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { getSharp } from "./native";
 
 /**
  * Native background removal using @imgly/background-removal-node.
  *
  * This module runs entirely on-device — no external API calls.
- * The ONNX models are downloaded on first use and cached locally.
- *
- * Performance notes for Vercel serverless:
- * - First cold-start invocation downloads ~40MB of ONNX models → may take 10-15s.
- * - Subsequent invocations (within same container) use cached models → 2-5s.
- * - Output is always PNG with alpha transparency.
+ * The ONNX models are bundled directly in the package dist directory.
  */
 
 // Lazy-load the module to avoid increasing cold start time for non-BG-removal requests
-let removeBackgroundFn: ((blob: Blob) => Promise<Blob>) | null = null;
+let removeBackgroundFn: ((blob: Blob, config?: any) => Promise<Blob>) | null =
+  null;
 
 async function getRemoveBackground() {
   if (!removeBackgroundFn) {
@@ -44,9 +42,20 @@ export async function removeImageBackground(
 ): Promise<BgRemovalResult> {
   const removeBackground = await getRemoveBackground();
 
+  // Compute publicPath directly to the installed package's dist folder
+  const config: Record<string, any> = { model: "medium" };
+  try {
+    const distDir = path.dirname(
+      require.resolve("@imgly/background-removal-node")
+    );
+    config.publicPath = `${pathToFileURL(distDir).href}/`;
+  } catch {
+    // fallback to library defaults
+  }
+
   // The library expects a Blob input
   const inputBlob = new Blob([inputBuffer], { type: "image/png" });
-  const resultBlob = await removeBackground(inputBlob);
+  const resultBlob = await removeBackground(inputBlob, config);
 
   // Convert Blob back to Buffer
   const arrayBuffer = await resultBlob.arrayBuffer();

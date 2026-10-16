@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, SlidersHorizontal } from "lucide-react";
+import { Download, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -118,6 +118,58 @@ export function ImageToolCard({
     config.mode,
   ]);
 
+  const handleRestore = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!imageBase64) {
+        toast.error("Image data is still loading...");
+        return;
+      }
+
+      try {
+        setArtifact((current) => ({
+          ...current,
+          content: imageBase64,
+          documentId: documentId || current.documentId,
+          isVisible: true,
+          kind: "image",
+          status: "idle",
+          title: docRecord?.title || config.label,
+          toolMode: config.mode,
+        }));
+
+        if (documentId) {
+          await fetch(
+            `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`,
+            {
+              body: JSON.stringify({
+                content: imageBase64,
+                isManualEdit: true,
+                kind: "image",
+                title: docRecord?.title || config.label,
+              }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST",
+            }
+          );
+        }
+
+        toast.success("Restored image version to canvas");
+      } catch (err: any) {
+        console.error("Failed to restore image version:", err);
+        toast.error("Failed to restore image");
+      }
+    },
+    [
+      imageBase64,
+      documentId,
+      setArtifact,
+      docRecord?.title,
+      config.label,
+      config.mode,
+    ]
+  );
+
   const handleDownload = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -163,7 +215,6 @@ export function ImageToolCard({
 
       {/* Middle Body Row */}
       <div className="flex items-start gap-3 py-2.5">
-        {/* Crisp Thumbnail */}
         {/* Crisp Thumbnail Button */}
         <button
           className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-neutral-900 shadow-inner cursor-pointer"
@@ -233,6 +284,16 @@ export function ImageToolCard({
 
       {/* Action Footer */}
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+        <button
+          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+          onClick={handleRestore}
+          title="Restore this image version to the canvas workbench"
+          type="button"
+        >
+          <RotateCcw className="size-3.5" />
+          Restore
+        </button>
+
         <button
           className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           onClick={handleDownload}
