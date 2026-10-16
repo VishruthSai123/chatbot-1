@@ -336,18 +336,22 @@ export async function POST(request: Request) {
               session,
             }),
             imageResizePhysical: imageResizePhysical({
+              chatId: id,
               dataStream,
               session,
             }),
             imageRemoveBg: imageRemoveBg({
+              chatId: id,
               dataStream,
               session,
             }),
             imageCrop: imageCrop({
+              chatId: id,
               dataStream,
               session,
             }),
             imageCompress: imageCompress({
+              chatId: id,
               dataStream,
               session,
             }),

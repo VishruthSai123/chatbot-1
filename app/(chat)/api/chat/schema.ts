@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 const textPartSchema = z.object({
-  text: z.string().min(1).max(2000),
-  type: z.enum(["text"]),
+  text: z.string().max(10000).default(""),
+  type: z.literal("text"),
 });
 
 const filePartSchema = z.object({
-  mediaType: z.enum(["image/jpeg", "image/png"]),
-  name: z.string().min(1).max(100),
-  type: z.enum(["file"]),
-  url: z.url(),
+  mediaType: z.string(),
+  name: z.string().optional(),
+  type: z.literal("file"),
+  url: z.string(),
 });
 
 const partSchema = z.union([textPartSchema, filePartSchema]);

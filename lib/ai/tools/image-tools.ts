@@ -1,8 +1,17 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
-import { getDocumentById, getLatestDocumentByKind, saveDocument } from "@/lib/db/queries";
-import { getPresetByKey, type PhysicalUnit, type DpiOption } from "@/lib/image/presets";
+import {
+  getDocumentById,
+  getLatestDocumentByKind,
+  getMessagesByChatId,
+  saveDocument,
+} from "@/lib/db/queries";
+import {
+  type DpiOption,
+  getPresetByKey,
+  type PhysicalUnit,
+} from "@/lib/image/presets";
 import {
   executeCompress,
   executeCrop,
@@ -10,51 +19,107 @@ import {
   executeResizePhysical,
 } from "@/lib/tools/image";
 import type { ChatMessage } from "@/lib/types";
+import { generateUUID } from "@/lib/utils";
 
 type ImageToolsProps = {
   session: Session;
   dataStream: UIMessageStreamWriter<ChatMessage>;
+  chatId?: string;
 };
 
-async function resolveImageDocument(
+async function resolveImageSource(
   session: Session,
-  documentId?: string
-) {
+  documentId?: string,
+  imageUrl?: string,
+  chatId?: string
+): Promise<{ source: string; documentId: string; title: string }> {
   if (!session.user?.id) {
     throw new Error("Unauthorized");
   }
 
+  // 1. Direct image URL provided
+  if (imageUrl) {
+    const docId = documentId || generateUUID();
+    return {
+      documentId: docId,
+      source: imageUrl,
+      title: "Processed Photo",
+    };
+  }
+
+  // 2. Document by ID
   if (documentId) {
     const doc = await getDocumentById({ id: documentId });
-    if (doc && doc.userId === session.user.id) {
-      return doc;
+    if (doc && doc.userId === session.user.id && doc.content) {
+      return {
+        documentId: doc.id,
+        source: doc.content,
+        title: doc.title,
+      };
     }
   }
 
-  // Fall back to most recent image document
+  // 3. Fall back to most recent image document in DB
   const latest = await getLatestDocumentByKind({
-    userId: session.user.id,
     kind: "image",
+    userId: session.user.id,
   });
+  if (latest && latest.content) {
+    return {
+      documentId: latest.id,
+      source: latest.content,
+      title: latest.title,
+    };
+  }
 
-  return latest;
+  // 4. Fall back to the most recent user message's image attachment if chatId is provided
+  if (chatId) {
+    const messages = await getMessagesByChatId({ id: chatId });
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (Array.isArray(msg.parts)) {
+        for (const part of msg.parts as any[]) {
+          if (part.type === "file" && (part.url || part.data)) {
+            const url = part.url || part.data;
+            const docId = generateUUID();
+            return {
+              documentId: docId,
+              source: url,
+              title: part.name || "Attached Photo",
+            };
+          }
+        }
+      }
+    }
+  }
+
+  throw new Error(
+    "No active image found. Please upload a photo or provide an image URL first."
+  );
 }
 
-export const imageResizePhysical = ({ session, dataStream }: ImageToolsProps) =>
+export const imageResizePhysical = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
   tool({
     description:
       "Resize an image to exact physical dimensions (mm, cm, in, px) and embed target DPI metadata into the file. Ideal for passport photos, visa applications, ID cards, and high-res print specs.",
     execute: async ({
       id,
+      imageUrl,
       preset,
       width,
       height,
       unit = "mm",
       dpi = 300,
     }) => {
-      const document = await resolveImageDocument(session, id);
-      if (!document || !document.content) {
-        return { error: "No active image found to resize. Please select or upload an image first." };
+      let resolved: { source: string; documentId: string; title: string };
+      try {
+        resolved = await resolveImageSource(session, id, imageUrl, chatId);
+      } catch (err: any) {
+        return { error: err.message };
       }
 
       let finalWidth = width;
@@ -74,33 +139,42 @@ export const imageResizePhysical = ({ session, dataStream }: ImageToolsProps) =>
 
       if (!finalWidth || !finalHeight) {
         return {
-          error: "Width and height or a valid preset (e.g. 'indian_passport', 'us_visa') must be provided.",
+          error:
+            "Width and height or a valid preset (e.g. 'indian_passport', 'us_visa') must be provided.",
         };
       }
 
-      const result = await executeResizePhysical(document.content, {
-        width: finalWidth,
-        height: finalHeight,
-        unit: finalUnit,
+      const result = await executeResizePhysical(resolved.source, {
         dpi: finalDpi,
         fit: "cover",
         format: "jpeg",
+        height: finalHeight,
         quality: 95,
+        unit: finalUnit,
+        width: finalWidth,
       });
 
-      // Save version
+      // Save version to DB
       await saveDocument({
         content: result.base64,
-        id: document.id,
+        id: resolved.documentId,
         kind: "image",
-        title: document.title,
+        title: resolved.title,
         userId: session.user!.id,
       });
 
-      // Emit UI updates
+      // Emit UI updates to open Right Pane studio
       dataStream.write({ data: "image", transient: true, type: "data-kind" });
-      dataStream.write({ data: document.id, transient: true, type: "data-id" });
-      dataStream.write({ data: document.title, transient: true, type: "data-title" });
+      dataStream.write({
+        data: resolved.documentId,
+        transient: true,
+        type: "data-id",
+      });
+      dataStream.write({
+        data: resolved.title,
+        transient: true,
+        type: "data-title",
+      });
       dataStream.write({ data: null, transient: true, type: "data-clear" });
       dataStream.write({
         data: result.base64,
@@ -110,16 +184,37 @@ export const imageResizePhysical = ({ session, dataStream }: ImageToolsProps) =>
       dataStream.write({ data: null, transient: true, type: "data-finish" });
 
       return {
-        id: document.id,
         dimensions: `${finalWidth}x${finalHeight} ${finalUnit}`,
-        pixelDimensions: `${result.width}x${result.height} px`,
         dpi: finalDpi,
-        sizeKb: Math.round(result.sizeBytes / 1024),
+        id: resolved.documentId,
         message: `Successfully resized image to ${finalWidth}×${finalHeight} ${finalUnit} (${result.width}×${result.height} px @ ${finalDpi} DPI).`,
+        pixelDimensions: `${result.width}x${result.height} px`,
+        sizeKb: Math.round(result.sizeBytes / 1024),
       };
     },
     inputSchema: z.object({
-      id: z.string().optional().describe("ID of the image artifact. If omitted, uses active/recent image."),
+      dpi: z
+        .union([
+          z.literal(72),
+          z.literal(150),
+          z.literal(300),
+          z.literal(600),
+        ])
+        .optional()
+        .default(300),
+      height: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Height in physical units"),
+      id: z
+        .string()
+        .optional()
+        .describe("ID of the image artifact. If omitted, uses active/recent image."),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe("Direct URL or signed URL of the image to process"),
       preset: z
         .enum([
           "indian_passport",
@@ -132,43 +227,60 @@ export const imageResizePhysical = ({ session, dataStream }: ImageToolsProps) =>
         ])
         .optional()
         .describe("Official photo preset for visa/passport standard dimensions"),
-      width: z.number().positive().optional().describe("Width in physical units"),
-      height: z.number().positive().optional().describe("Height in physical units"),
       unit: z.enum(["mm", "cm", "in", "px"]).optional().default("mm"),
-      dpi: z.union([z.literal(72), z.literal(150), z.literal(300), z.literal(600)]).optional().default(300),
+      width: z.number().positive().optional().describe("Width in physical units"),
     }),
   });
 
-export const imageRemoveBg = ({ session, dataStream }: ImageToolsProps) =>
+export const imageRemoveBg = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
   tool({
     description:
       "Remove the background of an image using native neural segmentation. Can produce transparent alpha PNG or composite onto solid passport-compliant white/neutral background.",
-    execute: async ({ id, mode = "transparent", color = "#ffffff" }) => {
-      const document = await resolveImageDocument(session, id);
-      if (!document || !document.content) {
-        return { error: "No active image found. Please upload or select an image first." };
+    execute: async ({
+      id,
+      imageUrl,
+      mode = "transparent",
+      color = "#ffffff",
+    }) => {
+      let resolved: { source: string; documentId: string; title: string };
+      try {
+        resolved = await resolveImageSource(session, id, imageUrl, chatId);
+      } catch (err: any) {
+        return { error: err.message };
       }
 
-      const result = await executeRemoveBg(document.content, {
-        mode,
+      const result = await executeRemoveBg(resolved.source, {
         color,
         format: mode === "solid_color" ? "jpeg" : "png",
+        mode,
         quality: 95,
       });
 
       // Save version
       await saveDocument({
         content: result.base64,
-        id: document.id,
+        id: resolved.documentId,
         kind: "image",
-        title: document.title,
+        title: resolved.title,
         userId: session.user!.id,
       });
 
       // Emit UI updates
       dataStream.write({ data: "image", transient: true, type: "data-kind" });
-      dataStream.write({ data: document.id, transient: true, type: "data-id" });
-      dataStream.write({ data: document.title, transient: true, type: "data-title" });
+      dataStream.write({
+        data: resolved.documentId,
+        transient: true,
+        type: "data-id",
+      });
+      dataStream.write({
+        data: resolved.title,
+        transient: true,
+        type: "data-title",
+      });
       dataStream.write({ data: null, transient: true, type: "data-clear" });
       dataStream.write({
         data: result.base64,
@@ -178,54 +290,75 @@ export const imageRemoveBg = ({ session, dataStream }: ImageToolsProps) =>
       dataStream.write({ data: null, transient: true, type: "data-finish" });
 
       return {
-        id: document.id,
-        mode,
         color: mode === "solid_color" ? color : "transparent",
-        sizeKb: Math.round(result.sizeBytes / 1024),
+        id: resolved.documentId,
         message:
           mode === "solid_color"
             ? `Background removed and filled with solid color (${color}).`
             : "Background removed with transparent alpha cutout.",
+        mode,
+        sizeKb: Math.round(result.sizeBytes / 1024),
       };
     },
     inputSchema: z.object({
-      id: z.string().optional().describe("ID of the image artifact"),
-      mode: z.enum(["transparent", "solid_color"]).optional().default("transparent"),
       color: z
         .string()
         .optional()
         .default("#ffffff")
-        .describe("Hex color code when mode is 'solid_color' (e.g. '#ffffff' for passport/visa compliance)"),
+        .describe(
+          "Hex color code when mode is 'solid_color' (e.g. '#ffffff' for passport/visa compliance)"
+        ),
+      id: z.string().optional().describe("ID of the image artifact"),
+      imageUrl: z.string().optional().describe("Direct URL of the image"),
+      mode: z
+        .enum(["transparent", "solid_color"])
+        .optional()
+        .default("transparent"),
     }),
   });
 
-export const imageCrop = ({ session, dataStream }: ImageToolsProps) =>
+export const imageCrop = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
   tool({
-    description: "Crop an image to specified rectangular coordinates (left, top, width, height).",
-    execute: async ({ id, left, top, width, height }) => {
-      const document = await resolveImageDocument(session, id);
-      if (!document || !document.content) {
-        return { error: "No active image found to crop." };
+    description:
+      "Crop an image to specified rectangular coordinates (left, top, width, height).",
+    execute: async ({ id, imageUrl, left, top, width, height }) => {
+      let resolved: { source: string; documentId: string; title: string };
+      try {
+        resolved = await resolveImageSource(session, id, imageUrl, chatId);
+      } catch (err: any) {
+        return { error: err.message };
       }
 
-      const result = await executeCrop(document.content, {
+      const result = await executeCrop(resolved.source, {
+        height,
         left,
         top,
         width,
-        height,
       });
 
       await saveDocument({
         content: result.base64,
-        id: document.id,
+        id: resolved.documentId,
         kind: "image",
-        title: document.title,
+        title: resolved.title,
         userId: session.user!.id,
       });
 
       dataStream.write({ data: "image", transient: true, type: "data-kind" });
-      dataStream.write({ data: document.id, transient: true, type: "data-id" });
-      dataStream.write({ data: document.title, transient: true, type: "data-title" });
+      dataStream.write({
+        data: resolved.documentId,
+        transient: true,
+        type: "data-id",
+      });
+      dataStream.write({
+        data: resolved.title,
+        transient: true,
+        type: "data-title",
+      });
       dataStream.write({ data: null, transient: true, type: "data-clear" });
       dataStream.write({
         data: result.base64,
@@ -235,46 +368,61 @@ export const imageCrop = ({ session, dataStream }: ImageToolsProps) =>
       dataStream.write({ data: null, transient: true, type: "data-finish" });
 
       return {
-        id: document.id,
         croppedDimensions: `${result.width}x${result.height} px`,
+        id: resolved.documentId,
         message: `Image cropped to ${result.width}×${result.height} px.`,
       };
     },
     inputSchema: z.object({
+      height: z.number().positive(),
       id: z.string().optional(),
+      imageUrl: z.string().optional(),
       left: z.number().min(0),
       top: z.number().min(0),
       width: z.number().positive(),
-      height: z.number().positive(),
     }),
   });
 
-export const imageCompress = ({ session, dataStream }: ImageToolsProps) =>
+export const imageCompress = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
   tool({
     description:
       "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality.",
-    execute: async ({ id, targetSizeKb, quality = 80 }) => {
-      const document = await resolveImageDocument(session, id);
-      if (!document || !document.content) {
-        return { error: "No active image found to compress." };
+    execute: async ({ id, imageUrl, targetSizeKb, quality = 80 }) => {
+      let resolved: { source: string; documentId: string; title: string };
+      try {
+        resolved = await resolveImageSource(session, id, imageUrl, chatId);
+      } catch (err: any) {
+        return { error: err.message };
       }
 
-      const result = await executeCompress(document.content, {
-        targetSizeKb,
+      const result = await executeCompress(resolved.source, {
         quality,
+        targetSizeKb,
       });
 
       await saveDocument({
         content: result.base64,
-        id: document.id,
+        id: resolved.documentId,
         kind: "image",
-        title: document.title,
+        title: resolved.title,
         userId: session.user!.id,
       });
 
       dataStream.write({ data: "image", transient: true, type: "data-kind" });
-      dataStream.write({ data: document.id, transient: true, type: "data-id" });
-      dataStream.write({ data: document.title, transient: true, type: "data-title" });
+      dataStream.write({
+        data: resolved.documentId,
+        transient: true,
+        type: "data-id",
+      });
+      dataStream.write({
+        data: resolved.title,
+        transient: true,
+        type: "data-title",
+      });
       dataStream.write({ data: null, transient: true, type: "data-clear" });
       dataStream.write({
         data: result.base64,
@@ -285,14 +433,19 @@ export const imageCompress = ({ session, dataStream }: ImageToolsProps) =>
 
       const finalSizeKb = Math.round(result.sizeBytes / 1024);
       return {
-        id: document.id,
-        sizeKb: finalSizeKb,
+        id: resolved.documentId,
         message: `Image compressed to ${finalSizeKb} KB.`,
+        sizeKb: finalSizeKb,
       };
     },
     inputSchema: z.object({
       id: z.string().optional(),
-      targetSizeKb: z.number().positive().optional().describe("Target maximum file size in KB"),
+      imageUrl: z.string().optional(),
       quality: z.number().min(1).max(100).optional().default(80),
+      targetSizeKb: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Target maximum file size in KB"),
     }),
   });

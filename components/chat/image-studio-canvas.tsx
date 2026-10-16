@@ -56,17 +56,72 @@ export const ImageStudioCanvas = memo(function ImageStudioCanvas({
   }, [content, originalBase64]);
 
   // Read natural image dimensions
+  const formatSrc = useCallback((str: string | null) => {
+    if (!str) return "";
+    if (
+      str.startsWith("http://") ||
+      str.startsWith("https://") ||
+      str.startsWith("data:")
+    ) {
+      return str;
+    }
+    return `data:image/png;base64,${str}`;
+  }, []);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileLoaded = useCallback(
+    (dataUrl: string) => {
+      setCurrentBase64(dataUrl);
+      if (!originalBase64) {
+        setOriginalBase64(dataUrl);
+      }
+      if (onSaveContent) {
+        onSaveContent(dataUrl, false);
+      }
+      toast.success("Photo loaded into Image Studio!");
+    },
+    [originalBase64, onSaveContent]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files?.[0];
+      if (file && file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          handleFileLoaded(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [handleFileLoaded]
+  );
+
+  const handleFileInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          handleFileLoaded(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [handleFileLoaded]
+  );
+
   useEffect(() => {
     if (!currentBase64) return;
     const img = new Image();
-    img.src = currentBase64.startsWith("data:")
-      ? currentBase64
-      : `data:image/png;base64,${currentBase64}`;
+    img.src = formatSrc(currentBase64);
     img.onload = () => {
       setNaturalWidth(img.naturalWidth);
       setNaturalHeight(img.naturalHeight);
     };
-  }, [currentBase64]);
+  }, [currentBase64, formatSrc]);
 
   // ─── Viewport Zoom & Pan State ───────────────────────────────────────────────
   const [zoom, setZoom] = useState<number>(1);
@@ -342,19 +397,8 @@ export const ImageStudioCanvas = memo(function ImageStudioCanvas({
   };
 
   // Image source strings
-  const imageSrc = useMemo(() => {
-    if (!currentBase64) return "";
-    return currentBase64.startsWith("data:")
-      ? currentBase64
-      : `data:image/png;base64,${currentBase64}`;
-  }, [currentBase64]);
-
-  const originalSrc = useMemo(() => {
-    if (!originalBase64) return "";
-    return originalBase64.startsWith("data:")
-      ? originalBase64
-      : `data:image/png;base64,${originalBase64}`;
-  }, [originalBase64]);
+  const imageSrc = useMemo(() => formatSrc(currentBase64), [currentBase64, formatSrc]);
+  const originalSrc = useMemo(() => formatSrc(originalBase64), [originalBase64, formatSrc]);
 
   // Physical dimension string for badge
   const physicalReadout = useMemo(() => {
@@ -448,7 +492,41 @@ export const ImageStudioCanvas = memo(function ImageStudioCanvas({
             backgroundPosition: "0 0, 10px 10px",
           }}
         >
-          {isComparing && originalSrc ? (
+          {!imageSrc ? (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              className="flex h-full w-full flex-col items-center justify-center p-8 text-center"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
+              <div className="flex max-w-md flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-neutral-700 bg-neutral-900/60 p-8 shadow-2xl backdrop-blur transition hover:border-sky-500/50">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-950/80 border border-sky-500/30 text-sky-400">
+                  <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm text-white">Drag & drop your photo here</h3>
+                  <p className="mt-1 text-xs text-neutral-400">
+                    Supports JPEG, PNG, WebP up to 50MB. Instant passport, visa resize & AI background removal.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-sky-500"
+                >
+                  Browse Files
+                </button>
+              </div>
+            </div>
+          ) : isComparing && originalSrc ? (
             /* Split Before/After Comparison View */
             <div className="flex h-full w-full items-center justify-center p-6">
               <BeforeAfterSlider

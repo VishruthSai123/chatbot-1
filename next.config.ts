@@ -39,6 +39,14 @@ const nextConfig: NextConfig = {
         hostname: "*.public.blob.vercel-storage.com",
         protocol: "https",
       },
+      {
+        hostname: "*.supabase.co",
+        protocol: "https",
+      },
+      {
+        hostname: "dexzwnsukzxyguuqseax.supabase.co",
+        protocol: "https",
+      },
     ],
   },
   logging: {

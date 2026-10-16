@@ -22,14 +22,31 @@ import type {
 } from "./types";
 
 /**
- * Parses an image source (data URL, raw base64, or Buffer) into a Node Buffer.
+ * Parses an image source (HTTP URL, Supabase signed URL, data URL, raw base64, or Buffer) into a Node Buffer.
  */
-export function parseImageInput(source: string | Buffer): {
+export async function parseImageInput(source: string | Buffer): Promise<{
   buffer: Buffer;
   mimeType: string;
-} {
+}> {
   if (Buffer.isBuffer(source)) {
     return { buffer: source, mimeType: "image/png" };
+  }
+
+  // Handle remote HTTP/HTTPS URLs (including Supabase Storage signed URLs)
+  if (
+    typeof source === "string" &&
+    (source.startsWith("http://") || source.startsWith("https://"))
+  ) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch remote image: ${response.statusText}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const mimeType = response.headers.get("content-type") || "image/png";
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimeType,
+    };
   }
 
   const match = source.match(/^data:([^;]+);base64,(.+)$/);
@@ -81,7 +98,7 @@ export async function executeResizePhysical(
   input: string | Buffer,
   params: ResizePhysicalInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   const result = await resizePhysicalImage({
     inputBuffer: buffer,
     width: params.width,
@@ -109,7 +126,7 @@ export async function executeRemoveBg(
   input: string | Buffer,
   params: RemoveBgInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
 
   // 1. Run neural segmentation to extract transparent foreground
   const bgResult = await removeImageBackground(buffer);
@@ -156,7 +173,7 @@ export async function executeCrop(
   input: string | Buffer,
   params: CropInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   const result = await cropImage({
     inputBuffer: buffer,
     left: params.left,
@@ -182,7 +199,7 @@ export async function executeRotate(
   input: string | Buffer,
   params: RotateInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   const result = await rotateImage({
     inputBuffer: buffer,
     degrees: params.degrees ?? 0,
@@ -207,7 +224,7 @@ export async function executeCompress(
   input: string | Buffer,
   params: CompressInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   const result = await compressImage({
     inputBuffer: buffer,
     targetSizeKb: params.targetSizeKb,
@@ -230,7 +247,7 @@ export async function executeConvert(
   input: string | Buffer,
   params: ConvertInput
 ): Promise<ImageOperationResult> {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   const result = await convertImage({
     inputBuffer: buffer,
     targetFormat: params.targetFormat,
@@ -249,6 +266,6 @@ export async function executeConvert(
  * Extract image metadata.
  */
 export async function executeGetMetadata(input: string | Buffer) {
-  const { buffer } = parseImageInput(input);
+  const { buffer } = await parseImageInput(input);
   return getImageMetadata(buffer);
 }
