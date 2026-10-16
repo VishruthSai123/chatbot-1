@@ -344,7 +344,10 @@ function PureArtifact({
                     Saving...
                   </div>
                 ) : document ? (
-                  <div className="text-xs text-muted-foreground">
+                  <div
+                    className="text-xs text-muted-foreground"
+                    suppressHydrationWarning
+                  >
                     {`Updated ${formatDistance(new Date(document.createdAt), new Date(), { addSuffix: true })}`}
                   </div>
                 ) : artifact.status === "streaming" ? (
