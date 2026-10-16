@@ -21,8 +21,12 @@ import { cn } from "@/lib/utils";
 import { BeforeAfterSlider } from "../before-after-slider";
 import { BackgroundRemovalInspector } from "./background-removal-inspector";
 import { CompressionInspector } from "./compression-inspector";
+import { ConverterInspector } from "./converter-inspector";
 import { type CropBox, CropInspector } from "./crop-inspector";
+import { OcrInspector } from "./ocr-inspector";
+import { PixelatorInspector } from "./pixelator-inspector";
 import { ResizerInspector } from "./resizer-inspector";
+import { UpscalerInspector } from "./upscaler-inspector";
 
 interface ImageWorkbenchProps {
   content: string; // base64 string or dataUrl
@@ -44,6 +48,10 @@ const TOOL_MODES: {
   { icon: "📐", key: "resize", label: "Resize" },
   { icon: "✂️", key: "crop", label: "Crop" },
   { icon: "✨", key: "remove_bg", label: "Remove BG" },
+  { icon: "🔁", key: "convert", label: "Convert" },
+  { icon: "🔬", key: "upscale", label: "Upscale" },
+  { icon: "🟦", key: "pixelate", label: "Pixelate" },
+  { icon: "🔎", key: "ocr", label: "OCR" },
 ];
 
 export const ImageWorkbench = memo(function InnerImageWorkbench({
@@ -671,34 +679,41 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </div>
           )}
 
-          {/* Floating Bottom Pill Navbar (Fixed, 50% corner radius, icons only, no pills) */}
+          {/* Floating horizontal tool navbar (glassmorphic, scrollable pill) */}
           {!isInspectorOpen && (
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center gap-2 rounded-full border border-border/80 bg-card/95 px-3 py-2 shadow-2xl backdrop-blur-xl ring-1 ring-black/10 max-w-[calc(100vw-32px)] w-auto select-none animate-in fade-in slide-in-from-bottom-3 duration-200">
-              {TOOL_MODES.map((mode) => {
-                const isActive = activeToolMode === mode.key;
-                return (
-                  <button
-                    aria-label={mode.label}
-                    className={cn(
-                      "size-10 sm:size-11 rounded-full flex items-center justify-center transition-all cursor-pointer",
-                      isActive
-                        ? "bg-foreground text-background shadow-sm scale-105"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
-                    )}
-                    key={mode.key}
-                    onClick={() => {
-                      handleToolModeChange(mode.key);
-                      setIsInspectorOpen(true);
-                    }}
-                    title={mode.label}
-                    type="button"
-                  >
-                    <span className="text-lg select-none leading-none">
-                      {mode.icon}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="fixed bottom-6 left-1/2 z-40 w-[calc(100vw-32px)] -translate-x-1/2 select-none animate-in fade-in slide-in-from-bottom-3 duration-200 md:w-auto md:max-w-2xl">
+              <div className="relative mx-auto">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 rounded-l-full bg-gradient-to-r from-background/90 to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 rounded-r-full bg-gradient-to-l from-background/90 to-transparent" />
+                <div className="flex h-14 items-center gap-1.5 overflow-x-auto scroll-smooth rounded-full border border-border/60 bg-background/85 px-3 py-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {TOOL_MODES.map((mode) => {
+                    const isActive = activeToolMode === mode.key;
+                    return (
+                      <button
+                        aria-label={mode.label}
+                        className={cn(
+                          "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                          isActive
+                            ? "scale-105 bg-foreground font-semibold text-background shadow-sm"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground active:scale-95"
+                        )}
+                        key={mode.key}
+                        onClick={() => {
+                          handleToolModeChange(mode.key);
+                          setIsInspectorOpen(true);
+                        }}
+                        title={mode.label}
+                        type="button"
+                      >
+                        <span className="text-base select-none leading-none">
+                          {mode.icon}
+                        </span>
+                        <span>{mode.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -822,6 +837,57 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 onUpdateImage={handleUpdateImage}
                 originalSrc={originalBase64}
                 setIsComparing={setIsComparing}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
+
+            {activeToolMode === "convert" && (
+              <ConverterInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
+
+            {activeToolMode === "upscale" && (
+              <UpscalerInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
+
+            {activeToolMode === "pixelate" && (
+              <PixelatorInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                originalSrc={originalBase64}
+                setIsProcessing={setIsProcessing}
+              />
+            )}
+
+            {activeToolMode === "ocr" && (
+              <OcrInspector
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                ocrText={artifact.ocrText}
+                onRequireAuth={() => setShowAuthModal(true)}
                 setIsProcessing={setIsProcessing}
               />
             )}

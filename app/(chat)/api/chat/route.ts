@@ -27,9 +27,13 @@ import { editDocument } from "@/lib/ai/tools/edit-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
 import {
   imageCompress,
+  imageConvert,
   imageCrop,
+  imageOcr,
+  imagePixelate,
   imageRemoveBg,
   imageResizePhysical,
+  imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
@@ -286,6 +290,10 @@ export async function POST(request: Request) {
                   "imageRemoveBg",
                   "imageCrop",
                   "imageCompress",
+                  "imageConvert",
+                  "imageUpscaleEnhance",
+                  "imagePixelate",
+                  "imageOcr",
                 ],
           instructions: systemPrompt({ requestHints, supportsTools }),
           messages: modelMessages,
@@ -334,7 +342,25 @@ export async function POST(request: Request) {
               messages: uiMessages,
               session,
             }),
+            imageConvert: imageConvert({
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
             imageCrop: imageCrop({
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            imageOcr: imageOcr({
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            imagePixelate: imagePixelate({
               chatId: id,
               dataStream,
               messages: uiMessages,
@@ -347,6 +373,12 @@ export async function POST(request: Request) {
               session,
             }),
             imageResizePhysical: imageResizePhysical({
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            imageUpscaleEnhance: imageUpscaleEnhance({
               chatId: id,
               dataStream,
               messages: uiMessages,

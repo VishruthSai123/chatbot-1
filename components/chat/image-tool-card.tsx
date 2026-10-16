@@ -1,6 +1,12 @@
 "use client";
 
-import { Download, Lock, RotateCcw, SlidersHorizontal } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Lock,
+  RotateCcw,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -15,7 +21,11 @@ export type ImageToolType =
   | "tool-imageCompress"
   | "tool-imageResizePhysical"
   | "tool-imageCrop"
-  | "tool-imageRemoveBg";
+  | "tool-imageRemoveBg"
+  | "tool-imageConvert"
+  | "tool-imageUpscaleEnhance"
+  | "tool-imagePixelate"
+  | "tool-imageOcr";
 
 interface ImageToolCardProps {
   isReadonly?: boolean;
@@ -29,6 +39,11 @@ interface ImageToolCardProps {
     mode?: string;
     color?: string;
     croppedDimensions?: string;
+    format?: string;
+    scale?: number;
+    blockSize?: number;
+    ocrText?: string;
+    wordCount?: number;
     error?: string;
     requiresAuth?: boolean;
   };
@@ -49,10 +64,25 @@ const TOOL_CONFIG: Record<
     label: "Compress Photo",
     mode: "compress",
   },
+  "tool-imageConvert": {
+    icon: "🔁",
+    label: "Convert Format",
+    mode: "convert",
+  },
   "tool-imageCrop": {
     icon: "✂️",
     label: "Crop Photo",
     mode: "crop",
+  },
+  "tool-imageOcr": {
+    icon: "🔎",
+    label: "Extract Text (OCR)",
+    mode: "ocr",
+  },
+  "tool-imagePixelate": {
+    icon: "🟦",
+    label: "Pixelate / Redact",
+    mode: "pixelate",
   },
   "tool-imageRemoveBg": {
     icon: "✨",
@@ -63,6 +93,11 @@ const TOOL_CONFIG: Record<
     icon: "📐",
     label: "Resize Physical Photo",
     mode: "resize",
+  },
+  "tool-imageUpscaleEnhance": {
+    icon: "🔬",
+    label: "Upscale & Enhance",
+    mode: "upscale",
   },
 };
 
@@ -197,8 +232,13 @@ export function ImageToolCard({
         return;
       }
 
-      const mime = config.mode === "remove_bg" ? "image/png" : "image/jpeg";
-      const ext = config.mode === "remove_bg" ? "png" : "jpg";
+      const fmt = (output?.format || "").toLowerCase();
+      const isPng =
+        fmt === "png" ||
+        config.mode === "remove_bg" ||
+        config.mode === "pixelate";
+      const mime = isPng ? "image/png" : fmt ? `image/${fmt}` : "image/jpeg";
+      const ext = isPng ? "png" : fmt || "jpg";
       const link = window.document.createElement("a");
       link.href = imageBase64.startsWith("data:")
         ? imageBase64
@@ -207,8 +247,20 @@ export function ImageToolCard({
       link.click();
       toast.success("Download started");
     },
-    [imageBase64, config.mode]
+    [imageBase64, config.mode, output?.format]
   );
+
+  const handleCopyOcr = useCallback(async () => {
+    if (!output?.ocrText) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(output.ocrText);
+      toast.success("Extracted text copied to clipboard");
+    } catch {
+      toast.error("Failed to copy text");
+    }
+  }, [output?.ocrText]);
 
   return (
     <div
@@ -298,6 +350,12 @@ export function ImageToolCard({
               {output.message}
             </p>
           ) : null}
+
+          {config.mode === "ocr" && output?.ocrText ? (
+            <div className="mt-1 max-h-28 w-full overflow-y-auto rounded-md border border-border/40 bg-muted/20 p-2 font-mono text-[10px] leading-relaxed text-foreground/90 whitespace-pre-wrap">
+              {output.ocrText}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -326,6 +384,17 @@ export function ImageToolCard({
 
       {/* Action Footer */}
       <div className="flex flex-wrap items-center justify-end gap-1.5 pt-2 border-t border-border/40">
+        {config.mode === "ocr" && output?.ocrText ? (
+          <button
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+            onClick={handleCopyOcr}
+            title="Copy extracted text to clipboard"
+            type="button"
+          >
+            <Copy className="size-3.5" />
+            Copy Text
+          </button>
+        ) : null}
         <button
           className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           onClick={handleRestore}

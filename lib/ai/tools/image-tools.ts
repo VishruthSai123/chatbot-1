@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import type { ImageToolMode } from "@/components/chat/artifact";
 import { guestRegex } from "@/lib/constants";
 import {
   getDocumentById,
@@ -17,9 +18,13 @@ import {
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import {
   executeCompress,
+  executeConvert,
   executeCrop,
+  executeOcr,
+  executePixelate,
   executeRemoveBg,
   executeResizePhysical,
+  executeUpscaleEnhance,
 } from "@/lib/tools/image";
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
@@ -49,6 +54,42 @@ function isInternalModelUrl(url?: string | null): boolean {
     lower.includes("/api/content/references") ||
     lower.includes("googleusercontent.com")
   );
+}
+
+/**
+ * Emits the standard transient data-stream parts that mount the right-pane
+ * image workbench focused on a specific tool.
+ */
+function emitImageArtifact(
+  dataStream: UIMessageStreamWriter<ChatMessage>,
+  payload: {
+    base64?: string;
+    id: string;
+    mode: ImageToolMode;
+    title: string;
+  }
+) {
+  dataStream.write({ data: "image", transient: true, type: "data-kind" });
+  dataStream.write({ data: payload.id, transient: true, type: "data-id" });
+  dataStream.write({
+    data: payload.title,
+    transient: true,
+    type: "data-title",
+  });
+  dataStream.write({
+    data: payload.mode,
+    transient: true,
+    type: "data-imageToolMode",
+  });
+  dataStream.write({ data: null, transient: true, type: "data-clear" });
+  if (payload.base64) {
+    dataStream.write({
+      data: payload.base64,
+      transient: true,
+      type: "data-imageDelta",
+    });
+  }
+  dataStream.write({ data: null, transient: true, type: "data-finish" });
 }
 
 async function resolveImageSource(
@@ -168,11 +209,22 @@ async function resolveImageSource(
       }
     }
 
-    // B) Grab the most recent tool output, active image, or attachment (NEWEST FIRST)
-    let candidateToolDocId: string | null = null;
-    let candidateToolTitle = "Processed Photo";
+    // B) Grab the most recent tool output, active image, or attachment (NEWEST FIRST).
+    // Stop at the FIRST (newest) candidate so an older, stale signed URL can never
+    // shadow the latest edited version, and resolve document IDs before any URL fetch.
+    type Candidate =
+      | { kind: "inline"; source: string; documentId: string; title: string }
+      | { kind: "doc"; documentId: string; title: string }
+      | { kind: "url"; source: string; documentId: string; title: string };
 
-    for (let i = candidateMessages.length - 1; i >= 0; i -= 1) {
+    let candidate: Candidate | null = null;
+
+    const registryFallback = activeImageRegistry.getActiveImage({
+      chatId,
+      userId: session.user.id,
+    });
+
+    for (let i = candidateMessages.length - 1; i >= 0 && !candidate; i -= 1) {
       const msg = candidateMessages[i];
 
       // Check msg.parts (tool outputs and uploaded files)
@@ -189,26 +241,6 @@ async function resolveImageSource(
               | Record<string, any>
               | undefined;
 
-            if (out?.id && isValidUUID(out.id)) {
-              // Check in-memory registry first
-              const cached = activeImageRegistry.getActiveImage({
-                documentId: out.id,
-              });
-              if (cached?.base64) {
-                return {
-                  documentId: out.id,
-                  source: cached.base64,
-                  title: cached.title || "Processed Photo",
-                };
-              }
-
-              // Defer database lookup outside loop to satisfy noAwaitInLoops
-              if (!candidateToolDocId) {
-                candidateToolDocId = out.id;
-                candidateToolTitle = out.title || "Processed Photo";
-              }
-            }
-
             const inlineContent =
               out?.result?.dataUrl ||
               out?.result?.base64 ||
@@ -218,75 +250,154 @@ async function resolveImageSource(
               out?.source;
 
             if (inlineContent) {
-              return {
+              candidate = {
                 documentId: out?.id || generateUUID(),
+                kind: "inline",
                 source: inlineContent,
                 title: out?.title || out?.document?.title || "Processed Photo",
               };
+              break;
+            }
+
+            if (out?.id && isValidUUID(out.id)) {
+              const cached = activeImageRegistry.getActiveImage({
+                documentId: out.id,
+              });
+              candidate = cached?.base64
+                ? {
+                    documentId: out.id,
+                    kind: "inline",
+                    source: cached.base64,
+                    title: cached.title || "Processed Photo",
+                  }
+                : {
+                    documentId: out.id,
+                    kind: "doc",
+                    title: out.title || "Processed Photo",
+                  };
+              break;
             }
           }
 
-          if (
-            (part.type === "file" || part.type === "image") &&
-            (part.url || part.data || part.image)
-          ) {
-            // Check active session registry first (has raw uploaded buffer)
-            const cached = activeImageRegistry.getActiveImage({
-              chatId,
-              userId: session.user.id,
-            });
-            if (cached?.base64) {
-              return {
-                documentId: cached.documentId || generateUUID(),
-                source: cached.base64,
-                title: cached.title || part.name || "Attached Photo",
-              };
+          if (part.type === "file" || part.type === "image") {
+            // Prefer an explicit document reference carried on the part
+            const partDocId =
+              typeof part.documentId === "string" &&
+              isValidUUID(part.documentId)
+                ? part.documentId
+                : null;
+
+            if (partDocId) {
+              const cached = activeImageRegistry.getActiveImage({
+                documentId: partDocId,
+              });
+              candidate = cached?.base64
+                ? {
+                    documentId: partDocId,
+                    kind: "inline",
+                    source: cached.base64,
+                    title: cached.title || part.name || "Attached Photo",
+                  }
+                : {
+                    documentId: partDocId,
+                    kind: "doc",
+                    title: part.name || "Attached Photo",
+                  };
+              break;
             }
 
-            return {
-              documentId: generateUUID(),
-              source: part.url || part.data || part.image,
-              title: part.name || "Attached Photo",
-            };
+            const partUrl = part.url || part.data || part.image;
+            if (partUrl) {
+              if (registryFallback?.base64) {
+                candidate = {
+                  documentId: registryFallback.documentId || generateUUID(),
+                  kind: "inline",
+                  source: registryFallback.base64,
+                  title:
+                    registryFallback.title || part.name || "Attached Photo",
+                };
+              } else {
+                candidate = {
+                  documentId: generateUUID(),
+                  kind: "url",
+                  source: partUrl,
+                  title: part.name || "Attached Photo",
+                };
+              }
+              break;
+            }
           }
         }
       }
 
       // Check msg.attachments
-      if (Array.isArray(msg.attachments)) {
+      if (!candidate && Array.isArray(msg.attachments)) {
         for (const att of msg.attachments) {
           const name = att.name || att.pathname || "";
-          if (
+          const isImage =
             att.url &&
             (att.contentType?.startsWith("image/") ||
-              /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(name))
-          ) {
-            const cached = activeImageRegistry.getActiveImage({
-              chatId,
-              userId: session.user.id,
-            });
-            if (cached?.base64) {
-              return {
-                documentId: cached.documentId || generateUUID(),
-                source: cached.base64,
-                title: cached.title || name || "Attached Photo",
-              };
-            }
+              /\.(png|jpe?g|webp|gif|svg|avif)$/i.test(name));
+          if (!isImage) {
+            continue;
+          }
 
-            return {
+          const attDocId =
+            typeof att.documentId === "string" && isValidUUID(att.documentId)
+              ? att.documentId
+              : null;
+
+          if (attDocId) {
+            const cached = activeImageRegistry.getActiveImage({
+              documentId: attDocId,
+            });
+            candidate = cached?.base64
+              ? {
+                  documentId: attDocId,
+                  kind: "inline",
+                  source: cached.base64,
+                  title: cached.title || name || "Attached Photo",
+                }
+              : {
+                  documentId: attDocId,
+                  kind: "doc",
+                  title: name || "Attached Photo",
+                };
+            break;
+          }
+
+          if (registryFallback?.base64) {
+            candidate = {
+              documentId: registryFallback.documentId || generateUUID(),
+              kind: "inline",
+              source: registryFallback.base64,
+              title: registryFallback.title || name || "Attached Photo",
+            };
+          } else {
+            candidate = {
               documentId: generateUUID(),
+              kind: "url",
               source: att.url,
               title: name || "Attached Photo",
             };
           }
+          break;
         }
       }
     }
 
-    // Lookup deferred candidate tool document from database
-    if (candidateToolDocId) {
+    // Resolve the newest candidate (document IDs hit registry, then Postgres)
+    if (candidate?.kind === "inline") {
+      return {
+        documentId: candidate.documentId,
+        source: candidate.source,
+        title: candidate.title,
+      };
+    }
+
+    if (candidate?.kind === "doc") {
       try {
-        const doc = await getDocumentById({ id: candidateToolDocId });
+        const doc = await getDocumentById({ id: candidate.documentId });
         if (doc?.content && doc.userId === session.user.id) {
           activeImageRegistry.setActiveImage({
             base64: doc.content,
@@ -298,12 +409,20 @@ async function resolveImageSource(
           return {
             documentId: doc.id,
             source: doc.content,
-            title: doc.title || candidateToolTitle,
+            title: doc.title || candidate.title,
           };
         }
       } catch {
-        // non-fatal
+        // non-fatal — fall through to registry / latest-document fallbacks
       }
+    }
+
+    if (candidate?.kind === "url") {
+      return {
+        documentId: candidate.documentId,
+        source: candidate.source,
+        title: candidate.title,
+      };
     }
   }
 
@@ -954,5 +1073,441 @@ export const imageCompress = ({
         .positive()
         .optional()
         .describe("Target maximum file size in KB"),
+    }),
+  });
+
+export const imageConvert = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Convert an image to a different file format (JPEG, PNG, WebP, AVIF, TIFF), preserving transparency where the target format supports it.",
+    execute: async ({ id, imageUrl, targetFormat, quality = 95 }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image format conversion is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        let resolved: { source: string; documentId: string; title: string };
+        try {
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
+        } catch (err: any) {
+          return { error: err.message };
+        }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
+
+        const result = await executeConvert(
+          resolved.source,
+          { quality, targetFormat },
+          { chatId, documentId: validDocId, userId: session.user?.id as string }
+        );
+
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
+        });
+
+        try {
+          await saveDocument({
+            content: result.base64,
+            id: validDocId,
+            kind: "image",
+            title: resolved.title,
+            userId: session.user?.id as string,
+          });
+        } catch (dbErr) {
+          console.warn("Non-fatal: Failed to persist convert document:", dbErr);
+        }
+
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "convert",
+          title: resolved.title,
+        });
+
+        return {
+          format: result.format,
+          id: validDocId,
+          message: `Converted image to ${result.format.toUpperCase()}.`,
+          pixelDimensions: `${result.width}x${result.height} px`,
+          sizeKb: Math.round(result.sizeBytes / 1024),
+          toolMode: "convert",
+        };
+      } catch (err: any) {
+        console.error("Convert tool execution error:", err);
+        return { error: err.message || "Failed to convert photo" };
+      }
+    },
+    inputSchema: z.object({
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
+      quality: z.number().min(1).max(100).optional().default(95),
+      targetFormat: z.enum(["jpeg", "png", "webp", "avif", "tiff"]),
+    }),
+  });
+
+export const imageUpscaleEnhance = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Upscale an image 2x or 4x with Lanczos super-sampling and optionally enhance edge clarity, brightness, and saturation.",
+    execute: async ({
+      id,
+      imageUrl,
+      scale = 2,
+      sharpen = true,
+      enhance = false,
+      format = "jpeg",
+      quality = 95,
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image upscaling and enhancement are reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        let resolved: { source: string; documentId: string; title: string };
+        try {
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
+        } catch (err: any) {
+          return { error: err.message };
+        }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
+
+        const result = await executeUpscaleEnhance(
+          resolved.source,
+          { enhance, format, quality, scale, sharpen },
+          { chatId, documentId: validDocId, userId: session.user?.id as string }
+        );
+
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
+        });
+
+        try {
+          await saveDocument({
+            content: result.base64,
+            id: validDocId,
+            kind: "image",
+            title: resolved.title,
+            userId: session.user?.id as string,
+          });
+        } catch (dbErr) {
+          console.warn("Non-fatal: Failed to persist upscale document:", dbErr);
+        }
+
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "upscale",
+          title: resolved.title,
+        });
+
+        return {
+          id: validDocId,
+          message: `Upscaled image ${scale}x to ${result.width}×${result.height} px${sharpen || enhance ? " with enhancement" : ""}.`,
+          pixelDimensions: `${result.width}x${result.height} px`,
+          scale,
+          sizeKb: Math.round(result.sizeBytes / 1024),
+          toolMode: "upscale",
+        };
+      } catch (err: any) {
+        console.error("Upscale tool execution error:", err);
+        return { error: err.message || "Failed to upscale photo" };
+      }
+    },
+    inputSchema: z.object({
+      enhance: z.boolean().optional().default(false),
+      format: z
+        .enum(["jpeg", "png", "webp", "avif", "tiff"])
+        .optional()
+        .default("jpeg"),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
+      quality: z.number().min(1).max(100).optional().default(95),
+      scale: z
+        .union([z.literal(2), z.literal(4)])
+        .optional()
+        .default(2),
+      sharpen: z.boolean().optional().default(true),
+    }),
+  });
+
+export const imagePixelate = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Pixelate (mosaic) or blur an image to redact faces, license plates, or other private information.",
+    execute: async ({
+      id,
+      imageUrl,
+      blockSize = 12,
+      mode = "mosaic",
+      format = "png",
+      quality = 95,
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image pixelation and redaction are reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        let resolved: { source: string; documentId: string; title: string };
+        try {
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
+        } catch (err: any) {
+          return { error: err.message };
+        }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
+
+        const result = await executePixelate(
+          resolved.source,
+          { blockSize, format, mode, quality },
+          { chatId, documentId: validDocId, userId: session.user?.id as string }
+        );
+
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
+        });
+
+        try {
+          await saveDocument({
+            content: result.base64,
+            id: validDocId,
+            kind: "image",
+            title: resolved.title,
+            userId: session.user?.id as string,
+          });
+        } catch (dbErr) {
+          console.warn(
+            "Non-fatal: Failed to persist pixelate document:",
+            dbErr
+          );
+        }
+
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "pixelate",
+          title: resolved.title,
+        });
+
+        return {
+          blockSize,
+          id: validDocId,
+          message:
+            mode === "blur"
+              ? `Blurred image with a ${blockSize}px radius.`
+              : `Pixelated image with ${blockSize}px blocks.`,
+          mode,
+          pixelDimensions: `${result.width}x${result.height} px`,
+          sizeKb: Math.round(result.sizeBytes / 1024),
+          toolMode: "pixelate",
+        };
+      } catch (err: any) {
+        console.error("Pixelate tool execution error:", err);
+        return { error: err.message || "Failed to pixelate photo" };
+      }
+    },
+    inputSchema: z.object({
+      blockSize: z.number().min(2).max(64).optional().default(12),
+      format: z
+        .enum(["jpeg", "png", "webp", "avif", "tiff"])
+        .optional()
+        .default("png"),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
+      mode: z.enum(["mosaic", "blur"]).optional().default("mosaic"),
+      quality: z.number().min(1).max(100).optional().default(95),
+    }),
+  });
+
+export const imageOcr = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Extract text from an image (OCR) using native multimodal vision. Returns the extracted text formatted as Markdown, including tables.",
+    execute: async ({ id, imageUrl }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: OCR text extraction is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        let resolved: { source: string; documentId: string; title: string };
+        try {
+          resolved = await resolveImageSource(
+            session,
+            id,
+            imageUrl,
+            chatId,
+            messages
+          );
+        } catch (err: any) {
+          return { error: err.message };
+        }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
+
+        const result = await executeOcr(
+          resolved.source,
+          { format: "markdown" },
+          { chatId, documentId: validDocId, userId: session.user?.id as string }
+        );
+
+        // Mount the workbench on the source image and stream the OCR text
+        dataStream.write({ data: "image", transient: true, type: "data-kind" });
+        dataStream.write({
+          data: validDocId,
+          transient: true,
+          type: "data-id",
+        });
+        dataStream.write({
+          data: resolved.title,
+          transient: true,
+          type: "data-title",
+        });
+        dataStream.write({
+          data: "ocr",
+          transient: true,
+          type: "data-imageToolMode",
+        });
+        dataStream.write({ data: null, transient: true, type: "data-clear" });
+        dataStream.write({
+          data: resolved.source,
+          transient: true,
+          type: "data-imageDelta",
+        });
+        dataStream.write({
+          data: result.text,
+          transient: true,
+          type: "data-imageOcrText",
+        });
+        dataStream.write({ data: null, transient: true, type: "data-finish" });
+
+        return {
+          id: validDocId,
+          message: `Extracted ${result.wordCount} word${result.wordCount === 1 ? "" : "s"} from the image.`,
+          ocrText: result.text,
+          toolMode: "ocr",
+          wordCount: result.wordCount,
+        };
+      } catch (err: any) {
+        console.error("OCR tool execution error:", err);
+        return { error: err.message || "Failed to extract text from image" };
+      }
+    },
+    inputSchema: z.object({
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
     }),
   });

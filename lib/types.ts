@@ -5,9 +5,13 @@ import type { createDocument } from "./ai/tools/create-document";
 import type { getWeather } from "./ai/tools/get-weather";
 import type {
   imageCompress,
+  imageConvert,
   imageCrop,
+  imageOcr,
+  imagePixelate,
   imageRemoveBg,
   imageResizePhysical,
+  imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
 import type { requestSuggestions } from "./ai/tools/request-suggestions";
 import type { updateDocument } from "./ai/tools/update-document";
@@ -31,6 +35,12 @@ type imageResizePhysicalTool = InferUITool<
 type imageRemoveBgTool = InferUITool<ReturnType<typeof imageRemoveBg>>;
 type imageCropTool = InferUITool<ReturnType<typeof imageCrop>>;
 type imageCompressTool = InferUITool<ReturnType<typeof imageCompress>>;
+type imageConvertTool = InferUITool<ReturnType<typeof imageConvert>>;
+type imageUpscaleEnhanceTool = InferUITool<
+  ReturnType<typeof imageUpscaleEnhance>
+>;
+type imagePixelateTool = InferUITool<ReturnType<typeof imagePixelate>>;
+type imageOcrTool = InferUITool<ReturnType<typeof imageOcr>>;
 
 export type ChatTools = {
   getWeather: weatherTool;
@@ -41,6 +51,10 @@ export type ChatTools = {
   imageRemoveBg: imageRemoveBgTool;
   imageCrop: imageCropTool;
   imageCompress: imageCompressTool;
+  imageConvert: imageConvertTool;
+  imageUpscaleEnhance: imageUpscaleEnhanceTool;
+  imagePixelate: imagePixelateTool;
+  imageOcr: imageOcrTool;
 };
 
 export type WaitingStatusData = {
@@ -65,6 +79,7 @@ export type CustomUIDataTypes = {
   "chat-title": string;
   "waiting-status": WaitingStatusData;
   imageToolMode?: ImageToolMode;
+  imageOcrText: string;
 };
 
 export type ChatMessage = UIMessage<
@@ -77,4 +92,5 @@ export type Attachment = {
   name: string;
   url: string;
   contentType: string;
+  documentId?: string;
 };

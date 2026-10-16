@@ -8,17 +8,23 @@ import {
   executeConvert,
   executeCrop,
   executeGetMetadata,
+  executeOcr,
+  executePixelate,
   executeRemoveBg,
   executeResizePhysical,
   executeRotate,
+  executeUpscaleEnhance,
 } from "@/lib/tools/image";
 import {
   compressSchema,
   convertSchema,
   cropSchema,
+  ocrSchema,
+  pixelateSchema,
   removeBgSchema,
   resizePhysicalSchema,
   rotateSchema,
+  upscaleSchema,
 } from "@/lib/tools/image/types";
 
 export const maxDuration = 60;
@@ -137,6 +143,29 @@ export async function POST(request: Request) {
         const validated = convertSchema.parse(params);
         result = await executeConvert(imageSource, validated, fallbackContext);
         break;
+      }
+      case "upscale": {
+        const validated = upscaleSchema.parse(params ?? {});
+        result = await executeUpscaleEnhance(
+          imageSource,
+          validated,
+          fallbackContext
+        );
+        break;
+      }
+      case "pixelate": {
+        const validated = pixelateSchema.parse(params ?? {});
+        result = await executePixelate(imageSource, validated, fallbackContext);
+        break;
+      }
+      case "ocr": {
+        const validated = ocrSchema.parse(params ?? {});
+        const ocrResult = await executeOcr(
+          imageSource,
+          validated,
+          fallbackContext
+        );
+        return NextResponse.json({ ocr: ocrResult, success: true });
       }
       case "get_metadata": {
         result = await executeGetMetadata(imageSource, fallbackContext);

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
+import { saveDocument } from "@/lib/db/queries";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { uploadArtifact } from "@/lib/storage";
+import { generateUUID } from "@/lib/utils";
 
 const ALLOWED_MIME_TYPES = [
   // Images
@@ -99,13 +101,37 @@ export async function POST(request: Request) {
         userId: session.user.id,
       });
 
-      // Pin image buffer in memory session registry for instant tool access & zero-fetch fallbacks
+      let documentId: string | undefined;
+
+      // Persist turn-zero uploads as durable Document rows (base64 content) and pin
+      // them in the in-memory registry. This survives server restarts / browser
+      // reloads so subsequent conversational edits never depend on ephemeral memory
+      // or expiring signed URLs.
       if (file.type?.startsWith("image/")) {
+        const base64 = Buffer.from(fileBuffer).toString("base64");
+        const candidateId = generateUUID();
+
         try {
-          const base64 = Buffer.from(fileBuffer).toString("base64");
+          await saveDocument({
+            content: base64,
+            id: candidateId,
+            kind: "image",
+            title: filename,
+            userId: session.user.id,
+          });
+          documentId = candidateId;
+        } catch (dbErr) {
+          console.warn(
+            "Non-fatal: Failed to persist uploaded image document:",
+            dbErr
+          );
+        }
+
+        try {
           activeImageRegistry.setActiveImage({
             base64,
             chatId,
+            documentId,
             mimeType: file.type,
             sourceUrl: data.url,
             storageKey: data.storageKey,
@@ -120,7 +146,7 @@ export async function POST(request: Request) {
         }
       }
 
-      return NextResponse.json(data);
+      return NextResponse.json({ ...data, documentId });
     } catch (uploadErr) {
       console.error("Storage upload error:", uploadErr);
       return NextResponse.json(

@@ -36,7 +36,15 @@ export const artifactDefinitions = [
   sheetArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
-export type ImageToolMode = "compress" | "resize" | "crop" | "remove_bg";
+export type ImageToolMode =
+  | "compress"
+  | "resize"
+  | "crop"
+  | "remove_bg"
+  | "convert"
+  | "upscale"
+  | "pixelate"
+  | "ocr";
 
 export type UIArtifact = {
   title: string;
@@ -52,6 +60,7 @@ export type UIArtifact = {
     height: number;
   };
   toolMode?: ImageToolMode;
+  ocrText?: string;
 };
 
 function PureArtifact({

@@ -19,7 +19,7 @@ export const PreviewAttachment = ({
   isUploading?: boolean;
   onRemove?: () => void;
 }) => {
-  const { name, url, contentType } = attachment;
+  const { name, url, contentType, documentId } = attachment;
   const { setArtifact } = useArtifact();
   const { isGuest } = useIsGuest();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -35,13 +35,13 @@ export const PreviewAttachment = ({
     setArtifact({
       boundingBox: { height: 0, left: 0, top: 0, width: 0 },
       content: url,
-      documentId: generateUUID(),
+      documentId: documentId || generateUUID(),
       isVisible: true,
       kind: "image",
       status: "idle",
       title: name || "Image Studio",
     });
-  }, [isUploading, contentType, isGuest, setArtifact, url, name]);
+  }, [isUploading, contentType, isGuest, setArtifact, url, name, documentId]);
 
   const isImage = contentType?.startsWith("image");
 

@@ -86,6 +86,37 @@ export const convertSchema = z.object({
 });
 export type ConvertInput = z.input<typeof convertSchema>;
 
+export const upscaleSchema = z.object({
+  enhance: z.boolean().optional().default(false),
+  format: imageFormatSchema.optional().default("jpeg"),
+  quality: z.number().min(1).max(100).optional().default(95),
+  scale: z
+    .union([z.literal(2), z.literal(4)])
+    .optional()
+    .default(2),
+  sharpen: z.boolean().optional().default(true),
+});
+export type UpscaleInput = z.input<typeof upscaleSchema>;
+
+export const pixelateSchema = z.object({
+  blockSize: z.number().min(2).max(64).optional().default(12),
+  format: imageFormatSchema.optional().default("png"),
+  mode: z.enum(["mosaic", "blur"]).optional().default("mosaic"),
+  quality: z.number().min(1).max(100).optional().default(95),
+});
+export type PixelateInput = z.input<typeof pixelateSchema>;
+
+export const ocrSchema = z.object({
+  format: z.enum(["markdown", "plain"]).optional().default("markdown"),
+});
+export type OcrInput = z.input<typeof ocrSchema>;
+
+export interface OcrOperationResult {
+  model: string;
+  text: string;
+  wordCount: number;
+}
+
 export interface ImageOperationResult {
   base64: string;
   dataUrl: string;

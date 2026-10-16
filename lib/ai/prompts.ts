@@ -51,6 +51,10 @@ CRITICAL RULES:
   * For passport/visa photos: call \`imageResizePhysical\` with preset (e.g. \`indian_passport\`, \`us_visa\`).
   * For background removal: call \`imageRemoveBg\` with mode: 'transparent' (or 'solid_color' with '#ffffff' for passport/visa).
   * For cropping: call \`imageCrop\`.
+  * For format conversion ("convert to webp/png/jpg", "change the format"): call \`imageConvert\` with \`targetFormat\`.
+  * For upscaling or quality enhancement ("upscale", "make it bigger", "enhance", "make it clearer"): call \`imageUpscaleEnhance\` (use \`scale: 2\` or \`scale: 4\`).
+  * For pixelation or privacy redaction ("pixelate", "blur the face", "hide the license plate", "redact"): call \`imagePixelate\`.
+  * For reading text from an image ("extract the text", "what does this say", "read this document", OCR): call \`imageOcr\`.
 - CONTINUOUS CONVERSATIONAL CHAINING: When the user asks for successive modifications on an image (e.g. "now remove background", "now compress to 50kb", "now crop it", "make it passport size"), call the next tool immediately without asking the user to re-upload. NEVER invent, hallucinate, or supply \`imageUrl\`. Leave \`imageUrl\` and \`id\` empty/unspecified so the system automatically chains from the latest active edited version.
 - MINIMAL IN-CHAT RESPONSE: Do NOT output long explanations or ask what they want to do next. Provide a concise 1-sentence response. The system will render a sleek in-chat tool card and mount the focused inspector in the right panel.
 `;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getDocumentById } from "@/lib/db/queries";
 import { removeImageBackground } from "@/lib/image/background-removal";
 import {
   compressImage,
@@ -7,9 +8,12 @@ import {
   cropImage,
   getImageMetadata,
   getSharp,
+  pixelateImage,
   resizePhysicalImage,
   rotateImage,
+  upscaleEnhanceImage,
 } from "@/lib/image/native";
+import { extractTextFromImage } from "@/lib/image/ocr";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { downloadArtifact } from "@/lib/storage";
 import type {
@@ -17,9 +21,13 @@ import type {
   ConvertInput,
   CropInput,
   ImageOperationResult,
+  OcrInput,
+  OcrOperationResult,
+  PixelateInput,
   RemoveBgInput,
   ResizePhysicalInput,
   RotateInput,
+  UpscaleInput,
 } from "./types";
 
 export type ImageFallbackContext = {
@@ -151,6 +159,26 @@ export async function parseImageInput(
         buffer: Buffer.from(cachedByDocId.base64, "base64"),
         mimeType: cachedByDocId.mimeType || "image/png",
       };
+    }
+
+    // Cold in-memory cache (e.g. after a server restart / browser reload):
+    // resolve the document UUID straight from Postgres before giving up.
+    try {
+      const doc = await getDocumentById({ id: trimmed });
+      if (doc?.content) {
+        const buffer = Buffer.from(doc.content, "base64");
+        if (buffer.length > 0) {
+          activeImageRegistry.setActiveImage({
+            base64: doc.content,
+            documentId: doc.id,
+            title: doc.title,
+            userId: fallbackContext?.userId,
+          });
+          return { buffer, mimeType: "image/png" };
+        }
+      }
+    } catch (docErr) {
+      console.warn("Non-fatal: Document lookup for image UUID failed:", docErr);
     }
   }
 
@@ -486,6 +514,69 @@ export async function executeConvert(
     result.height,
     result.format
   );
+}
+
+/**
+ * Execute upscaling and/or enhancement.
+ */
+export async function executeUpscaleEnhance(
+  input: string | Buffer,
+  params: UpscaleInput,
+  fallbackContext?: ImageFallbackContext
+): Promise<ImageOperationResult> {
+  const { buffer } = await parseImageInput(input, fallbackContext);
+  const result = await upscaleEnhanceImage({
+    enhance: params.enhance,
+    format: params.format,
+    inputBuffer: buffer,
+    quality: params.quality,
+    scale: params.scale,
+    sharpen: params.sharpen,
+  });
+
+  return formatResult(
+    result.buffer,
+    result.width,
+    result.height,
+    result.format
+  );
+}
+
+/**
+ * Execute pixelation (mosaic) or blur for privacy redaction.
+ */
+export async function executePixelate(
+  input: string | Buffer,
+  params: PixelateInput,
+  fallbackContext?: ImageFallbackContext
+): Promise<ImageOperationResult> {
+  const { buffer } = await parseImageInput(input, fallbackContext);
+  const result = await pixelateImage({
+    blockSize: params.blockSize,
+    format: params.format,
+    inputBuffer: buffer,
+    mode: params.mode,
+    quality: params.quality,
+  });
+
+  return formatResult(
+    result.buffer,
+    result.width,
+    result.height,
+    result.format
+  );
+}
+
+/**
+ * Execute OCR text extraction via the native multimodal vision pipeline.
+ */
+export async function executeOcr(
+  input: string | Buffer,
+  _params: OcrInput,
+  fallbackContext?: ImageFallbackContext
+): Promise<OcrOperationResult> {
+  const { buffer, mimeType } = await parseImageInput(input, fallbackContext);
+  return extractTextFromImage(buffer, mimeType);
 }
 
 /**

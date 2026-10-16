@@ -344,24 +344,23 @@ const PurePreviewMessage = ({
       );
     }
 
-    if (
-      type === "tool-imageResizePhysical" ||
-      type === "tool-imageRemoveBg" ||
-      type === "tool-imageCrop" ||
-      type === "tool-imageCompress"
-    ) {
+    const IMAGE_TOOL_LABELS: Record<string, string> = {
+      "tool-imageCompress": "Compress Photo",
+      "tool-imageConvert": "Convert Format",
+      "tool-imageCrop": "Crop Photo",
+      "tool-imageOcr": "Extract Text (OCR)",
+      "tool-imagePixelate": "Pixelate / Redact",
+      "tool-imageRemoveBg": "Remove Background",
+      "tool-imageResizePhysical": "Resize Physical Photo",
+      "tool-imageUpscaleEnhance": "Upscale & Enhance",
+    };
+
+    if (type && type in IMAGE_TOOL_LABELS) {
       const { toolCallId, output } = part as {
         toolCallId: string;
         output?: any;
       };
-      const toolLabel =
-        type === "tool-imageResizePhysical"
-          ? "Resize Physical Photo"
-          : type === "tool-imageRemoveBg"
-            ? "Remove Background"
-            : type === "tool-imageCrop"
-              ? "Crop Photo"
-              : "Compress Photo";
+      const toolLabel = IMAGE_TOOL_LABELS[type] || "Image Processing";
 
       const { state, errorText } = part as {
         state?: string;

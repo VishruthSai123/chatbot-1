@@ -338,6 +338,113 @@ export async function convertImage({
 }
 
 /**
+ * Upscale (super-sample) and/or enhance an image.
+ *
+ * Uses Lanczos3 resampling for high-quality enlargement, an optional unsharp
+ * mask for edge clarity, and optional brightness/saturation modulation.
+ */
+export async function upscaleEnhanceImage({
+  inputBuffer,
+  scale = 2,
+  sharpen = true,
+  enhance = false,
+  format = "jpeg",
+  quality = 95,
+}: {
+  inputBuffer: Buffer;
+  scale?: 2 | 4;
+  sharpen?: boolean;
+  enhance?: boolean;
+  format?: ImageFormat;
+  quality?: number;
+}): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
+  const meta = await sharp(inputBuffer).metadata();
+  const srcWidth = meta.width ?? 0;
+  const srcHeight = meta.height ?? 0;
+  const targetWidth = Math.max(1, Math.round(srcWidth * scale));
+  const targetHeight = Math.max(1, Math.round(srcHeight * scale));
+
+  let pipeline = sharp(inputBuffer).resize(targetWidth, targetHeight, {
+    fit: "fill",
+    kernel: "lanczos3",
+  });
+
+  if (sharpen) {
+    pipeline = pipeline.sharpen({ sigma: 1 });
+  }
+  if (enhance) {
+    pipeline = pipeline.modulate({ brightness: 1.02, saturation: 1.05 });
+  }
+
+  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outMeta = await sharp(outputBuffer).metadata();
+
+  return {
+    buffer: outputBuffer,
+    format: outMeta.format ?? format,
+    height: outMeta.height ?? targetHeight,
+    sizeBytes: outputBuffer.length,
+    width: outMeta.width ?? targetWidth,
+  };
+}
+
+/**
+ * Pixelate (mosaic) or blur an image for privacy redaction.
+ *
+ * Mosaic mode downsamples to a fraction of the resolution with nearest-neighbour
+ * sampling and scales back up for hard pixel blocks. Blur mode applies a Gaussian
+ * blur sized to the block factor.
+ */
+export async function pixelateImage({
+  inputBuffer,
+  blockSize = 12,
+  mode = "mosaic",
+  format = "png",
+  quality = 95,
+}: {
+  inputBuffer: Buffer;
+  blockSize?: number;
+  mode?: "mosaic" | "blur";
+  format?: ImageFormat;
+  quality?: number;
+}): Promise<ImageProcessingResult> {
+  const sharp = await getSharp();
+  const meta = await sharp(inputBuffer).metadata();
+  const srcWidth = meta.width ?? 0;
+  const srcHeight = meta.height ?? 0;
+  const factor = Math.max(2, Math.round(blockSize));
+
+  const smallWidth = Math.max(1, Math.round(srcWidth / factor));
+  const smallHeight = Math.max(1, Math.round(srcHeight / factor));
+
+  let pipeline = sharp(inputBuffer).resize(smallWidth, smallHeight, {
+    fit: "fill",
+    kernel: "nearest",
+  });
+
+  if (mode === "blur") {
+    pipeline = pipeline.blur(Math.max(1, factor / 3));
+  }
+
+  pipeline = pipeline.resize(srcWidth, srcHeight, {
+    fit: "fill",
+    kernel: "nearest",
+  });
+
+  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outMeta = await sharp(outputBuffer).metadata();
+
+  return {
+    buffer: outputBuffer,
+    format: outMeta.format ?? format,
+    height: outMeta.height ?? srcHeight,
+    sizeBytes: outputBuffer.length,
+    width: outMeta.width ?? srcWidth,
+  };
+}
+
+/**
  * Extract comprehensive metadata from an image buffer.
  */
 export async function getImageMetadata(
