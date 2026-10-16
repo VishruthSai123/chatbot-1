@@ -1,208 +1,208 @@
-# Phase 1 Implementation Plan: Native Image Studio & Advanced Photo Pipeline
+# Phase 1 Implementation Plan: Contextual Image Workbenches & Conversational Photo Pipeline
 
-## 1. Executive Summary & Objective
-Phase 1 transforms the template's basic static image preview into a **professional-grade, hardware-accelerated Image Studio**. This includes:
-1. **Server-Side Native Engine**: Powered by `sharp` for pixel-perfect resizing, cropping, rotation, format conversion, and DPI density injection.
-2. **Physical Photo Resizer (`image_resize_physical`)**: Mathematical conversion of real-world units (`cm`, `mm`, `in`) to pixels with strict passport and visa presets (Indian Passport $35\times45\text{ mm}$, US Visa $2\times2\text{ in}$, Schengen $35\times45\text{ mm}$, Stamp size, PAN card).
-3. **Native Background Remover (`image_remove_bg`)**: Zero-SaaS neural segmentation via `@imgly/background-removal-node` (running locally via ONNX) with alpha transparency (PNG) and solid color backfill (`#FFFFFF` for passport compliance).
-4. **Interactive Right Pane Studio Canvas (`<ImageStudioCanvas />`)**: Full-featured interactive HTML5 canvas supporting Pan, Zoom ($10\% - 500\%$), draggable Crop handles with aspect-ratio locks, physical unit controls, DPI toggle, 1-click background removal, and a Before/After comparison slider.
-5. **Dual-Sync Execution**: Invocable either conversationally through chat prompts or directly via 1-click controls in the Right Pane Studio without requiring an LLM round-trip.
+## 1. Executive Summary & Architectural Shift
+
+### 1.1 The Core Problem with Monolithic Studios
+The initial prototype attempted to mount a unified "Image Studio Canvas" that exposed every editing feature (resizing, passport presets, crop handles, DPI toggles, compression sliders, format converters, and background removal) simultaneously in a single side panel. 
+
+This approach created significant product issues:
+1. **Broken Conversational Value**: The AI chat became redundant because users were dropped into an overwhelming manual photo editor rather than an AI-driven workflow.
+2. **Missing Chat-to-Workbench Link**: In the chat stream, tool outputs rendered bulky embedded previews rather than sleek, interactive artifact cards (like code and document artifacts in Vercel Chatbot).
+3. **Broken Multi-Turn Editing**: Users had to re-upload files repeatedly instead of asking the AI to continuously refine the active image across conversation turns.
+4. **Visual Clutter**: The UI felt noisy rather than clean, focused, and production-grade.
+
+### 1.2 The New Product Architecture
+Phase 1 re-architects the image workflow around **Progressive Disclosure**:
+- **Chat is the Command Center**: The user talks to the AI. When a tool runs, the chat outputs a **minimal, sleek interactive card** detailing the exact operation and outcome.
+- **Contextual Right Pane Inspectors**: Clicking the card or asking to refine opens a right pane focused **exclusively on the active tool** (e.g. *only* Compression controls if the user asked to compress; *only* Passport/Visa controls if the user asked to resize).
+- **Conversational Memory & Image Chaining**: The output of Turn $N$ is automatically remembered in chat context as the input for Turn $N+1$.
+- **Vercel-Grade Dark Mode Aesthetics**: Crisp 1px zinc borders, subtle neutral surfaces, zero tacky neon styling, and pixel-perfect component alignment.
 
 ---
 
-## 2. Target File Topology
+## 2. Component Topology & File Structure
 
 ```
 superiorai/
 ├── docs/
 │   └── plans/
-│       └── phase_1_image_studio_implementation.md  <-- (This Document)
-├── lib/
-│   ├── image/
-│   │   ├── native.ts             <-- Core Sharp processing functions & math
-│   │   ├── presets.ts            <-- Visa & Passport physical dimension specs
-│   │   └── background-removal.ts <-- Neural segmentation pipeline
-│   ├── tools/
-│   │   └── image/
-│   │       ├── index.ts          <-- Registered tool handlers with Zod schemas
-│   │       └── types.ts          <-- Tool inputs & outputs
-│   └── ai/
-│       └── tools/
-│           └── image-tools.ts    <-- Gemini AI agent tool wrappers for chat
-├── app/
-│   └── api/
-│       └── tools/
-│           └── image/
-│               └── route.ts      <-- Direct API endpoint for Right Pane Canvas actions
+│       └── phase_1_image_studio_implementation.md  <-- (This Plan)
+├── feature.md                                     <-- Master Feature Specification
 ├── components/
 │   └── chat/
-│       ├── image-studio-canvas.tsx <-- Interactive HTML5 Canvas, Crop, Zoom, Pan
-│       ├── image-controls.tsx    <-- Physical units bar, presets, DPI switcher
-│       └── before-after-slider.tsx <-- Interactive comparison slider
-└── artifacts/
-    └── image/
-        ├── client.tsx            <-- Upgraded imageArtifact with studio controls
-        └── server.ts            <-- Server-side artifact handler for streaming/updates
+│       ├── message.tsx                            <-- Renders sleek in-chat tool result cards
+│       ├── image-tool-card.tsx                    <-- Dedicated minimal artifact card for image tools
+│       ├── artifact.tsx                           <-- Right pane container with toolMode router
+│       └── image/                                 <-- Modular Tool Inspectors:
+│           ├── image-workbench.tsx                <-- Container routing to active tool inspector
+│           ├── compression-inspector.tsx          <-- Focused slider, target KB, live re-compress
+│           ├── resizer-inspector.tsx              <-- Physical units, DPI, official passport presets
+│           ├── crop-inspector.tsx                 <-- Aspect ratio locks, draggable boundary
+│           └── background-removal-inspector.tsx   <-- Transparent checkerboard vs solid color backfill
+├── artifacts/
+│   └── image/
+│       ├── client.tsx                             <-- Client artifact definition with inspector wiring
+│       └── server.ts                              <-- Server-side artifact streaming & version persistence
+├── lib/
+│   ├── ai/
+│   │   ├── prompts.ts                             <-- System prompt injecting active image context
+│   │   └── tools/
+│   │       └── image-tools.ts                     <-- Tool schemas with auto-fallback to active image
+│   └── tools/
+│       └── image/
+│           ├── index.ts                           <-- Native Sharp & ONNX execution handlers
+│           └── types.ts                           <-- Typed inputs & tool outputs
+└── app/
+    └── api/
+        └── tools/
+            └── image/
+                └── route.ts                       <-- Direct API endpoint for inspector interactive tweaks
 ```
 
 ---
 
-## 3. Dependencies & Installation Plan
+## 3. Detailed Architectural Specifications
 
-```bash
-pnpm add sharp @imgly/background-removal-node
-pnpm add -D @types/sharp
+### 3.1 In-Chat Interactive Tool Cards (`<ImageToolCard />`)
+
+When the AI executes an image tool (`image_compress`, `image_resize_physical`, `image_crop`, `image_remove_bg`), `components/chat/message.tsx` renders a sleek, self-contained card instead of a raw preview or an error box:
+
+#### Visual Blueprint:
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ [Icon] Compressed Image                      1.42 MB → 184 KB (-87%)   │
+│ ┌────────┐  document-photo.jpg                                         │
+│ │ [Thumb]│  1200×1600 px • JPEG 80% • 300 DPI                         │
+│ └────────┘                                                             │
+│ [ ↗ Open Compression Controls ]                     [ ⬇ Download ]      │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Dependency Guardrails:
-- `sharp`: Uses pre-compiled libvips platform binaries. Compatible with Vercel Serverless (Linux x64) and Windows local development.
-- `@imgly/background-removal-node`: Runs ONNX segmentation locally in Node.js runtime with zero external API calls or billing tokens.
+#### Card Behavior:
+1. **Interactive Trigger**: Clicking anywhere on the card or clicking `Open Controls` dispatches `setArtifact({ isVisible: true, documentId, kind: 'image', toolMode: 'compress' })`.
+2. **Instant Download**: Direct download button allows users to grab the resulting image immediately without opening the side panel.
+3. **Telemetry Row**: Displays format, dimensions, DPI, and size reduction percentage.
+4. **State Transitions**:
+   - `processing`: Muted loading pulse with descriptive status (`"Compressing photo to target 200 KB..."`).
+   - `completed`: Interactive card with metrics badge.
+   - `error`: Subtle destructive warning with actionable retry guidance.
 
 ---
 
-## 4. Step-by-Step Implementation Breakdown
+### 3.2 Modular Contextual Inspectors (Right Pane)
 
-### Step 1: Core Mathematical Engine & Presets (`lib/image/presets.ts`)
+The Right Pane mounts `<ImageWorkbench />`, which checks `artifact.toolMode` (or inspects the latest tool applied) and renders **only** the relevant inspector:
 
-#### Physical Dimension Standards Table:
-| Preset Key | Display Name | Width | Height | Unit | Default DPI | Resulting Px | Target Aspect | Requirements |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `indian_passport` | Indian Passport / OCI | 35 | 45 | mm | 300 | $413 \times 531$ | $7:9$ | Plain light/white background, 70-80% face coverage |
-| `us_visa` | US Visa / Passport | 2 | 2 | in | 300 | $600 \times 600$ | $1:1$ | Plain white background, $1\text{ in} - 1\frac{3}{8}\text{ in}$ head size |
-| `schengen_visa` | Schengen Visa | 35 | 45 | mm | 300 | $413 \times 531$ | $7:9$ | Light grey/white background |
-| `uk_visa` | UK / Australian Visa | 35 | 45 | mm | 300 | $413 \times 531$ | $7:9$ | Cream/light grey background |
-| `stamp_size` | Stamp Size | 20 | 25 | mm | 300 | $236 \times 295$ | $4:5$ | Compact ID photo |
-| `pan_card` | Indian PAN Card | 25 | 35 | mm | 300 | $295 \times 413$ | $5:7$ | Strict file size limit $\le 50\text{ KB}$ |
-| `photo_4x6` | Standard 4x6 Print | 4 | 6 | in | 300 | $1200 \times 1800$ | $2:3$ | High-resolution lab print |
+#### Inspector 1: Compression Inspector (`<CompressionInspector />`)
+- **Activated By**: `image_compress` or conversational compression requests.
+- **Preview**: Focused image preview with an optional Before/After split slider to evaluate visual compression artifacts.
+- **Controls**:
+  - Target size bound input (`[ 200 ] KB`).
+  - Quality percentage slider (`0% - 100%`).
+  - Output format switcher (`JPEG` / `WebP` / `PNG`).
+  - Interactive "Re-compress" button calling `/api/tools/image` directly with instant feedback.
+  - Download button with formatted filename (`photo-compressed-184kb.jpg`).
 
-#### Mathematical Conversion Formula:
-$$\text{Pixels} = \begin{cases} \text{round}\left(\frac{\text{dim}_{\text{mm}}}{25.4} \times \text{DPI}\right) & \text{if unit is mm} \\ \text{round}\left(\frac{\text{dim}_{\text{cm}} \times 10}{25.4} \times \text{DPI}\right) & \text{if unit is cm} \\ \text{round}\left(\text{dim}_{\text{in}} \times \text{DPI}\right) & \text{if unit is in} \\ \text{dim} & \text{if unit is px} \end{cases}$$
+#### Inspector 2: Physical Resizer Inspector (`<ResizerInspector />`)
+- **Activated By**: `image_resize_physical` or passport/visa sizing requests.
+- **Preview**: High-resolution image canvas with physical overlay ticks (mm/inches).
+- **Controls**:
+  - Passport/Visa preset dropdown:
+    - *Indian Passport / OCI* ($35\times45\text{ mm}$, 300 DPI)
+    - *US Visa / Passport* ($2\times2\text{ in}$, 300 DPI)
+    - *Schengen Visa* ($35\times45\text{ mm}$, 300 DPI)
+    - *Indian PAN Card* ($25\times35\text{ mm}$, $\le 50\text{ KB}$)
+    - *Stamp Size* ($20\times25\text{ mm}$)
+  - Custom dimension inputs with unit switcher (`mm`, `cm`, `in`, `px`).
+  - Target DPI density selector (`300 DPI` print, `150 DPI`, `72 DPI` web).
+  - Calculated resolution output (e.g. `413 × 531 px`).
 
----
+#### Inspector 3: Crop Inspector (`<CropInspector />`)
+- **Activated By**: `image_crop` or cropping requests.
+- **Preview**: Interactive cropping canvas with draggable corner handles and rule-of-thirds grid.
+- **Controls**:
+  - Aspect ratio presets (`Free`, `1:1 Square`, `4:5 Portrait`, `16:9 Landscape`, `3:2 Photo`).
+  - Live pixel dimensions readout of the selected crop rectangle.
+  - "Apply Crop" button that commits the crop and creates a new artifact version.
 
-### Step 2: Native Sharp Execution (`lib/image/native.ts`)
-
-Implement pure in-memory Buffer transformations:
-1. `resizePhysicalImage(buffer, widthMm, heightMm, dpi, format)`:
-   - Scales to target pixel dimensions.
-   - Embeds JFIF/EXIF density metadata: `.withMetadata({ density: dpi })`.
-2. `cropImage(buffer, left, top, width, height)`:
-   - Extracts bounding box region without interpolation distortion.
-3. `rotateImage(buffer, angle, flipH, flipV)`:
-   - Rotates by 90/180/270 degrees and flips horizontally/vertically.
-4. `compressImage(buffer, targetSizeKb, quality, format)`:
-   - Iterative or quality-calibrated compression targeting exact byte bounds.
-5. `convertImage(buffer, targetFormat)`:
-   - Transforms between `jpeg`, `png`, `webp`, `avif`.
-6. `getImageMetadata(buffer)`:
-   - Returns width, height, density (DPI), channels, format, color space.
-
----
-
-### Step 3: Native Background Removal Pipeline (`lib/image/background-removal.ts`)
-
-1. **Neural Segmentation**:
-   - Converts input buffer to Blob and passes into `@imgly/background-removal-node`.
-   - Produces 32-bit RGBA PNG with alpha channel transparency.
-2. **Solid Color Composite Backfill**:
-   - If user selects `mode: 'solid_color'`, generates a pure color canvas using `sharp({ create: { width, height, channels: 4, background: hexColor } })`.
-   - Composites transparent foreground onto background: `.composite([{ input: foregroundBuffer, blend: 'over' }])`.
-   - Returns high-quality JPEG or PNG.
+#### Inspector 4: Background Removal Inspector (`<BackgroundRemovalInspector />`)
+- **Activated By**: `image_remove_bg` or background isolation requests.
+- **Preview**: Rendered against a neutral dark checkerboard grid showing alpha transparency.
+- **Controls**:
+  - Mode toggle: **Transparent PNG** vs **Solid Color Backfill**.
+  - Solid Color presets: Pure White (`#FFFFFF`, passport requirement), Light Grey (`#E5E7EB`), Studio Blue (`#1E3A8A`), or custom color picker.
+  - Before/After toggle button to verify hair edge preservation and segmentation quality.
 
 ---
 
-### Step 4: Deterministic Tools & Zod Validation (`lib/tools/image/`)
+### 3.3 Continuous Conversational State & Image Chaining
 
-Each tool implements a standardized contract:
-- Validates parameters via Zod (`z.object({ ... })`).
-- Downloads original artifact from Supabase Storage (`downloadArtifact`).
-- Executes deterministic native transformation.
-- Validates output buffer (decodable, matches dimensions and MIME).
-- Saves derived artifact to Supabase Storage with `parentArtifactId` lineage.
-- Returns `{ artifactId, signedUrl, width, height, dpi, sizeBytes }`.
+To eliminate the frustrating requirement of re-uploading an image for each successive edit:
 
----
+1. **Active Artifact Tracking in Context**:
+   - The chat session maintains an `activeImageArtifact` reference in the conversation state.
+   - When a user uploads an image or a tool generates an image output, `activeImageArtifact` is updated to point to the latest artifact ID and signed URL.
 
-### Step 5: Direct API Endpoint (`app/api/tools/image/route.ts`)
+2. **System Prompt Injection**:
+   - The AI system prompt is dynamically enriched with the active image context:
+     ```
+     Active Image in Context:
+     - Artifact ID: "doc-123"
+     - Storage URL: "https://...supabase.co/.../image.png"
+     - Dimensions: 1200x1600 px
+     - Format: png
+     - File Size: 1.4 MB
+     - Current Tool Applied: image_resize_physical
+     When the user asks for subsequent modifications (e.g., "now remove background", "make it black and white", "compress it"), use the active image above as the input source. DO NOT ask the user to re-upload.
+     ```
 
-Allows the Right Pane Studio UI to execute actions instantaneously:
-- `POST /api/tools/image`:
-  - Body: `{ action: 'resize_physical' | 'remove_bg' | 'crop' | 'rotate', artifactId, params }`.
-  - Authenticates user session.
-  - Verifies artifact ownership.
-  - Executes tool and returns updated artifact metadata and signed URL.
-
----
-
-### Step 6: Gemini AI Tool Definitions (`lib/ai/tools/image-tools.ts`)
-
-Exposes conversational tools to the Gemini 2.5 agent:
-- `image_resize_physical`: Prompt examples: *"make this 35x45mm at 300 DPI"*, *"resize to US visa specifications"*.
-- `image_remove_bg`: Prompt examples: *"remove background"*, *"make background transparent"*, *"change background to white"*.
-- `image_crop`: Prompt examples: *"crop to square"*, *"crop top half"*.
-- `image_compress`: Prompt examples: *"compress under 50KB for passport portal upload"*.
+3. **Tool Input Fallback**:
+   - If the user prompt does not include an explicit new image URL, the tool execution handler automatically falls back to `activeImageArtifact.url`.
+   - The resulting output is saved as a new version in the document lineage (`parentArtifactId = previousArtifactId`).
 
 ---
 
-### Step 7: Interactive Right Pane Canvas (`components/chat/image-studio-canvas.tsx`)
+## 4. Visual Design System (Vercel Chatbot Inspired)
 
-A rich, interactive React component rendering inside the Right Pane:
-1. **Viewport & Zoom Engine**:
-   - Canvas surface with mouse-wheel zoom ($10\% - 500\%$) centered on cursor.
-   - Click-and-drag panning with grab/grabbing cursor.
-   - "Fit to Screen" and "100% Actual Size" quick zoom buttons.
-2. **Interactive Crop Overlay**:
-   - 8 draggable anchor handles (top-left, top-right, bottom-left, bottom-right, and 4 edges).
-   - Dimmed semi-transparent outer backdrop ($rgba(0,0,0,0.6)$).
-   - Rule-of-thirds grid lines inside crop rectangle.
-   - Aspect ratio locking toggle: Freeform, 1:1, 4:5, 16:9, Passport (7:9).
-3. **Physical Units Toolbar (`components/chat/image-controls.tsx`)**:
-   - Unit toggle buttons: `px` | `cm` | `mm` | `in`.
-   - DPI selector pills: `72` | `150` | `300` (default) | `600`.
-   - Preset selector dropdown: Instant fill of dimensions and DPI.
-   - Live Dimension Readout: `35.0 × 45.0 mm (413 × 531 px @ 300 DPI)`.
-4. **Background Removal Panel**:
-   - Pinned **"Remove Background"** action button with spinner state.
-   - Mode switch: "Transparent (Checkerboard)" vs "Solid Fill".
-   - Color picker with swatches: White (`#FFFFFF`), Light Grey (`#E2E8F0`), Off-White (`#F8FAFC`), Studio Blue (`#0066CC`).
-5. **Before/After Split Comparison Slider (`components/chat/before-after-slider.tsx`)**:
-   - Side-by-side or split-view divider dragging across image to compare original vs processed.
-6. **Action Toolbar**:
-   - Rotate $90^\circ$ Clockwise / Counter-Clockwise.
-   - Flip Horizontal / Vertical.
-   - Reset Changes.
-   - "Apply & Save as Version".
-   - Download (PNG, JPEG, WEBP).
+All UI components must strictly adhere to the clean, production-grade Vercel aesthetic:
+- **Color Palette**:
+  - Backgrounds: `bg-background` (`zinc-950` in dark mode)
+  - Cards & Sidebars: `bg-card` / `bg-zinc-900/60`
+  - Borders: `border-border/50` / `border-zinc-800`
+  - Typography: `text-zinc-100` (headings), `text-zinc-400` (labels/subtext)
+  - Accents: Subtle blue/neutral focus rings (`focus:border-zinc-500`, `ring-zinc-700`)
+- **Typography & Alignment**:
+  - Monospace font for technical readouts: dimensions (`413×531 px`), file sizes (`184 KB`), DPI (`300 DPI`).
+  - Compact padding: `px-3 py-2` on tool controls, `gap-2` for action buttons.
+  - Zero arbitrary colorful gradients or saturated cartoon elements.
 
 ---
 
-### Step 8: Upgrading Artifact Definition (`artifacts/image/client.tsx`)
+## 5. Step-by-Step Implementation Roadmap
 
-Replaces the basic `ImageEditor` with the new `<ImageStudioCanvas />`:
-- Registers client toolbar actions (Undo, Redo, Copy, Download, Toggle Studio).
-- Binds to `useArtifact` global state.
-- Supports streaming deltas and live updates.
+### Milestone 1: In-Chat Minimal Tool Cards & Tool Execution Alignment
+- [ ] Create `components/chat/image-tool-card.tsx` with thumbnail preview, telemetry badge, direct download, and "Open Inspector" action.
+- [ ] Update `components/chat/message.tsx` to render `<ImageToolCard />` for all image tool calls and outputs.
+- [ ] Ensure clicking the card dispatches `setArtifact` with the appropriate `toolMode`.
 
----
+### Milestone 2: Modular Right Pane Tool Inspectors
+- [ ] Create `components/chat/image/compression-inspector.tsx`.
+- [ ] Create `components/chat/image/resizer-inspector.tsx`.
+- [ ] Create `components/chat/image/crop-inspector.tsx`.
+- [ ] Create `components/chat/image/background-removal-inspector.tsx`.
+- [ ] Create `components/chat/image/image-workbench.tsx` to host and switch between inspectors based on `toolMode`.
+- [ ] Wire `<ImageWorkbench />` into `artifacts/image/client.tsx`.
 
-## 5. Memory & Performance Guardrails
+### Milestone 3: Continuous Conversational State & Image Chaining
+- [ ] Inject `activeImageArtifact` metadata into the chat system prompt in `app/(chat)/api/chat/route.ts`.
+- [ ] Update tool definitions in `lib/ai/tools/image-tools.ts` to automatically default `source` to the conversation's active image.
+- [ ] Test multi-turn conversational edits (e.g. Upload $\rightarrow$ Resize to Passport $\rightarrow$ Remove Background $\rightarrow$ Compress to 50KB) without re-uploading.
 
-1. **Buffer Lifecycle**: Avoid keeping raw image buffers in memory after upload. Stream directly to Supabase Storage and release GC references.
-2. **Sharp Concurrency**: Set `sharp.concurrency(1)` in serverless functions to prevent thread starvation under concurrent requests.
-3. **Canvas Offscreen Rendering**: For large 4K+ images, compute transforms using an OffscreenCanvas or display a scaled preview while the final high-res output is rendered losslessly by `sharp` on the server.
-4. **Strict Upload Quota**: Reject uploads $> 50\text{ MB}$ at the API gateway before Sharp decoding.
+### Milestone 4: Direct Interactive Re-computation API
+- [ ] Ensure `/api/tools/image` supports rapid interactive adjustments directly from the Right Pane inspectors (adjusting compression slider or changing background color without requiring a full LLM turn).
+- [ ] Maintain version history in Supabase Storage with parent lineage tracking.
 
----
-
-## 6. End-to-End Acceptance Checklist
-
-- [ ] `image_resize_physical` converts $35\times45\text{ mm}$ at 300 DPI into exactly $413 \times 531\text{ px}$.
-- [ ] Output JPEG/PNG files contain verified JFIF/EXIF density tags equal to target DPI.
-- [ ] Indian Passport, US Visa ($2\times2\text{ in} = 600\times600\text{ px}$), Schengen Visa, Stamp, and PAN card presets produce valid outputs.
-- [ ] `image_remove_bg` produces a 32-bit RGBA PNG with transparent alpha background.
-- [ ] `image_remove_bg` with `solid_color: '#ffffff'` creates a clean white background.
-- [ ] Right Pane `<ImageStudioCanvas />` supports smooth Pan, Zoom, and Crop overlay.
-- [ ] Clicking "Remove Background" in the Right Pane executes natively and updates canvas preview.
-- [ ] Derived artifacts are saved in Supabase Storage with verified parent lineage.
-- [ ] Chat conversation displays result card and synchronizes with Right Pane.
-- [ ] Production build (`pnpm run build`) and type check (`npx tsc --noEmit`) pass with 0 errors.
+### Milestone 5: Verification & Quality Assurance
+- [ ] Verify TypeScript compiles with 0 errors (`pnpm exec tsc --noEmit`).
+- [ ] Verify production build compiles with 0 errors (`pnpm run build`).
+- [ ] Confirm all 11 serverless functions deploy within Vercel Hobby limits.

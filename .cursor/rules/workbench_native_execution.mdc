@@ -4,7 +4,7 @@ globs: "**/*.{ts,tsx}"
 alwaysApply: true
 ---
 
-# Universal AI Workbench: Native-First & Studio Architecture Rules
+# Universal AI Workbench: Architecture & Execution Rules
 
 ## 1. Zero Third-Party SaaS Processing APIs
 - NEVER introduce external paid transformation APIs (e.g. CloudConvert, ConvertAPI, remove.bg API, external OCR SaaS).
@@ -14,19 +14,37 @@ alwaysApply: true
   - **PDF Operations**: Use `pdf-lib` (pure JS, zero native binaries) and `pdf-parse`.
   - **Spreadsheets / Data**: Use `papaparse` and `xlsx` (SheetJS) / `exceljs`.
   - **Documents / Text**: Use `mammoth` (DOCX parser) and `diff-match-patch`.
-  - **Media Telemetry**: Use `music-metadata`.
-- External AI calls are strictly reserved for **Google Gemini 2.5 Flash / Pro** via `@ai-sdk/google` for semantic planning, summarization, and multimodal speech understanding.
+- External AI calls are strictly reserved for **Google Gemini 2.5 Flash / Pro** via `@ai-sdk/google` for semantic planning, reasoning, and speech.
 
-## 2. Dynamic Right Pane Studio Architecture
-- The Right Pane (`<Artifact />`) is a multi-family dynamic interactive studio, NOT just an image viewer:
-  - `kind: 'image'`: Interactive HTML5 Canvas, Crop handles, Physical unit selector (`cm`, `mm`, `in`, `DPI`), Passport/Visa presets, 1-click Background Remover, Before/After split slider.
-  - `kind: 'pdf'`: Visual multi-page thumbnail grid, drag-and-drop reordering, per-page rotate/delete, visual page range selector for splitting.
-  - `kind: 'sheet'`: Virtualized interactive data table (`react-data-grid`), column sorting, column filtering, summary metrics cards.
-  - `kind: 'text'`: Rich document reader, side-by-side diff comparison, word & reading telemetry.
-- Enforce bidirectional synchronization between Chat and Right Pane Studio.
+## 2. Contextual Right Pane Architecture (NO Monolithic Kitchen-Sink Studios)
+- The Right Pane (`<Artifact />`) is a modular, intent-specific inspector, NOT an all-in-one kitchen-sink editor:
+  - When the user asks to **compress**, show ONLY the `<CompressionInspector />` (quality slider, target KB, re-compress, before/after compare).
+  - When the user asks to **resize / passport**, show ONLY the `<ResizerInspector />` (physical units mm/in/cm, DPI, passport presets).
+  - When the user asks to **crop**, show ONLY the `<CropInspector />` (aspect ratio presets, draggable crop handles).
+  - When the user asks to **remove background**, show ONLY the `<BackgroundRemovalInspector />` (transparency checkerboard, solid color backfill).
+- Never overwhelm the user with every editing control at the same time.
 
-## 3. Storage & Lineage Rules
-- All user uploads and generated outputs MUST be stored privately in the Supabase Storage `artifacts` bucket.
-- Access MUST be mediated via short-lived signed URLs.
-- Originals are immutable; derived artifacts must record their parent lineage in the `Artifact` table (`parentArtifactId`).
-- Every tool MUST validate inputs and outputs with Zod schemas.
+## 3. In-Chat Interactive Minimal Cards
+- In the conversation stream, tool execution MUST render a compact, sleek interactive card (like Vercel Chatbot's code artifact cards):
+  - Displays thumbnail, operation summary, dimension/size changes, and telemetry.
+  - Provides a direct `Download` button and an `Open Controls` action.
+  - Clicking the card smoothly opens the Right Pane focused on that specific tool inspector.
+  - Never embed a giant canvas directly inside the chat message stream.
+
+## 4. Multi-Turn Conversational Chaining (Stateful Editing)
+- Users must NEVER be forced to re-upload an image for subsequent edits.
+- The output of Turn $N$ automatically becomes the active input of Turn $N+1$.
+- System prompt MUST inject the active image artifact ID, storage URL, dimensions, and current format.
+- Tool handlers must default `source` to the active image if not explicitly provided in the prompt.
+- Derived artifacts record `parentArtifactId` to maintain lineage and allow undo/redo version traversal.
+
+## 5. UI Design Language (Vercel Chatbot Inspired)
+- Modern, sleek, monochromatic dark mode (`zinc-950` backgrounds, `zinc-900` cards, `zinc-800` borders, `zinc-200` text).
+- Zero "vibe-coded" loud rainbow gradients or cartoonish elements.
+- Technical metadata (dimensions, DPI, file sizes) formatted in clean monospace.
+- Crisp 1px borders, smooth transitions, and pixel-perfect component alignment.
+
+## 6. Vercel Serverless Function Limits
+- Maintain total Serverless Functions $\le 11$ on Vercel Hobby plan.
+- Declare native libraries in `serverExternalPackages`.
+- Keep `.npmrc` configured with `shamefully-hoist=true` and multi-arch settings.
