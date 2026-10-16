@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
-import { saveDocument } from "@/lib/db/queries";
+import { guestRegex } from "@/lib/constants";
+import { getDocumentById, saveDocument } from "@/lib/db/queries";
 import {
   executeCompress,
   executeConvert,
@@ -28,12 +29,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const isGuest =
+      session.user.type === "guest" ||
+      guestRegex.test(session.user.email ?? "");
+
+    if (isGuest) {
+      return NextResponse.json(
+        {
+          error:
+            "Guest users must sign in or register to use image processing tools.",
+          requiresAuth: true,
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { action, image, documentId, title, params } = body;
 
-    if (!image || typeof image !== "string") {
+    let imageSource = image;
+    if (!imageSource && documentId) {
+      try {
+        const doc = await getDocumentById({ id: documentId });
+        if (doc?.content) {
+          imageSource = doc.content;
+        }
+      } catch (err) {
+        console.warn("Failed to retrieve document for image processing:", err);
+      }
+    }
+
+    if (!imageSource || typeof imageSource !== "string") {
       return NextResponse.json(
-        { error: "Image data is required (dataUrl or base64)" },
+        { error: "Image data is required (dataUrl, URL, or base64)" },
         { status: 400 }
       );
     }
@@ -43,36 +71,36 @@ export async function POST(request: Request) {
     switch (action) {
       case "resize_physical": {
         const validated = resizePhysicalSchema.parse(params);
-        result = await executeResizePhysical(image, validated);
+        result = await executeResizePhysical(imageSource, validated);
         break;
       }
       case "remove_bg": {
         const validated = removeBgSchema.parse(params ?? {});
-        result = await executeRemoveBg(image, validated);
+        result = await executeRemoveBg(imageSource, validated);
         break;
       }
       case "crop": {
         const validated = cropSchema.parse(params);
-        result = await executeCrop(image, validated);
+        result = await executeCrop(imageSource, validated);
         break;
       }
       case "rotate": {
         const validated = rotateSchema.parse(params ?? {});
-        result = await executeRotate(image, validated);
+        result = await executeRotate(imageSource, validated);
         break;
       }
       case "compress": {
         const validated = compressSchema.parse(params ?? {});
-        result = await executeCompress(image, validated);
+        result = await executeCompress(imageSource, validated);
         break;
       }
       case "convert": {
         const validated = convertSchema.parse(params);
-        result = await executeConvert(image, validated);
+        result = await executeConvert(imageSource, validated);
         break;
       }
       case "get_metadata": {
-        result = await executeGetMetadata(image);
+        result = await executeGetMetadata(imageSource);
         return NextResponse.json({ metadata: result, success: true });
       }
       default:

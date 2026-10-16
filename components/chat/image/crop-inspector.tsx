@@ -16,9 +16,11 @@ interface CropInspectorProps {
   cropBox: CropBox;
   documentId?: string;
   imageSrc: string;
+  isGuest?: boolean;
   isProcessing: boolean;
   naturalHeight: number;
   naturalWidth: number;
+  onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
   originalSrc?: string | null;
   selectedAspect: string;
@@ -40,6 +42,8 @@ export const CropInspector = memo(function InnerCropInspector({
   onUpdateImage,
   isProcessing,
   setIsProcessing,
+  isGuest,
+  onRequireAuth,
 }: CropInspectorProps) {
   // Compute pixel dimensions
   const pixelLeft = Math.round((cropBox.x / 100) * naturalWidth);
@@ -86,32 +90,49 @@ export const CropInspector = memo(function InnerCropInspector({
   }, [setCropBox, setSelectedAspect]);
 
   const handleApplyCrop = useCallback(async () => {
+    if (isGuest) {
+      onRequireAuth?.();
+      return;
+    }
+
     if (isProcessing || !pixelWidth || !pixelHeight) {
       return;
     }
     setIsProcessing(true);
 
     try {
-      const response = await fetch("/api/tools/image", {
-        body: JSON.stringify({
-          action: "crop",
-          documentId,
-          image: imageSrc,
-          params: {
-            height: pixelHeight,
-            left: pixelLeft,
-            top: pixelTop,
-            width: pixelWidth,
-          },
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
+        {
+          body: JSON.stringify({
+            action: "crop",
+            documentId,
+            image: imageSrc,
+            params: {
+              height: pixelHeight,
+              left: pixelLeft,
+              top: pixelTop,
+              width: pixelWidth,
+            },
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }
+      );
 
       if (!response.ok) {
+        if (response.status === 403) {
+          onRequireAuth?.();
+          return;
+        }
+
         let errMessage = "Crop failed";
         try {
           const errData = await response.json();
+          if (errData.requiresAuth) {
+            onRequireAuth?.();
+            return;
+          }
           errMessage = errData.error || errMessage;
         } catch {
           // Ignore parsing error
@@ -134,6 +155,8 @@ export const CropInspector = memo(function InnerCropInspector({
       setIsProcessing(false);
     }
   }, [
+    isGuest,
+    onRequireAuth,
     isProcessing,
     setIsProcessing,
     imageSrc,

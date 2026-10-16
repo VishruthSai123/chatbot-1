@@ -15,7 +15,9 @@ import { cn } from "@/lib/utils";
 interface ResizerInspectorProps {
   documentId?: string;
   imageSrc: string;
+  isGuest?: boolean;
   isProcessing: boolean;
+  onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
   originalSrc: string | null;
   setIsProcessing: (val: boolean) => void;
@@ -30,6 +32,8 @@ export const ResizerInspector = memo(function InnerResizerInspector({
   onUpdateImage,
   isProcessing,
   setIsProcessing,
+  isGuest,
+  onRequireAuth,
 }: ResizerInspectorProps) {
   const [selectedPreset, setSelectedPreset] =
     useState<string>("indian_passport");
@@ -57,34 +61,51 @@ export const ResizerInspector = memo(function InnerResizerInspector({
   const computedPxH = physicalToPixels(height, unit, dpi);
 
   const handleApplyResize = useCallback(async () => {
+    if (isGuest) {
+      onRequireAuth?.();
+      return;
+    }
+
     if (isProcessing) {
       return;
     }
     setIsProcessing(true);
 
     try {
-      const response = await fetch("/api/tools/image", {
-        body: JSON.stringify({
-          action: "resize_physical",
-          documentId,
-          image: originalSrc || imageSrc,
-          params: {
-            dpi,
-            fit,
-            height,
-            quality: 95,
-            unit,
-            width,
-          },
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
+        {
+          body: JSON.stringify({
+            action: "resize_physical",
+            documentId,
+            image: originalSrc || imageSrc,
+            params: {
+              dpi,
+              fit,
+              height,
+              quality: 95,
+              unit,
+              width,
+            },
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }
+      );
 
       if (!response.ok) {
+        if (response.status === 403) {
+          onRequireAuth?.();
+          return;
+        }
+
         let errMessage = "Resize failed";
         try {
           const errData = await response.json();
+          if (errData.requiresAuth) {
+            onRequireAuth?.();
+            return;
+          }
           errMessage = errData.error || errMessage;
         } catch {
           // Ignore parsing error
@@ -106,6 +127,8 @@ export const ResizerInspector = memo(function InnerResizerInspector({
       setIsProcessing(false);
     }
   }, [
+    isGuest,
+    onRequireAuth,
     isProcessing,
     setIsProcessing,
     originalSrc,

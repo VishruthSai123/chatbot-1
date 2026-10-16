@@ -1,6 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { guestRegex } from "@/lib/constants";
 import {
   getDocumentById,
   getLatestDocumentByKind,
@@ -26,6 +27,12 @@ type ImageToolsProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
   chatId?: string;
 };
+
+function checkIsGuest(session: Session): boolean {
+  return (
+    session.user?.type === "guest" || guestRegex.test(session.user?.email ?? "")
+  );
+}
 
 async function resolveImageSource(
   session: Session,
@@ -77,11 +84,11 @@ async function resolveImageSource(
             if (
               !foundAttachmentUrl &&
               (part.type === "file" || part.type === "image") &&
-              (part.url || part.data)
+              (part.url || part.data || part.image)
             ) {
               foundAttachmentUrl = {
                 name: part.name,
-                url: part.url || part.data,
+                url: part.url || part.data || part.image,
               };
             }
           }
@@ -155,6 +162,14 @@ export const imageResizePhysical = ({
       dpi = 300,
     }) => {
       try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Physical photo resizing (passport/visa presets & DPI injection) is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(session, id, imageUrl, chatId);
@@ -304,6 +319,14 @@ export const imageRemoveBg = ({
       color = "#ffffff",
     }) => {
       try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: AI background removal is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(session, id, imageUrl, chatId);
@@ -398,6 +421,14 @@ export const imageCrop = ({ session, dataStream, chatId }: ImageToolsProps) =>
       "Crop an image to specified rectangular coordinates (left, top, width, height).",
     execute: async ({ id, imageUrl, left, top, width, height }) => {
       try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image cropping tools are reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(session, id, imageUrl, chatId);
@@ -479,6 +510,14 @@ export const imageCompress = ({
       "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality.",
     execute: async ({ id, imageUrl, targetSizeKb, quality = 80 }) => {
       try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image compression features are reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(session, id, imageUrl, chatId);

@@ -15,7 +15,9 @@ interface BackgroundRemovalInspectorProps {
   documentId?: string;
   imageSrc: string;
   isComparing: boolean;
+  isGuest?: boolean;
   isProcessing: boolean;
+  onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
   originalSrc: string | null;
   setIsComparing: (val: boolean) => void;
@@ -40,6 +42,8 @@ export const BackgroundRemovalInspector = memo(
     setIsProcessing,
     isComparing,
     setIsComparing,
+    isGuest,
+    onRequireAuth,
   }: BackgroundRemovalInspectorProps) {
     const [bgMode, setBgMode] = useState<"transparent" | "solid_color">(
       "transparent"
@@ -47,31 +51,48 @@ export const BackgroundRemovalInspector = memo(
     const [bgColor, setBgColor] = useState<string>("#ffffff");
 
     const handleProcessBg = useCallback(async () => {
+      if (isGuest) {
+        onRequireAuth?.();
+        return;
+      }
+
       if (isProcessing) {
         return;
       }
       setIsProcessing(true);
 
       try {
-        const response = await fetch("/api/tools/image", {
-          body: JSON.stringify({
-            action: "remove_bg",
-            documentId,
-            image: originalSrc || imageSrc,
-            params: {
-              color: bgColor,
-              mode: bgMode,
-              quality: 95,
-            },
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        });
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
+          {
+            body: JSON.stringify({
+              action: "remove_bg",
+              documentId,
+              image: originalSrc || imageSrc,
+              params: {
+                color: bgColor,
+                mode: bgMode,
+                quality: 95,
+              },
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }
+        );
 
         if (!response.ok) {
+          if (response.status === 403) {
+            onRequireAuth?.();
+            return;
+          }
+
           let errMessage = "Background removal failed";
           try {
             const errData = await response.json();
+            if (errData.requiresAuth) {
+              onRequireAuth?.();
+              return;
+            }
             errMessage = errData.error || errMessage;
           } catch {
             // Ignore parsing error
@@ -95,6 +116,8 @@ export const BackgroundRemovalInspector = memo(
         setIsProcessing(false);
       }
     }, [
+      isGuest,
+      onRequireAuth,
       isProcessing,
       setIsProcessing,
       originalSrc,

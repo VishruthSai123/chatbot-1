@@ -1,11 +1,13 @@
 "use client";
 
-import { Download, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { useCallback } from "react";
+import { Download, Lock, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { ImageToolMode } from "@/components/chat/artifact";
+import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
+import { useIsGuest } from "@/hooks/use-is-guest";
 import type { Document } from "@/lib/db/schema";
 import { cn, fetcher } from "@/lib/utils";
 
@@ -28,6 +30,7 @@ interface ImageToolCardProps {
     color?: string;
     croppedDimensions?: string;
     error?: string;
+    requiresAuth?: boolean;
   };
   toolCallId: string;
   toolType: ImageToolType;
@@ -70,6 +73,9 @@ export function ImageToolCard({
   isReadonly,
 }: ImageToolCardProps) {
   const { setArtifact } = useArtifact();
+  const { isGuest } = useIsGuest();
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+
   const config = TOOL_CONFIG[toolType] ?? {
     icon: "🖼️",
     label: "Image Processing",
@@ -94,6 +100,11 @@ export function ImageToolCard({
       return;
     }
 
+    if (isGuest) {
+      setShowAuthModal(true);
+      return;
+    }
+
     if (!documentId) {
       return;
     }
@@ -110,6 +121,7 @@ export function ImageToolCard({
     }));
   }, [
     isReadonly,
+    isGuest,
     documentId,
     setArtifact,
     imageBase64,
@@ -121,6 +133,12 @@ export function ImageToolCard({
   const handleRestore = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
+
+      if (isGuest) {
+        setShowAuthModal(true);
+        return;
+      }
+
       if (!imageBase64) {
         toast.error("Image data is still loading...");
         return;
@@ -167,6 +185,7 @@ export function ImageToolCard({
       docRecord?.title,
       config.label,
       config.mode,
+      isGuest,
     ]
   );
 
@@ -282,6 +301,29 @@ export function ImageToolCard({
         </div>
       </div>
 
+      {/* Guest Mode Blocker Alert or Error */}
+      {output?.requiresAuth || (isGuest && output?.error) ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+          <div className="flex items-center gap-2">
+            <Lock className="size-3.5 shrink-0" />
+            <span className="font-medium text-[11px]">
+              Guest Mode: Sign in to unlock this feature
+            </span>
+          </div>
+          <button
+            className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-400 hover:bg-amber-500/30 transition-colors cursor-pointer"
+            onClick={() => setShowAuthModal(true)}
+            type="button"
+          >
+            Sign In
+          </button>
+        </div>
+      ) : output?.error ? (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
+          {output.error}
+        </div>
+      ) : null}
+
       {/* Action Footer */}
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
         <button
@@ -314,6 +356,12 @@ export function ImageToolCard({
           Open Controls
         </button>
       </div>
+
+      <GuestAuthModal
+        featureName={config.label}
+        onOpenChange={setShowAuthModal}
+        open={showAuthModal}
+      />
     </div>
   );
 }

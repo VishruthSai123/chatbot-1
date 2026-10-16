@@ -1,8 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
+import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
+import { useIsGuest } from "@/hooks/use-is-guest";
 import type { Attachment } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
 import { Spinner } from "../ui/spinner";
@@ -19,9 +21,15 @@ export const PreviewAttachment = ({
 }) => {
   const { name, url, contentType } = attachment;
   const { setArtifact } = useArtifact();
+  const { isGuest } = useIsGuest();
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   const handleOpenStudio = useCallback(() => {
     if (isUploading || !contentType?.startsWith("image")) {
+      return;
+    }
+    if (isGuest) {
+      setShowAuthModal(true);
       return;
     }
     setArtifact({
@@ -33,7 +41,7 @@ export const PreviewAttachment = ({
       status: "idle",
       title: name || "Image Studio",
     });
-  }, [isUploading, contentType, setArtifact, url, name]);
+  }, [isUploading, contentType, isGuest, setArtifact, url, name]);
 
   const isImage = contentType?.startsWith("image");
 
@@ -90,6 +98,12 @@ export const PreviewAttachment = ({
           <CrossSmallIcon size={10} />
         </button>
       )}
+
+      <GuestAuthModal
+        featureName="Image Studio"
+        onOpenChange={setShowAuthModal}
+        open={showAuthModal}
+      />
     </div>
   );
 };

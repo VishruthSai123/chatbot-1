@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Copy,
   Download,
+  Lock,
   Maximize2,
   Redo2,
   Undo2,
@@ -12,7 +13,9 @@ import {
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ImageToolMode } from "@/components/chat/artifact";
+import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
+import { useIsGuest } from "@/hooks/use-is-guest";
 import { cn } from "@/lib/utils";
 import { BeforeAfterSlider } from "../before-after-slider";
 import { BackgroundRemovalInspector } from "./background-removal-inspector";
@@ -53,6 +56,8 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   totalVersions = 1,
 }: ImageWorkbenchProps) {
   const { artifact, setArtifact } = useArtifact();
+  const { isGuest } = useIsGuest();
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   // Active Tool Mode (defaults to artifact.toolMode or 'compress')
   const [activeToolMode, setActiveToolMode] = useState<ImageToolMode>(
@@ -482,6 +487,25 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         </div>
       </div>
 
+      {/* Guest Mode Alert Banner */}
+      {isGuest ? (
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-500">
+          <div className="flex items-center gap-2">
+            <Lock className="size-3.5 shrink-0" />
+            <span className="font-medium text-[11px]">
+              Guest Mode: Sign in to transform and save your images
+            </span>
+          </div>
+          <button
+            className="rounded bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-amber-400 hover:bg-amber-500/30 transition-colors cursor-pointer"
+            onClick={() => setShowAuthModal(true)}
+            type="button"
+          >
+            Sign In
+          </button>
+        </div>
+      ) : null}
+
       {/* ─── Main Content: Canvas on Left, Inspector on Right ──────────────── */}
       <div className="relative flex flex-1 overflow-hidden flex-col md:flex-row">
         {/* Left: Focused Image Canvas Area */}
@@ -653,7 +677,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               documentId={documentId || artifact.documentId}
               imageSrc={currentBase64}
               isComparing={isComparing}
+              isGuest={isGuest}
               isProcessing={isProcessing}
+              onRequireAuth={() => setShowAuthModal(true)}
               onUpdateImage={handleUpdateImage}
               originalSrc={originalBase64}
               setIsComparing={setIsComparing}
@@ -665,7 +691,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             <ResizerInspector
               documentId={documentId || artifact.documentId}
               imageSrc={currentBase64}
+              isGuest={isGuest}
               isProcessing={isProcessing}
+              onRequireAuth={() => setShowAuthModal(true)}
               onUpdateImage={handleUpdateImage}
               originalSrc={originalBase64}
               setIsProcessing={setIsProcessing}
@@ -677,9 +705,11 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               cropBox={cropBox}
               documentId={documentId || artifact.documentId}
               imageSrc={currentBase64}
+              isGuest={isGuest}
               isProcessing={isProcessing}
               naturalHeight={naturalHeight}
               naturalWidth={naturalWidth}
+              onRequireAuth={() => setShowAuthModal(true)}
               onUpdateImage={handleUpdateImage}
               originalSrc={originalBase64}
               selectedAspect={selectedAspect}
@@ -694,7 +724,9 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               documentId={documentId || artifact.documentId}
               imageSrc={currentBase64}
               isComparing={isComparing}
+              isGuest={isGuest}
               isProcessing={isProcessing}
+              onRequireAuth={() => setShowAuthModal(true)}
               onUpdateImage={handleUpdateImage}
               originalSrc={originalBase64}
               setIsComparing={setIsComparing}
@@ -703,6 +735,12 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           )}
         </div>
       </div>
+
+      <GuestAuthModal
+        featureName={activeToolObj?.label || "Image Studio"}
+        onOpenChange={setShowAuthModal}
+        open={showAuthModal}
+      />
     </div>
   );
 });

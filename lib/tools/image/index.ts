@@ -10,6 +10,7 @@ import {
   resizePhysicalImage,
   rotateImage,
 } from "@/lib/image/native";
+import { downloadArtifact } from "@/lib/storage";
 import type {
   CompressInput,
   ConvertInput,
@@ -19,6 +20,63 @@ import type {
   ResizePhysicalInput,
   RotateInput,
 } from "./types";
+
+/**
+ * Extracts a Supabase storage key from an artifact URL, path, or signed URL.
+ */
+export function extractStorageKey(urlOrPath: string): string | null {
+  if (!urlOrPath || typeof urlOrPath !== "string") {
+    return null;
+  }
+
+  // 1. Matches: .../artifacts/<key>?... or artifacts/<key>
+  const match = urlOrPath.match(/(?:^|\/)artifacts\/([^?#]+)/i);
+  if (match?.[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+
+  // 2. Matches direct storage key pattern: <uuid-or-id>/<subfolder>/<timestamp>-<filename>
+  const directKeyMatch = urlOrPath.match(
+    /^([0-9a-fA-F-]{8,36}\/[^/?#]+\/[^?#]+)$/
+  );
+  if (directKeyMatch?.[1]) {
+    try {
+      return decodeURIComponent(directKeyMatch[1]);
+    } catch {
+      return directKeyMatch[1];
+    }
+  }
+
+  return null;
+}
+
+function inferMimeType(filenameOrExt: string): string {
+  const [withoutQuery] = filenameOrExt.toLowerCase().split("?");
+  const [clean = ""] = (withoutQuery ?? "").split("#");
+  if (clean.endsWith(".jpg") || clean.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (clean.endsWith(".png")) {
+    return "image/png";
+  }
+  if (clean.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (clean.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (clean.endsWith(".svg")) {
+    return "image/svg+xml";
+  }
+  if (clean.endsWith(".avif")) {
+    return "image/avif";
+  }
+  return "image/png";
+}
 
 /**
  * Parses an image source (HTTP URL, Supabase signed URL, data URL, raw base64, or Buffer) into a Node Buffer.
@@ -31,39 +89,103 @@ export async function parseImageInput(source: string | Buffer): Promise<{
     return { buffer: source, mimeType: "image/png" };
   }
 
-  // Handle remote HTTP/HTTPS URLs (including Supabase Storage signed URLs)
-  if (
-    typeof source === "string" &&
-    (source.startsWith("http://") || source.startsWith("https://"))
-  ) {
-    const response = await fetch(source, {
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch remote image: HTTP ${response.status} ${response.statusText}`
+  if (typeof source !== "string" || !source.trim()) {
+    throw new Error("Invalid or empty image source provided.");
+  }
+
+  const trimmed = source.trim();
+
+  // 1. Check data URLs
+  const dataUrlMatch = trimmed.match(/^data:([^;]+).*?;base64,\s*([\s\S]+)$/i);
+  if (dataUrlMatch) {
+    const [, mimeType, base64Data] = dataUrlMatch;
+    const cleanBase64 = base64Data.replace(/\s+/g, "");
+    return {
+      buffer: Buffer.from(cleanBase64, "base64"),
+      mimeType: mimeType || "image/png",
+    };
+  }
+
+  // 2. If it's a Supabase storage artifact (signed URL, public URL, or key), download directly via admin client
+  const storageKey = extractStorageKey(trimmed);
+  if (storageKey) {
+    try {
+      const buffer = await downloadArtifact(storageKey);
+      return {
+        buffer,
+        mimeType: inferMimeType(storageKey),
+      };
+    } catch (storageErr: any) {
+      console.warn(
+        `Direct storage download for key "${storageKey}" failed, falling back to HTTP fetch:`,
+        storageErr?.message || storageErr
       );
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const mimeType = response.headers.get("content-type") || "image/png";
-    return {
-      buffer: Buffer.from(arrayBuffer),
-      mimeType,
-    };
   }
 
-  const match = source.match(/^data:([^;]+);base64,(.+)$/);
-  if (match) {
-    const [, mimeType, base64Data] = match;
-    return {
-      buffer: Buffer.from(base64Data, "base64"),
-      mimeType,
-    };
+  // 3. Handle remote HTTP/HTTPS or relative URLs
+  let fetchUrl = trimmed;
+  if (fetchUrl.startsWith("/")) {
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    if (supabaseUrl && fetchUrl.startsWith("/storage/")) {
+      fetchUrl = new URL(fetchUrl, supabaseUrl).toString();
+    } else {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_PATH
+        ? `http://localhost:${process.env.PORT || 3000}${process.env.NEXT_PUBLIC_BASE_PATH}`
+        : `http://localhost:${process.env.PORT || 3000}`;
+      fetchUrl = new URL(fetchUrl, baseUrl).toString();
+    }
   }
 
-  // Treat as plain base64
+  if (fetchUrl.startsWith("http://") || fetchUrl.startsWith("https://")) {
+    try {
+      let validUrl = fetchUrl;
+      try {
+        validUrl = new URL(fetchUrl).toString();
+      } catch {
+        validUrl = encodeURI(fetchUrl);
+      }
+
+      const response = await fetch(validUrl, {
+        headers: {
+          Accept:
+            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 SuperiorAI/1.0",
+        },
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch remote image: HTTP ${response.status} ${response.statusText}`
+        );
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const mimeType =
+        response.headers.get("content-type") || inferMimeType(validUrl);
+      return {
+        buffer: Buffer.from(arrayBuffer),
+        mimeType,
+      };
+    } catch (err: any) {
+      throw new Error(`Unable to fetch image from URL: ${err.message || err}`, {
+        cause: err,
+      });
+    }
+  }
+
+  // 4. Treat as plain base64 string
+  const cleanBase64 = trimmed.replace(/\s+/g, "");
+  const buffer = Buffer.from(cleanBase64, "base64");
+  if (buffer.length === 0) {
+    throw new Error("Invalid or empty image data provided.");
+  }
+
   return {
-    buffer: Buffer.from(source, "base64"),
+    buffer,
     mimeType: "image/png",
   };
 }

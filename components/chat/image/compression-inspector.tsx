@@ -15,7 +15,9 @@ interface CompressionInspectorProps {
   documentId?: string;
   imageSrc: string;
   isComparing: boolean;
+  isGuest?: boolean;
   isProcessing: boolean;
+  onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
   originalSrc: string | null;
   setIsComparing: (val: boolean) => void;
@@ -31,6 +33,8 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
   setIsProcessing,
   isComparing,
   setIsComparing,
+  isGuest,
+  onRequireAuth,
 }: CompressionInspectorProps) {
   const [targetKb, setTargetKb] = useState<number | null>(50);
   const [quality, setQuality] = useState<number>(75);
@@ -57,31 +61,48 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     : approxCurrentKb;
 
   const handleRecompress = useCallback(async () => {
+    if (isGuest) {
+      onRequireAuth?.();
+      return;
+    }
+
     if (isProcessing) {
       return;
     }
     setIsProcessing(true);
 
     try {
-      const response = await fetch("/api/tools/image", {
-        body: JSON.stringify({
-          action: "compress",
-          documentId,
-          image: originalSrc || imageSrc,
-          params: {
-            format,
-            quality,
-            targetSizeKb: targetKb || undefined,
-          },
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
+        {
+          body: JSON.stringify({
+            action: "compress",
+            documentId,
+            image: originalSrc || imageSrc,
+            params: {
+              format,
+              quality,
+              targetSizeKb: targetKb || undefined,
+            },
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }
+      );
 
       if (!response.ok) {
+        if (response.status === 403) {
+          onRequireAuth?.();
+          return;
+        }
+
         let errMessage = "Compression failed";
         try {
           const errData = await response.json();
+          if (errData.requiresAuth) {
+            onRequireAuth?.();
+            return;
+          }
           errMessage = errData.error || errMessage;
         } catch {
           // Ignore parsing error
@@ -102,6 +123,8 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
       setIsProcessing(false);
     }
   }, [
+    isGuest,
+    onRequireAuth,
     isProcessing,
     setIsProcessing,
     originalSrc,
