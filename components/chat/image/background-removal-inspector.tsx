@@ -7,11 +7,13 @@ import {
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 interface BackgroundRemovalInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isComparing: boolean;
@@ -34,6 +36,7 @@ const QUICK_COLORS = [
 
 export const BackgroundRemovalInspector = memo(
   function InnerBackgroundRemovalInspector({
+    appliedParams,
     documentId,
     imageSrc,
     originalSrc,
@@ -49,6 +52,22 @@ export const BackgroundRemovalInspector = memo(
       "transparent"
     );
     const [bgColor, setBgColor] = useState<string>("#ffffff");
+
+    // Pre-fill from the values the model applied via chat, when present.
+    useEffect(() => {
+      if (!appliedParams) {
+        return;
+      }
+      if (
+        appliedParams.mode === "transparent" ||
+        appliedParams.mode === "solid_color"
+      ) {
+        setBgMode(appliedParams.mode);
+      }
+      if (typeof appliedParams.color === "string") {
+        setBgColor(appliedParams.color);
+      }
+    }, [appliedParams]);
 
     const handleProcessBg = useCallback(async () => {
       if (isGuest) {

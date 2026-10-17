@@ -781,6 +781,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y">
             {activeToolMode === "compress" && (
               <CompressionInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isComparing={isComparing}
@@ -796,6 +797,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "resize" && (
               <ResizerInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isGuest={isGuest}
@@ -809,6 +811,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "crop" && (
               <CropInspector
+                appliedParams={artifact.toolParams}
                 cropBox={cropBox}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
@@ -828,6 +831,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "remove_bg" && (
               <BackgroundRemovalInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isComparing={isComparing}
@@ -843,6 +847,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "convert" && (
               <ConverterInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isGuest={isGuest}
@@ -856,6 +861,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "upscale" && (
               <UpscalerInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isGuest={isGuest}
@@ -869,6 +875,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "pixelate" && (
               <PixelatorInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isGuest={isGuest}
@@ -882,6 +889,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "ocr" && (
               <OcrInspector
+                appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}
                 isGuest={isGuest}

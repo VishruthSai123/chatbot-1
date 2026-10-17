@@ -1,11 +1,16 @@
 "use client";
 
 import { ChevronDown, Download, Loader2, RefreshCw } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { parseAspectRatio } from "@/lib/image/dimensions";
 import {
   type DpiOption,
+  findPresetsByQuery,
+  getPresetByKey,
+  groupPresetsByCategory,
   PHOTO_PRESETS,
+  type PhotoPreset,
   type PhysicalUnit,
   physicalToPixels,
   UNIT_OPTIONS,
@@ -13,6 +18,8 @@ import {
 import { cn } from "@/lib/utils";
 
 interface ResizerInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isGuest?: boolean;
@@ -25,7 +32,23 @@ interface ResizerInspectorProps {
 
 const DPI_VALUES: DpiOption[] = [72, 150, 300, 600];
 
+/** Quick aspect-ratio lock options ("free" keeps the manual width/height). */
+const ASPECT_OPTIONS: { key: string; label: string }[] = [
+  { key: "free", label: "Free" },
+  { key: "1:1", label: "1:1" },
+  { key: "4:5", label: "4:5" },
+  { key: "5:7", label: "5:7" },
+  { key: "7:9", label: "7:9" },
+  { key: "2:3", label: "2:3" },
+  { key: "16:9", label: "16:9" },
+];
+
+function presetLabel(preset: PhotoPreset): string {
+  return `${preset.displayName} (${preset.width} × ${preset.height} ${preset.unit})`;
+}
+
 export const ResizerInspector = memo(function InnerResizerInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc,
@@ -42,9 +65,18 @@ export const ResizerInspector = memo(function InnerResizerInspector({
   const [unit, setUnit] = useState<PhysicalUnit>("mm");
   const [dpi, setDpi] = useState<DpiOption>(300);
   const [fit, _setFit] = useState<"cover" | "contain">("cover");
+  const [presetQuery, setPresetQuery] = useState("");
+  const [aspect, setAspect] = useState<string>("free");
+
+  const presetGroups = groupPresetsByCategory();
+  const trimmedQuery = presetQuery.trim();
+  const matchedPresets = trimmedQuery
+    ? findPresetsByQuery(trimmedQuery, 40)
+    : null;
 
   const handleSelectPreset = useCallback((presetKey: string) => {
     setSelectedPreset(presetKey);
+    setAspect("free");
     if (presetKey === "custom") {
       return;
     }
@@ -57,8 +89,65 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     }
   }, []);
 
+  const handleSelectAspect = useCallback(
+    (key: string) => {
+      setAspect(key);
+      if (key === "free") {
+        return;
+      }
+      const ratio = parseAspectRatio(key);
+      if (!ratio || width <= 0) {
+        return;
+      }
+      setHeight(Number((width / ratio).toFixed(2)));
+      setSelectedPreset("custom");
+    },
+    [width]
+  );
+
   const computedPxW = physicalToPixels(width, unit, dpi);
   const computedPxH = physicalToPixels(height, unit, dpi);
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    const presetKey =
+      typeof appliedParams.preset === "string" ? appliedParams.preset : null;
+    const preset = presetKey ? getPresetByKey(presetKey) : undefined;
+    if (preset) {
+      setSelectedPreset(preset.key);
+      setWidth(preset.width);
+      setHeight(preset.height);
+      setUnit(preset.unit);
+      setDpi(preset.dpi);
+      setAspect(preset.aspectRatio);
+    } else {
+      if (typeof appliedParams.width === "number") {
+        setWidth(appliedParams.width);
+      }
+      if (typeof appliedParams.height === "number") {
+        setHeight(appliedParams.height);
+      }
+      if (typeof appliedParams.unit === "string") {
+        setUnit(appliedParams.unit as PhysicalUnit);
+      }
+      if (typeof appliedParams.dpi === "number") {
+        setDpi(appliedParams.dpi as DpiOption);
+      }
+      setAspect(
+        typeof appliedParams.aspectRatio === "string" &&
+          parseAspectRatio(appliedParams.aspectRatio) !== null
+          ? appliedParams.aspectRatio
+          : "free"
+      );
+      setSelectedPreset("custom");
+    }
+    if (appliedParams.fit === "cover" || appliedParams.fit === "contain") {
+      _setFit(appliedParams.fit);
+    }
+  }, [appliedParams]);
 
   const handleApplyResize = useCallback(async () => {
     if (isGuest) {
@@ -80,6 +169,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
             documentId,
             image: originalSrc || imageSrc,
             params: {
+              aspectRatio: aspect === "free" ? undefined : aspect,
               dpi,
               fit,
               height,
@@ -140,6 +230,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     dpi,
     fit,
     onUpdateImage,
+    aspect,
   ]);
 
   const handleDownload = useCallback(() => {
@@ -171,6 +262,14 @@ export const ResizerInspector = memo(function InnerResizerInspector({
               {width}×{height} {unit}
             </span>
           </div>
+          <input
+            className="w-full rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/70 focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors"
+            id="preset-search"
+            onChange={(e) => setPresetQuery(e.target.value)}
+            placeholder="Search presets (e.g. china visa, 2x2 inch)"
+            type="search"
+            value={presetQuery}
+          />
           <div className="relative">
             <select
               className="w-full appearance-none rounded-lg border border-border/60 bg-muted/30 px-3 py-2 pr-8 text-xs font-medium text-foreground focus:border-foreground/50 focus:bg-background focus:outline-none transition-colors cursor-pointer"
@@ -178,25 +277,25 @@ export const ResizerInspector = memo(function InnerResizerInspector({
               onChange={(e) => handleSelectPreset(e.target.value)}
               value={selectedPreset}
             >
-              <optgroup label="Official Passports & Visas">
-                <option value="indian_passport">
-                  Indian Passport / OCI (35 × 45 mm)
-                </option>
-                <option value="us_visa">
-                  US Visa & Passport (2 × 2 in / 51 × 51 mm)
-                </option>
-                <option value="schengen_visa">
-                  Schengen Visa (35 × 45 mm)
-                </option>
-                <option value="uk_visa">
-                  UK / Australian Visa (35 × 45 mm)
-                </option>
-                <option value="pan_card">Indian PAN Card (25 × 35 mm)</option>
-                <option value="stamp_size">Stamp Size (20 × 25 mm)</option>
-              </optgroup>
-              <optgroup label="Standard Prints">
-                <option value="photo_4x6">Photo Print (4 × 6 in)</option>
-              </optgroup>
+              {matchedPresets && matchedPresets.length > 0 ? (
+                <optgroup label={`Matches (${matchedPresets.length})`}>
+                  {matchedPresets.map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {presetLabel(preset)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                presetGroups.map((group) => (
+                  <optgroup key={group.category} label={group.label}>
+                    {group.presets.map((preset) => (
+                      <option key={preset.key} value={preset.key}>
+                        {presetLabel(preset)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              )}
               <option value="custom">Custom Dimensions...</option>
             </select>
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -219,6 +318,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
                 onChange={(e) => {
                   setWidth(Number.parseFloat(e.target.value) || 0);
                   setSelectedPreset("custom");
+                  setAspect("free");
                 }}
                 step="0.1"
                 type="number"
@@ -235,6 +335,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
                 onChange={(e) => {
                   setHeight(Number.parseFloat(e.target.value) || 0);
                   setSelectedPreset("custom");
+                  setAspect("free");
                 }}
                 step="0.1"
                 type="number"
@@ -251,6 +352,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
                   onChange={(e) => {
                     setUnit(e.target.value as PhysicalUnit);
                     setSelectedPreset("custom");
+                    setAspect("free");
                   }}
                   value={unit}
                 >
@@ -263,6 +365,33 @@ export const ResizerInspector = memo(function InnerResizerInspector({
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Aspect ratio lock */}
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-foreground">
+            Aspect ratio lock
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {ASPECT_OPTIONS.map((option) => {
+              const isActive = aspect === option.key;
+              return (
+                <button
+                  className={cn(
+                    "rounded-md border border-border/60 py-1 text-center text-xs font-medium tabular-nums transition-colors cursor-pointer",
+                    isActive
+                      ? "border-foreground bg-foreground text-background font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  key={option.key}
+                  onClick={() => handleSelectAspect(option.key)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -326,7 +455,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
           ) : (
             <>
               <RefreshCw className="size-3.5" />
-              <span>Apply Physical Resize</span>
+              <span>Apply Resize</span>
             </>
           )}
         </button>

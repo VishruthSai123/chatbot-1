@@ -1,13 +1,15 @@
 "use client";
 
 import { Download, Loader2, Sparkles, Wand2 } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type OutputFormat = "jpeg" | "png" | "webp";
 
 interface UpscalerInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isGuest?: boolean;
@@ -62,6 +64,7 @@ function ToggleRow({
 }
 
 export const UpscalerInspector = memo(function InnerUpscalerInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc,
@@ -75,6 +78,29 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
   const [sharpen, setSharpen] = useState<boolean>(true);
   const [enhance, setEnhance] = useState<boolean>(false);
   const [format, setFormat] = useState<OutputFormat>("jpeg");
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    if (appliedParams.scale === 2 || appliedParams.scale === 4) {
+      setScale(appliedParams.scale);
+    }
+    if (typeof appliedParams.sharpen === "boolean") {
+      setSharpen(appliedParams.sharpen);
+    }
+    if (typeof appliedParams.enhance === "boolean") {
+      setEnhance(appliedParams.enhance);
+    }
+    if (
+      appliedParams.format === "jpeg" ||
+      appliedParams.format === "png" ||
+      appliedParams.format === "webp"
+    ) {
+      setFormat(appliedParams.format);
+    }
+  }, [appliedParams]);
 
   const handleUpscale = useCallback(async () => {
     if (isGuest) {

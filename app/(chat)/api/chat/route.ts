@@ -29,10 +29,11 @@ import {
   imageCompress,
   imageConvert,
   imageCrop,
+  imageListPresets,
   imageOcr,
   imagePixelate,
   imageRemoveBg,
-  imageResizePhysical,
+  imageResize,
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
@@ -51,6 +52,10 @@ import {
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
+import {
+  describeRequirement,
+  parseImageRequirement,
+} from "@/lib/image/requirements";
 import { checkIpRateLimit } from "@/lib/ratelimit";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
@@ -88,8 +93,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { id, message, messages, selectedChatModel, selectedVisibilityType } =
-      requestBody;
+    const {
+      activeImage,
+      id,
+      message,
+      messages,
+      selectedChatModel,
+      selectedVisibilityType,
+    } = requestBody;
 
     const [botIdResult, session] = await Promise.all([
       checkBotId().catch(() => null),
@@ -179,6 +190,20 @@ export async function POST(request: Request) {
         message as ChatMessage,
       ];
     }
+
+    // Deterministic parse of the user's latest message: geometry hint for the
+    // prompt + argument repair for the image tools (no model involved).
+    const lastUserMessage = [...uiMessages]
+      .reverse()
+      .find((msg) => msg.role === "user");
+    const lastUserText =
+      lastUserMessage?.parts
+        .filter((part) => part.type === "text")
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join(" ") ?? "";
+    const parsedRequirement = parseImageRequirement(lastUserText);
+    const imageRequirementHint = describeRequirement(parsedRequirement);
+    const requirement = parsedRequirement.spec;
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -286,7 +311,7 @@ export async function POST(request: Request) {
                   "editDocument",
                   "updateDocument",
                   "requestSuggestions",
-                  "imageResizePhysical",
+                  "imageResize",
                   "imageRemoveBg",
                   "imageCrop",
                   "imageCompress",
@@ -294,8 +319,13 @@ export async function POST(request: Request) {
                   "imageUpscaleEnhance",
                   "imagePixelate",
                   "imageOcr",
+                  "imageListPresets",
                 ],
-          instructions: systemPrompt({ requestHints, supportsTools }),
+          instructions: systemPrompt({
+            imageRequirement: imageRequirementHint,
+            requestHints,
+            supportsTools,
+          }),
           messages: modelMessages,
           model: getLanguageModel(chatModel),
           onAbort() {
@@ -337,48 +367,59 @@ export async function POST(request: Request) {
             editDocument: editDocument({ dataStream, session }),
             getWeather,
             imageCompress: imageCompress({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
               session,
             }),
             imageConvert: imageConvert({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
               session,
             }),
             imageCrop: imageCrop({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
+              requirement,
               session,
             }),
+            imageListPresets: imageListPresets(),
             imageOcr: imageOcr({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
               session,
             }),
             imagePixelate: imagePixelate({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
               session,
             }),
             imageRemoveBg: imageRemoveBg({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
               session,
             }),
-            imageResizePhysical: imageResizePhysical({
+            imageResize: imageResize({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,
+              requirement,
               session,
             }),
             imageUpscaleEnhance: imageUpscaleEnhance({
+              activeImage,
               chatId: id,
               dataStream,
               messages: uiMessages,

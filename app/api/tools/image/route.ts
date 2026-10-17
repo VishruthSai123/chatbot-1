@@ -15,7 +15,7 @@ import {
   executeOcr,
   executePixelate,
   executeRemoveBg,
-  executeResizePhysical,
+  executeResize,
   executeRotate,
   executeUpscaleEnhance,
 } from "@/lib/tools/image";
@@ -26,7 +26,7 @@ import {
   ocrSchema,
   pixelateSchema,
   removeBgSchema,
-  resizePhysicalSchema,
+  resizeSchema,
   rotateSchema,
   upscaleSchema,
 } from "@/lib/tools/image/types";
@@ -137,13 +137,10 @@ export async function POST(request: Request) {
     let result: any;
 
     switch (action) {
+      case "resize":
       case "resize_physical": {
-        const validated = resizePhysicalSchema.parse(params);
-        result = await executeResizePhysical(
-          imageSource,
-          validated,
-          fallbackContext
-        );
+        const validated = resizeSchema.parse(params);
+        result = await executeResize(imageSource, validated, fallbackContext);
         break;
       }
       case "remove_bg": {

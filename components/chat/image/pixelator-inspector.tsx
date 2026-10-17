@@ -1,13 +1,15 @@
 "use client";
 
 import { Download, Grid3x3, Loader2, Waves } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type RedactMode = "mosaic" | "blur";
 
 interface PixelatorInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isGuest?: boolean;
@@ -19,6 +21,7 @@ interface PixelatorInspectorProps {
 }
 
 export const PixelatorInspector = memo(function InnerPixelatorInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc,
@@ -30,6 +33,19 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
 }: PixelatorInspectorProps) {
   const [blockSize, setBlockSize] = useState<number>(16);
   const [mode, setMode] = useState<RedactMode>("mosaic");
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    if (typeof appliedParams.blockSize === "number") {
+      setBlockSize(appliedParams.blockSize);
+    }
+    if (appliedParams.mode === "mosaic" || appliedParams.mode === "blur") {
+      setMode(appliedParams.mode);
+    }
+  }, [appliedParams]);
 
   const handleRedact = useCallback(async () => {
     if (isGuest) {

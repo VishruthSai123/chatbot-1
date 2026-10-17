@@ -6,12 +6,13 @@ import {
   compressImage,
   convertImage,
   cropImage,
+  cropToAspect,
   getImageMetadata,
   getSharp,
   pixelateImage,
-  resizePhysicalImage,
+  resizeToSpec,
   rotateImage,
-  upscaleEnhanceImage,
+  upscaleToTarget,
 } from "@/lib/image/native";
 import { extractTextFromImage } from "@/lib/image/ocr";
 import { activeImageRegistry } from "@/lib/image/session-registry";
@@ -25,7 +26,7 @@ import type {
   OcrOperationResult,
   PixelateInput,
   RemoveBgInput,
-  ResizePhysicalInput,
+  ResizeInput,
   RotateInput,
   UpscaleInput,
 } from "./types";
@@ -383,23 +384,37 @@ function formatResult(
 }
 
 /**
- * Execute physical resizing with DPI injection.
+ * Execute a resize from a flexible dimension spec (exact px, physical units + DPI,
+ * aspect ratio, relative scale, bounded fit, presets, and optional size bound).
  */
-export async function executeResizePhysical(
+export async function executeResize(
   input: string | Buffer,
-  params: ResizePhysicalInput,
+  params: ResizeInput,
   fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
-  const result = await resizePhysicalImage({
-    dpi: params.dpi,
-    fit: params.fit,
-    format: params.format,
-    height: params.height,
+  const result = await resizeToSpec({
+    format: params.format ?? "jpeg",
     inputBuffer: buffer,
-    quality: params.quality,
-    unit: params.unit,
-    width: params.width,
+    quality: params.quality ?? 95,
+    spec: {
+      allowUpscale: params.allowUpscale,
+      aspectRatio: params.aspectRatio,
+      dpi: params.dpi,
+      fit: params.fit,
+      height: params.height,
+      maxHeight: params.maxHeight,
+      maxLongEdge: params.maxLongEdge,
+      maxWidth: params.maxWidth,
+      minHeight: params.minHeight,
+      minWidth: params.minWidth,
+      padColor: params.padColor,
+      preset: params.preset,
+      scalePercent: params.scalePercent,
+      targetSizeKb: params.targetSizeKb,
+      unit: params.unit,
+      width: params.width,
+    },
   });
 
   return formatResult(
@@ -456,7 +471,8 @@ export async function executeRemoveBg(
 }
 
 /**
- * Execute cropping of bounding box.
+ * Execute cropping — either to an aspect ratio (with an anchor mode) or to an
+ * explicit pixel box.
  */
 export async function executeCrop(
   input: string | Buffer,
@@ -464,15 +480,30 @@ export async function executeCrop(
   fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
-  const result = await cropImage({
-    format: params.format ?? "jpeg",
-    height: params.height,
-    inputBuffer: buffer,
-    left: params.left,
-    quality: params.quality ?? 95,
-    top: params.top,
-    width: params.width,
-  });
+  const format = params.format ?? "jpeg";
+  const quality = params.quality ?? 95;
+
+  let result: Awaited<ReturnType<typeof cropImage>>;
+  if (params.aspectRatio) {
+    result = await cropToAspect({
+      aspectRatio: params.aspectRatio,
+      format,
+      inputBuffer: buffer,
+      mode: params.mode ?? "center",
+      quality,
+    });
+  } else {
+    const { height = 0, left = 0, top = 0, width = 0 } = params;
+    result = await cropImage({
+      format,
+      height,
+      inputBuffer: buffer,
+      left,
+      quality,
+      top,
+      width,
+    });
+  }
 
   return formatResult(
     result.buffer,
@@ -492,6 +523,7 @@ export async function executeRotate(
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
   const result = await rotateImage({
+    background: params.background ?? "#ffffff",
     degrees: params.degrees ?? 0,
     flipHorizontal: params.flipHorizontal ?? false,
     flipVertical: params.flipVertical ?? false,
@@ -556,7 +588,7 @@ export async function executeConvert(
 }
 
 /**
- * Execute upscaling and/or enhancement.
+ * Execute upscaling and/or enhancement to a multiplier or an explicit target size.
  */
 export async function executeUpscaleEnhance(
   input: string | Buffer,
@@ -564,13 +596,16 @@ export async function executeUpscaleEnhance(
   fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
-  const result = await upscaleEnhanceImage({
+  const result = await upscaleToTarget({
     enhance: params.enhance,
     format: params.format,
     inputBuffer: buffer,
+    maxLongEdge: params.maxLongEdge,
     quality: params.quality,
     scale: params.scale,
     sharpen: params.sharpen,
+    targetHeight: params.targetHeight,
+    targetWidth: params.targetWidth,
   });
 
   return formatResult(

@@ -17,6 +17,7 @@ import {
 } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
+import type { UIArtifact } from "@/components/chat/artifact";
 import { useDataStream } from "@/components/chat/data-stream-provider";
 import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
 import { toast } from "@/components/chat/toast";
@@ -97,6 +98,21 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     ? "private"
     : (chatData?.visibility ?? "private");
 
+  // The image currently open in the workbench, tracked through the shared artifact store.
+  // Sending it lets image tools edit exactly what the user sees, even without a URL.
+  const { data: activeArtifact } = useSWR<UIArtifact>("artifact", null);
+  const activeImageRef = useRef<{
+    documentId: string;
+    toolMode?: string;
+  } | null>(null);
+  useEffect(() => {
+    const documentId = activeArtifact?.documentId;
+    activeImageRef.current =
+      activeArtifact?.kind === "image" && documentId && documentId !== "init"
+        ? { documentId, toolMode: activeArtifact.toolMode }
+        : null;
+  }, [activeArtifact]);
+
   const {
     messages,
     setMessages,
@@ -166,6 +182,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
             ...(isToolApprovalContinuation
               ? { messages: request.messages }
               : { message: lastMessage }),
+            activeImage: activeImageRef.current ?? undefined,
             selectedChatModel: currentModelIdRef.current,
             selectedVisibilityType: visibility,
             ...request.body,

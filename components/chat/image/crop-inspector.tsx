@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Crop, Download, Loader2, RotateCcw } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
 
@@ -13,6 +13,8 @@ export interface CropBox {
 }
 
 interface CropInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   cropBox: CropBox;
   documentId?: string;
   imageSrc: string;
@@ -30,6 +32,7 @@ interface CropInspectorProps {
 }
 
 export const CropInspector = memo(function InnerCropInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc: _originalSrc,
@@ -88,6 +91,45 @@ export const CropInspector = memo(function InnerCropInspector({
     setCropBox({ height: 80, width: 80, x: 10, y: 10 });
     setSelectedAspect("free");
   }, [setCropBox, setSelectedAspect]);
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    const aspect = appliedParams.aspectRatio;
+    const hasPreset =
+      typeof aspect === "string" &&
+      CROP_ASPECT_PRESETS.some((p) => p.key === aspect && p.ratio !== null);
+    if (hasPreset && typeof aspect === "string") {
+      handleSelectAspect(aspect);
+      return;
+    }
+    const { left, top, width, height } = appliedParams;
+    if (
+      typeof left === "number" &&
+      typeof top === "number" &&
+      typeof width === "number" &&
+      typeof height === "number" &&
+      naturalWidth > 0 &&
+      naturalHeight > 0
+    ) {
+      setSelectedAspect("free");
+      setCropBox({
+        height: Math.min(100, (height / naturalHeight) * 100),
+        width: Math.min(100, (width / naturalWidth) * 100),
+        x: Math.max(0, (left / naturalWidth) * 100),
+        y: Math.max(0, (top / naturalHeight) * 100),
+      });
+    }
+  }, [
+    appliedParams,
+    handleSelectAspect,
+    naturalHeight,
+    naturalWidth,
+    setCropBox,
+    setSelectedAspect,
+  ]);
 
   const handleApplyCrop = useCallback(async () => {
     if (isGuest) {

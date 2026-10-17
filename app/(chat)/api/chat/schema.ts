@@ -31,6 +31,14 @@ const toolApprovalMessageSchema = z.object({
 });
 
 export const postRequestBodySchema = z.object({
+  // The image currently open in the right-pane workbench. Lets image tools operate
+  // on exactly that Document instead of re-deriving it from fragile URLs.
+  activeImage: z
+    .object({
+      documentId: z.string().optional(),
+      toolMode: z.string().optional(),
+    })
+    .optional(),
   id: z.uuid(),
   message: userMessageSchema.optional(),
   messages: z.array(toolApprovalMessageSchema).optional(),

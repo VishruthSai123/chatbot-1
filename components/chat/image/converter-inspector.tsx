@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Loader2, RefreshCw } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,8 @@ const FORMAT_OPTIONS = ["jpeg", "png", "webp", "avif", "tiff"] as const;
 type OutputFormat = (typeof FORMAT_OPTIONS)[number];
 
 interface ConverterInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isGuest?: boolean;
@@ -20,6 +22,7 @@ interface ConverterInspectorProps {
 }
 
 export const ConverterInspector = memo(function InnerConverterInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc,
@@ -31,6 +34,23 @@ export const ConverterInspector = memo(function InnerConverterInspector({
 }: ConverterInspectorProps) {
   const [targetFormat, setTargetFormat] = useState<OutputFormat>("webp");
   const [quality, setQuality] = useState<number>(90);
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    const requested = appliedParams.targetFormat ?? appliedParams.format;
+    if (
+      typeof requested === "string" &&
+      (FORMAT_OPTIONS as readonly string[]).includes(requested)
+    ) {
+      setTargetFormat(requested as OutputFormat);
+    }
+    if (typeof appliedParams.quality === "number") {
+      setQuality(appliedParams.quality);
+    }
+  }, [appliedParams]);
 
   const approxCurrentKb = Math.round(
     ((imageSrc.length * 3) / 4 -

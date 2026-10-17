@@ -60,6 +60,8 @@ export type UIArtifact = {
     height: number;
   };
   toolMode?: ImageToolMode;
+  /** Parameters the model applied on the last image tool call; pre-fills inspectors. */
+  toolParams?: Record<string, unknown> | null;
   ocrText?: string;
 };
 

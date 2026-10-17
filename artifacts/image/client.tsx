@@ -40,6 +40,12 @@ export const imageArtifact = new Artifact({
         toolMode: (streamPart as any).data,
       }));
     }
+    if ((streamPart as any).type === "data-imageToolParams") {
+      setArtifact((draftArtifact) => ({
+        ...draftArtifact,
+        toolParams: (streamPart as any).data,
+      }));
+    }
     if ((streamPart as any).type === "data-imageOcrText") {
       setArtifact((draftArtifact) => ({
         ...draftArtifact,

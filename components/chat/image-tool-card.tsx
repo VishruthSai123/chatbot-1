@@ -19,6 +19,8 @@ import { cn, fetcher } from "@/lib/utils";
 
 export type ImageToolType =
   | "tool-imageCompress"
+  | "tool-imageResize"
+  // Legacy alias: pre-rename persisted messages still use this part type.
   | "tool-imageResizePhysical"
   | "tool-imageCrop"
   | "tool-imageRemoveBg"
@@ -89,9 +91,14 @@ const TOOL_CONFIG: Record<
     label: "Remove Background",
     mode: "remove_bg",
   },
+  "tool-imageResize": {
+    icon: "📐",
+    label: "Resize Photo",
+    mode: "resize",
+  },
   "tool-imageResizePhysical": {
     icon: "📐",
-    label: "Resize Physical Photo",
+    label: "Resize Photo",
     mode: "resize",
   },
   "tool-imageUpscaleEnhance": {

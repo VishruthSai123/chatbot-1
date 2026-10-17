@@ -5,6 +5,8 @@ import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface OcrInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isGuest?: boolean;

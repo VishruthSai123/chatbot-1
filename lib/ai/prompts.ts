@@ -47,12 +47,20 @@ CRITICAL RULES:
 - ZERO-CLARIFICATION RULE: When an image is attached or present, NEVER ask clarifying questions (such as asking for target size in KB, percentage, or dimensions). DO NOT prompt the user for numbers before executing.
 - PHOTO ATTACHMENT RULE: When an image is attached in the chat, DO NOT supply internal reference URLs (such as gemini.google.com URLs) or synthesize placeholder URLs to \`imageUrl\`. Leave \`imageUrl\` and \`id\` empty/unspecified so the system directly resolves the uploaded photo attachment. Only provide \`imageUrl\` when the user explicitly pastes an external public HTTP URL in text.
 - IMMEDIATELY call the corresponding image tool on the FIRST turn:
-  * For compression ("compress image", "reduce size", "make it smaller"): call \`imageCompress\` immediately! If target size or percentage is not specified, default to \`quality: 75\`. If the user mentions a bound like "lesser than 50%", set \`quality: 45\`.
-  * For passport/visa photos: call \`imageResizePhysical\` with preset (e.g. \`indian_passport\`, \`us_visa\`).
+  * For ANY size/dimension request ("resize", "make it 800x600", "make it 1000px wide", "make it 2x3 inches", "35x45mm at 300dpi", "make it 16:9", "scale it to 50%", "make it square", "max 2000px", "under 50KB"): call \`imageResize\` and translate the request into exact fields:
+      - Exact pixels → \`width\`/\`height\` with \`unit: "px"\` (give only ONE edge to preserve the aspect ratio).
+      - Physical size → \`width\`/\`height\` with \`unit\` ("mm" | "cm" | "in") and \`dpi\` (default 300).
+      - Aspect ratio only → \`aspectRatio\` (e.g. "16:9", "4:5", "square").
+      - Relative size → \`scalePercent\` (50 = half, 200 = double).
+      - Upper/lower bound → \`maxLongEdge\`, \`maxWidth\`/\`maxHeight\`, or \`minWidth\`/\`minHeight\`.
+      - Fit/padding → \`fit\` ("cover" | "contain" | "pad") with optional \`padColor\`.
+      - File-size bound → \`targetSizeKb\` (combines with any geometry).
+  * For passport/visa/ID photos: call \`imageResize\` with \`preset\`. Known keys: \`indian_passport\`, \`passport_photo\` (generic 35×45 mm), \`us_visa\`, \`us_green_card\`, \`schengen_visa\`, \`uk_visa\`, \`china_visa\`, \`japan_visa\`, \`canada_visa\`, \`uae_visa\`, \`india_evisa\`, \`pan_card\`, \`stamp_size\`, \`id_photo_1inch\`, \`id_photo_35x35\`, \`photo_4x6\`. If the user names a country/document you are not certain maps to a key, call \`imageListPresets\` first (query like "china visa", "2x2 inch", "green card") and then call \`imageResize\` with the returned key.
+  * For compression ("compress image", "reduce file size", "make it smaller under 50kb"): call \`imageCompress\`. If a target size is not specified, default to \`quality: 75\`.
   * For background removal: call \`imageRemoveBg\` with mode: 'transparent' (or 'solid_color' with '#ffffff' for passport/visa).
-  * For cropping: call \`imageCrop\`.
+  * For cropping: call \`imageCrop\` — use \`aspectRatio\` (with \`mode\`: 'center' | 'top' | 'bottom' | 'attention') for ratio crops like "square", "16:9" or "passport ratio"; use pixel \`left\`/\`top\`/\`width\`/\`height\` only when the user gives exact coordinates.
   * For format conversion ("convert to webp/png/jpg", "change the format"): call \`imageConvert\` with \`targetFormat\`.
-  * For upscaling or quality enhancement ("upscale", "make it bigger", "enhance", "make it clearer"): call \`imageUpscaleEnhance\` (use \`scale: 2\` or \`scale: 4\`).
+  * For upscaling or quality enhancement ("upscale", "make it bigger/higher resolution", "enhance", "make it clearer"): call \`imageUpscaleEnhance\` — use \`scale\` (1-8) for a multiplier, \`targetWidth\`/\`targetHeight\` for an exact size, or \`maxLongEdge\` to cap the long edge.
   * For pixelation or privacy redaction ("pixelate", "blur the face", "hide the license plate", "redact"): call \`imagePixelate\`.
   * For reading text from an image ("extract the text", "what does this say", "read this document", OCR): call \`imageOcr\`.
 - CONTINUOUS CONVERSATIONAL CHAINING: When the user asks for successive modifications on an image (e.g. "now remove background", "now compress to 50kb", "now crop it", "make it passport size"), call the next tool immediately without asking the user to re-upload. NEVER invent, hallucinate, or supply \`imageUrl\`. Leave \`imageUrl\` and \`id\` empty/unspecified so the system automatically chains from the latest active edited version.
@@ -78,12 +86,17 @@ About the origin of user's request:
 - country: ${requestHints.country}
 `;
 
+/** One-line deterministic geometry hint derived from the user's latest message. */
+export type ImageRequirementHint = string | null;
+
 export const systemPrompt = ({
   requestHints,
   supportsTools,
+  imageRequirement,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
+  imageRequirement?: ImageRequirementHint;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
 
@@ -91,7 +104,11 @@ export const systemPrompt = ({
     return `${regularPrompt}\n\n${requestPrompt}`;
   }
 
-  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+  const requirementPrompt = imageRequirement
+    ? `\n\n${imageRequirement} Pass these through to the matching image tool fields exactly (unit and dpi included); do not re-derive or ask the user.`
+    : "";
+
+  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}`;
 };
 
 export const codePrompt = `

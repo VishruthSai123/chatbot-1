@@ -7,11 +7,13 @@ import {
   RefreshCw,
   SlidersHorizontal,
 } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 interface CompressionInspectorProps {
+  /** Parameters the model applied on the last image tool call; pre-fills the panel. */
+  appliedParams?: Record<string, unknown> | null;
   documentId?: string;
   imageSrc: string;
   isComparing: boolean;
@@ -25,6 +27,7 @@ interface CompressionInspectorProps {
 }
 
 export const CompressionInspector = memo(function InnerCompressionInspector({
+  appliedParams,
   documentId,
   imageSrc,
   originalSrc,
@@ -40,6 +43,21 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
   const [quality, setQuality] = useState<number>(75);
   const [format, setFormat] = useState<"jpeg" | "webp">("jpeg");
   const [customKbInput, setCustomKbInput] = useState<string>("");
+
+  // Pre-fill from the values the model applied via chat, when present.
+  useEffect(() => {
+    if (!appliedParams) {
+      return;
+    }
+    if (typeof appliedParams.quality === "number") {
+      setQuality(appliedParams.quality);
+    }
+    if (appliedParams.targetSizeKb === null) {
+      setTargetKb(null);
+    } else if (typeof appliedParams.targetSizeKb === "number") {
+      setTargetKb(appliedParams.targetSizeKb);
+    }
+  }, [appliedParams]);
 
   // Calculate approximate file size from base64
   const approxCurrentKb = Math.round(

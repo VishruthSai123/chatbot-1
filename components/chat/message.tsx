@@ -351,7 +351,8 @@ const PurePreviewMessage = ({
       "tool-imageOcr": "Extract Text (OCR)",
       "tool-imagePixelate": "Pixelate / Redact",
       "tool-imageRemoveBg": "Remove Background",
-      "tool-imageResizePhysical": "Resize Physical Photo",
+      "tool-imageResize": "Resize Photo",
+      "tool-imageResizePhysical": "Resize Photo",
       "tool-imageUpscaleEnhance": "Upscale & Enhance",
     };
 

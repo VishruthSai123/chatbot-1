@@ -10,11 +10,9 @@ import {
   isValidUUID,
   saveDocument,
 } from "@/lib/db/queries";
-import {
-  type DpiOption,
-  getPresetByKey,
-  type PhysicalUnit,
-} from "@/lib/image/presets";
+import type { DimensionSpec } from "@/lib/image/dimensions";
+import { findPresetsByQuery, getPresetByKey } from "@/lib/image/presets";
+import { applyResizeRequirement } from "@/lib/image/requirements";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import {
   executeCompress,
@@ -23,7 +21,7 @@ import {
   executeOcr,
   executePixelate,
   executeRemoveBg,
-  executeResizePhysical,
+  executeResize,
   executeUpscaleEnhance,
 } from "@/lib/tools/image";
 import type { ChatMessage } from "@/lib/types";
@@ -34,6 +32,21 @@ type ImageToolsProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
   chatId?: string;
   messages?: ChatMessage[];
+  /**
+   * Image currently open in the right-pane workbench, sent by the client. When the
+   * model does not name a document, tools operate on this exact Document so edits
+   * always target what the user is looking at.
+   */
+  activeImage?: {
+    documentId?: string;
+    toolMode?: string;
+  };
+  /**
+   * Deterministically parsed geometry from the user's latest message. Explicit
+   * model arguments always win; this only fills gaps (and repairs a physical
+   * request that silently defaulted to px).
+   */
+  requirement?: Partial<DimensionSpec>;
 };
 
 function checkIsGuest(session: Session): boolean {
@@ -66,6 +79,7 @@ function emitImageArtifact(
     base64?: string;
     id: string;
     mode: ImageToolMode;
+    params?: Record<string, unknown>;
     title: string;
   }
 ) {
@@ -81,6 +95,14 @@ function emitImageArtifact(
     transient: true,
     type: "data-imageToolMode",
   });
+  if (payload.params) {
+    // Pre-fills the matching inspector with the exact values the model applied.
+    dataStream.write({
+      data: payload.params,
+      transient: true,
+      type: "data-imageToolParams",
+    });
+  }
   dataStream.write({ data: null, transient: true, type: "data-clear" });
   if (payload.base64) {
     dataStream.write({
@@ -481,38 +503,97 @@ async function resolveImageSource(
   );
 }
 
-export const imageResizePhysical = ({
+export const imageResize = ({
   session,
   dataStream,
   chatId,
   messages,
+  activeImage,
+  requirement,
 }: ImageToolsProps) =>
   tool({
     description:
-      "Resize an image to exact physical dimensions (mm, cm, in, px) and embed target DPI metadata into the file. Ideal for passport photos, visa applications, ID cards, and high-res print specs.",
+      "Resize/re-scale an image to EXACTLY the size the user asked for, with no clarifying questions. Supports: exact pixel width/height (one or both — the missing edge keeps aspect ratio), physical units (mm/cm/in) with DPI injection, an aspect ratio (e.g. '16:9', 'square'), a relative scale percent (e.g. 50 = half, 200 = double), max/min bounds (e.g. 'max 2000px'), cover/contain/pad fit, and an optional file-size cap (targetSizeKb). Also fulfills official passport/visa/ID presets by key.",
     execute: async ({
       id,
       imageUrl,
       preset,
       width,
       height,
-      unit = "mm",
+      unit = "px",
       dpi = 300,
+      aspectRatio,
+      scalePercent,
+      maxLongEdge,
+      maxWidth,
+      maxHeight,
+      minWidth,
+      minHeight,
+      fit = "cover",
+      padColor,
+      allowUpscale,
+      targetSizeKb,
     }) => {
       try {
         if (checkIsGuest(session)) {
           return {
             error:
-              "Account required: Physical photo resizing (passport/visa presets & DPI injection) is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+              "Account required: Image resizing (custom dimensions, passport/visa presets & DPI injection) is reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
           };
+        }
+
+        // Merge the deterministic NL requirement under the model's arguments
+        // (explicit args win; the requirement only fills gaps and repairs a
+        // physical request that defaulted to px).
+        const sizing = applyResizeRequirement(
+          {
+            allowUpscale,
+            aspectRatio,
+            dpi,
+            fit,
+            height,
+            maxHeight,
+            maxLongEdge,
+            maxWidth,
+            minHeight,
+            minWidth,
+            padColor,
+            preset,
+            scalePercent,
+            targetSizeKb,
+            unit,
+            width,
+          },
+          requirement
+        );
+
+        // Guard against a hallucinated preset key.
+        const hasExplicitGeometry =
+          sizing.width !== undefined ||
+          sizing.height !== undefined ||
+          sizing.aspectRatio !== undefined ||
+          sizing.scalePercent !== undefined ||
+          sizing.maxLongEdge !== undefined ||
+          sizing.maxWidth !== undefined ||
+          sizing.maxHeight !== undefined ||
+          sizing.minWidth !== undefined ||
+          sizing.minHeight !== undefined;
+        if (sizing.preset && !getPresetByKey(sizing.preset)) {
+          if (!hasExplicitGeometry) {
+            return {
+              error: `Unknown preset "${sizing.preset}". Known keys: indian_passport, passport_photo, us_visa, us_green_card, schengen_visa, uk_visa, china_visa, japan_visa, canada_visa, uae_visa, india_evisa, pan_card, stamp_size, id_photo_1inch, id_photo_35x35, photo_4x6. Call imageListPresets to look one up, or supply explicit width/height/aspectRatio.`,
+            };
+          }
+          // Drop the bogus preset, keep the explicit geometry.
+          sizing.preset = undefined;
         }
 
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -525,39 +606,9 @@ export const imageResizePhysical = ({
           ? resolved.documentId
           : generateUUID();
 
-        let finalWidth = width;
-        let finalHeight = height;
-        let finalUnit = unit as PhysicalUnit;
-        let finalDpi = dpi as DpiOption;
-
-        if (preset) {
-          const found = getPresetByKey(preset);
-          if (found) {
-            finalWidth = found.width;
-            finalHeight = found.height;
-            finalUnit = found.unit;
-            finalDpi = found.dpi;
-          }
-        }
-
-        if (!finalWidth || !finalHeight) {
-          return {
-            error:
-              "Width and height or a valid preset (e.g. 'indian_passport', 'us_visa') must be provided.",
-          };
-        }
-
-        const result = await executeResizePhysical(
+        const result = await executeResize(
           resolved.source,
-          {
-            dpi: finalDpi,
-            fit: "cover",
-            format: "jpeg",
-            height: finalHeight,
-            quality: 95,
-            unit: finalUnit,
-            width: finalWidth,
-          },
+          { ...sizing, format: "jpeg", quality: 95 },
           {
             chatId,
             documentId: validDocId,
@@ -588,35 +639,43 @@ export const imageResizePhysical = ({
         }
 
         // Emit UI updates to open Right Pane studio
-        dataStream.write({ data: "image", transient: true, type: "data-kind" });
-        dataStream.write({
-          data: validDocId,
-          transient: true,
-          type: "data-id",
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "resize",
+          params: {
+            aspectRatio: sizing.aspectRatio,
+            dpi: sizing.dpi,
+            fit: sizing.fit,
+            height: sizing.height,
+            maxLongEdge: sizing.maxLongEdge,
+            maxWidth: sizing.maxWidth,
+            pixelHeight: result.height,
+            pixelWidth: result.width,
+            preset: sizing.preset,
+            scalePercent: sizing.scalePercent,
+            targetSizeKb: sizing.targetSizeKb,
+            unit: sizing.unit,
+            width: sizing.width,
+          },
+          title: resolved.title,
         });
-        dataStream.write({
-          data: resolved.title,
-          transient: true,
-          type: "data-title",
-        });
-        dataStream.write({
-          data: "resize",
-          transient: true,
-          type: "data-imageToolMode",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-clear" });
-        dataStream.write({
-          data: result.base64,
-          transient: true,
-          type: "data-imageDelta",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-finish" });
+
+        const specLabel =
+          sizing.preset ??
+          sizing.aspectRatio ??
+          (sizing.scalePercent ? `${sizing.scalePercent}%` : undefined) ??
+          (sizing.maxLongEdge ? `max ${sizing.maxLongEdge}px` : undefined) ??
+          (sizing.maxWidth || sizing.maxHeight
+            ? `max ${sizing.maxWidth ?? "auto"}×${sizing.maxHeight ?? "auto"}px`
+            : undefined) ??
+          `${sizing.width ?? "auto"}×${sizing.height ?? "auto"} ${sizing.unit}`;
 
         return {
-          dimensions: `${finalWidth}x${finalHeight} ${finalUnit}`,
-          dpi: finalDpi,
+          dimensions: `${result.width}×${result.height} px`,
+          dpi: sizing.dpi,
           id: validDocId,
-          message: `Successfully resized image to ${finalWidth}×${finalHeight} ${finalUnit} (${result.width}×${result.height} px @ ${finalDpi} DPI).`,
+          message: `Resized image to ${result.width}×${result.height} px (${specLabel}${sizing.targetSizeKb ? `, ≤ ${sizing.targetSizeKb} KB` : ""}).`,
           pixelDimensions: `${result.width}x${result.height} px`,
           sizeKb: Math.round(result.sizeBytes / 1024),
           toolMode: "resize",
@@ -627,15 +686,35 @@ export const imageResizePhysical = ({
       }
     },
     inputSchema: z.object({
+      allowUpscale: z
+        .boolean()
+        .optional()
+        .describe("When false, never enlarge beyond the source size."),
+      aspectRatio: z
+        .string()
+        .optional()
+        .describe(
+          'Target aspect ratio, e.g. "16:9", "4:5", "1:1", "square". Combined with a single width/height it derives the other edge.'
+        ),
       dpi: z
         .union([z.literal(72), z.literal(150), z.literal(300), z.literal(600)])
         .optional()
-        .default(300),
+        .default(300)
+        .describe("DPI for physical units (mm/cm/in) and embedded density."),
+      fit: z
+        .enum(["cover", "contain", "fill", "inside", "outside", "pad"])
+        .optional()
+        .default("cover")
+        .describe(
+          "How to reconcile aspect mismatches. 'pad' letterboxes with padColor."
+        ),
       height: z
         .number()
         .positive()
         .optional()
-        .describe("Height in physical units"),
+        .describe(
+          "Exact target height in `unit`. Omit to keep the source aspect ratio."
+        ),
       id: z
         .string()
         .optional()
@@ -648,26 +727,47 @@ export const imageResizePhysical = ({
         .describe(
           "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
         ),
+      maxHeight: z.number().positive().optional(),
+      maxLongEdge: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Clamp the longest edge to this many pixels."),
+      maxWidth: z.number().positive().optional(),
+      minHeight: z.number().positive().optional(),
+      minWidth: z.number().positive().optional(),
+      padColor: z
+        .string()
+        .optional()
+        .describe('Hex fill colour for fit "pad" (default "#ffffff").'),
       preset: z
-        .enum([
-          "indian_passport",
-          "us_visa",
-          "schengen_visa",
-          "uk_visa",
-          "stamp_size",
-          "pan_card",
-          "photo_4x6",
-        ])
+        .string()
         .optional()
         .describe(
-          "Official photo preset for visa/passport standard dimensions"
+          "Official photo preset key (indian_passport, passport_photo, us_visa, us_green_card, schengen_visa, uk_visa, china_visa, japan_visa, canada_visa, uae_visa, india_evisa, pan_card, stamp_size, id_photo_1inch, id_photo_35x35, photo_4x6). Use imageListPresets first if unsure of the exact key."
         ),
-      unit: z.enum(["mm", "cm", "in", "px"]).optional().default("mm"),
+      scalePercent: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Relative scale: 50 = half size, 200 = double size."),
+      targetSizeKb: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Optional maximum file size in KB applied after resizing."),
+      unit: z
+        .enum(["px", "mm", "cm", "in"])
+        .optional()
+        .default("px")
+        .describe("Unit for width/height."),
       width: z
         .number()
         .positive()
         .optional()
-        .describe("Width in physical units"),
+        .describe(
+          "Exact target width in `unit`. Omit to keep the source aspect ratio."
+        ),
     }),
   });
 
@@ -676,6 +776,7 @@ export const imageRemoveBg = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -699,7 +800,7 @@ export const imageRemoveBg = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -753,29 +854,13 @@ export const imageRemoveBg = ({
         }
 
         // Emit UI updates
-        dataStream.write({ data: "image", transient: true, type: "data-kind" });
-        dataStream.write({
-          data: validDocId,
-          transient: true,
-          type: "data-id",
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "remove_bg",
+          params: { color, mode },
+          title: resolved.title,
         });
-        dataStream.write({
-          data: resolved.title,
-          transient: true,
-          type: "data-title",
-        });
-        dataStream.write({
-          data: "remove_bg",
-          transient: true,
-          type: "data-imageToolMode",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-clear" });
-        dataStream.write({
-          data: result.base64,
-          transient: true,
-          type: "data-imageDelta",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-finish" });
 
         return {
           color: mode === "solid_color" ? color : "transparent",
@@ -825,11 +910,22 @@ export const imageCrop = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
+  requirement,
 }: ImageToolsProps) =>
   tool({
     description:
-      "Crop an image to specified rectangular coordinates (left, top, width, height).",
-    execute: async ({ id, imageUrl, left, top, width, height }) => {
+      "Crop an image. Either crop to an aspect ratio (e.g. '1:1', '16:9', '7:9') anchored by mode ('center', 'top', 'bottom', or 'attention' for smart framing), or to explicit pixel coordinates (left, top, width, height).",
+    execute: async ({
+      id,
+      imageUrl,
+      left,
+      top,
+      width,
+      height,
+      aspectRatio,
+      mode = "center",
+    }) => {
       try {
         if (checkIsGuest(session)) {
           return {
@@ -839,11 +935,22 @@ export const imageCrop = ({
           };
         }
 
+        // Only borrow a ratio from the deterministic requirement when the model
+        // gave neither a ratio nor a full pixel box (a ratio would otherwise
+        // take precedence over an intended pixel box).
+        const hasPixelBox =
+          left !== undefined &&
+          top !== undefined &&
+          width !== undefined &&
+          height !== undefined;
+        const effectiveAspect =
+          aspectRatio ?? (hasPixelBox ? undefined : requirement?.aspectRatio);
+
         let resolved: { source: string; documentId: string; title: string };
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -859,8 +966,10 @@ export const imageCrop = ({
         const result = await executeCrop(
           resolved.source,
           {
+            aspectRatio: effectiveAspect,
             height,
             left,
+            mode,
             top,
             width,
           },
@@ -892,34 +1001,25 @@ export const imageCrop = ({
           console.warn("Non-fatal: Failed to persist crop document:", dbErr);
         }
 
-        dataStream.write({ data: "image", transient: true, type: "data-kind" });
-        dataStream.write({
-          data: validDocId,
-          transient: true,
-          type: "data-id",
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "crop",
+          params: {
+            aspectRatio: effectiveAspect,
+            height,
+            left,
+            mode,
+            top,
+            width,
+          },
+          title: resolved.title,
         });
-        dataStream.write({
-          data: resolved.title,
-          transient: true,
-          type: "data-title",
-        });
-        dataStream.write({
-          data: "crop",
-          transient: true,
-          type: "data-imageToolMode",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-clear" });
-        dataStream.write({
-          data: result.base64,
-          transient: true,
-          type: "data-imageDelta",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-finish" });
 
         return {
           croppedDimensions: `${result.width}x${result.height} px`,
           id: validDocId,
-          message: `Image cropped to ${result.width}×${result.height} px.`,
+          message: `Image cropped to ${result.width}×${result.height} px${effectiveAspect ? ` (${effectiveAspect})` : ""}.`,
           toolMode: "crop",
         };
       } catch (err: any) {
@@ -928,7 +1028,17 @@ export const imageCrop = ({
       }
     },
     inputSchema: z.object({
-      height: z.number().positive(),
+      aspectRatio: z
+        .string()
+        .optional()
+        .describe(
+          'Crop to an aspect ratio, e.g. "1:1", "16:9", "7:9", "square". Omit when using pixel coordinates.'
+        ),
+      height: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Crop height in px (required with left/top/width)."),
       id: z
         .string()
         .optional()
@@ -941,9 +1051,28 @@ export const imageCrop = ({
         .describe(
           "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
         ),
-      left: z.number().min(0),
-      top: z.number().min(0),
-      width: z.number().positive(),
+      left: z
+        .number()
+        .min(0)
+        .optional()
+        .describe("Crop x-offset in px (required with top/width/height)."),
+      mode: z
+        .enum(["center", "top", "bottom", "attention", "entropy"])
+        .optional()
+        .default("center")
+        .describe(
+          "Anchor for aspect-ratio crops. 'attention'/'entropy' pick the busiest region."
+        ),
+      top: z
+        .number()
+        .min(0)
+        .optional()
+        .describe("Crop y-offset in px (required with left/width/height)."),
+      width: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Crop width in px (required with left/top/height)."),
     }),
   });
 
@@ -952,6 +1081,7 @@ export const imageCompress = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -970,7 +1100,7 @@ export const imageCompress = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -1020,29 +1150,13 @@ export const imageCompress = ({
           );
         }
 
-        dataStream.write({ data: "image", transient: true, type: "data-kind" });
-        dataStream.write({
-          data: validDocId,
-          transient: true,
-          type: "data-id",
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "compress",
+          params: { quality, targetSizeKb },
+          title: resolved.title,
         });
-        dataStream.write({
-          data: resolved.title,
-          transient: true,
-          type: "data-title",
-        });
-        dataStream.write({
-          data: "compress",
-          transient: true,
-          type: "data-imageToolMode",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-clear" });
-        dataStream.write({
-          data: result.base64,
-          transient: true,
-          type: "data-imageDelta",
-        });
-        dataStream.write({ data: null, transient: true, type: "data-finish" });
 
         const finalSizeKb = Math.round(result.sizeBytes / 1024);
         return {
@@ -1083,6 +1197,7 @@ export const imageConvert = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -1101,7 +1216,7 @@ export const imageConvert = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -1144,6 +1259,7 @@ export const imageConvert = ({
           base64: result.base64,
           id: validDocId,
           mode: "convert",
+          params: { format: result.format, quality, targetFormat },
           title: resolved.title,
         });
 
@@ -1183,14 +1299,18 @@ export const imageUpscaleEnhance = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
-      "Upscale an image 2x or 4x with Lanczos super-sampling and optionally enhance edge clarity, brightness, and saturation.",
+      "Upscale or enlarge an image with Lanczos super-sampling, optionally enhancing edge clarity, brightness and saturation. Specify either a multiplier (scale, 1-8), an exact target size (targetWidth/targetHeight in px), or a maxLongEdge clamp.",
     execute: async ({
       id,
       imageUrl,
       scale = 2,
+      targetWidth,
+      targetHeight,
+      maxLongEdge,
       sharpen = true,
       enhance = false,
       format = "jpeg",
@@ -1209,7 +1329,7 @@ export const imageUpscaleEnhance = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -1224,7 +1344,16 @@ export const imageUpscaleEnhance = ({
 
         const result = await executeUpscaleEnhance(
           resolved.source,
-          { enhance, format, quality, scale, sharpen },
+          {
+            enhance,
+            format,
+            maxLongEdge,
+            quality,
+            scale,
+            sharpen,
+            targetHeight,
+            targetWidth,
+          },
           { chatId, documentId: validDocId, userId: session.user?.id as string }
         );
 
@@ -1252,12 +1381,29 @@ export const imageUpscaleEnhance = ({
           base64: result.base64,
           id: validDocId,
           mode: "upscale",
+          params: {
+            enhance,
+            format,
+            maxLongEdge,
+            quality,
+            scale,
+            sharpen,
+            targetHeight,
+            targetWidth,
+          },
           title: resolved.title,
         });
 
+        const sizingLabel =
+          targetWidth || targetHeight
+            ? `${targetWidth ?? "auto"}×${targetHeight ?? "auto"} px`
+            : maxLongEdge
+              ? `max ${maxLongEdge}px`
+              : `${scale}×`;
+
         return {
           id: validDocId,
-          message: `Upscaled image ${scale}x to ${result.width}×${result.height} px${sharpen || enhance ? " with enhancement" : ""}.`,
+          message: `Enlarged image ${sizingLabel} to ${result.width}×${result.height} px${sharpen || enhance ? " with enhancement" : ""}.`,
           pixelDimensions: `${result.width}x${result.height} px`,
           scale,
           sizeKb: Math.round(result.sizeBytes / 1024),
@@ -1286,12 +1432,32 @@ export const imageUpscaleEnhance = ({
         .describe(
           "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
         ),
+      maxLongEdge: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Clamp the longest edge to this many pixels."),
       quality: z.number().min(1).max(100).optional().default(95),
       scale: z
-        .union([z.literal(2), z.literal(4)])
+        .number()
+        .min(1)
+        .max(8)
         .optional()
-        .default(2),
+        .default(2)
+        .describe(
+          "Upscale multiplier (1-8). Ignored when a target size is set."
+        ),
       sharpen: z.boolean().optional().default(true),
+      targetHeight: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Exact target height in px (overrides scale)."),
+      targetWidth: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Exact target width in px (overrides scale)."),
     }),
   });
 
@@ -1300,6 +1466,7 @@ export const imagePixelate = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -1325,7 +1492,7 @@ export const imagePixelate = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -1371,6 +1538,7 @@ export const imagePixelate = ({
           base64: result.base64,
           id: validDocId,
           mode: "pixelate",
+          params: { blockSize, format, mode, quality },
           title: resolved.title,
         });
 
@@ -1419,6 +1587,7 @@ export const imageOcr = ({
   dataStream,
   chatId,
   messages,
+  activeImage,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -1437,7 +1606,7 @@ export const imageOcr = ({
         try {
           resolved = await resolveImageSource(
             session,
-            id,
+            id ?? activeImage?.documentId,
             imageUrl,
             chatId,
             messages
@@ -1510,6 +1679,58 @@ export const imageOcr = ({
         .optional()
         .describe(
           "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
+    }),
+  });
+
+/**
+ * Pure preset lookup (no image work, no API route). Lets the model resolve loose
+ * wording — "china visa photo", "green card", "2x2 inch" — into an exact preset
+ * key plus geometry before calling imageResize.
+ */
+export const imageListPresets = () =>
+  tool({
+    description:
+      "Look up official photo size presets (passport, visa, ID card, print) by country, document type, or loose keywords such as '2x2 inch', 'green card' or '4x6 print'. Returns the exact preset key, physical dimensions, DPI and resulting pixels. Call this BEFORE imageResize when the user names a document or country but you are unsure of the exact preset key.",
+    execute: ({ query, limit = 5 }) => {
+      const matches = findPresetsByQuery(query, limit);
+
+      if (matches.length === 0) {
+        return {
+          message: `No preset matched "${query}". Ask the user for exact dimensions (width/height + unit, or pixels), or use the universal passport_photo preset for a generic 35×45 mm ID photo.`,
+          presets: [],
+        };
+      }
+
+      return {
+        message: `Found ${matches.length} matching preset${matches.length === 1 ? "" : "s"}.`,
+        presets: matches.map((preset) => ({
+          dpi: preset.dpi,
+          height: preset.height,
+          key: preset.key,
+          name: preset.displayName,
+          pixelHeight: preset.resultPxHeight,
+          pixelWidth: preset.resultPxWidth,
+          region: preset.region,
+          requirements: preset.requirements,
+          unit: preset.unit,
+          width: preset.width,
+        })),
+      };
+    },
+    inputSchema: z.object({
+      limit: z
+        .number()
+        .min(1)
+        .max(20)
+        .optional()
+        .default(5)
+        .describe("Maximum number of presets to return (default 5)."),
+      query: z
+        .string()
+        .min(1)
+        .describe(
+          "Country, document type, or loose keywords, e.g. 'china visa', '2x2 inch', 'pan card', 'green card', '4x6 print'."
         ),
     }),
   });
