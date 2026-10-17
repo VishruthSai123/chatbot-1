@@ -119,14 +119,20 @@ export async function POST(request: Request) {
       ? selectedChatModel
       : DEFAULT_CHAT_MODEL;
 
-    await checkIpRateLimit(ipAddress(request));
-
     const userType: UserType = session.user.type;
 
-    const messageCount = await getMessageCountByUserId({
-      differenceInHours: 1,
-      id: session.user.id,
-    });
+    // These four calls are independent. Batch them into a single concurrent
+    // round-trip instead of four sequential awaits — the serialized database
+    // round-trips were the dominant cause of "time to first token".
+    const [, messageCount, chat, modelCapabilities] = await Promise.all([
+      checkIpRateLimit(ipAddress(request)),
+      getMessageCountByUserId({
+        differenceInHours: 1,
+        id: session.user.id,
+      }),
+      getChatById({ id }),
+      getCapabilities(),
+    ]);
 
     if (messageCount > entitlementsByUserType[userType].maxMessagesPerHour) {
       return new ChatbotError("rate_limit:chat").toResponse();
@@ -134,15 +140,41 @@ export async function POST(request: Request) {
 
     const isToolApprovalFlow = Boolean(messages);
 
-    const chat = await getChatById({ id });
     let messagesFromDb: DBMessage[] = [];
     let titlePromise: Promise<string> | null = null;
+
+    const persistUserMessage = async () => {
+      if (message?.role !== "user") {
+        return;
+      }
+
+      await saveMessages({
+        messages: [
+          {
+            attachments: [],
+            chatId: id,
+            createdAt: new Date(),
+            id: message.id,
+            parts: message.parts,
+            role: "user",
+          },
+        ],
+      });
+    };
 
     if (chat) {
       if (chat.userId !== session.user.id) {
         return new ChatbotError("forbidden:chat").toResponse();
       }
-      messagesFromDb = await getMessagesByChatId({ id });
+
+      // Read history and persist this message concurrently (one round-trip).
+      // Filter out our own row in case the insert lands before the read.
+      const [history] = await Promise.all([
+        getMessagesByChatId({ id }),
+        persistUserMessage(),
+      ]);
+
+      messagesFromDb = history.filter((row) => row.id !== message?.id);
     } else if (message?.role === "user") {
       await saveChat({
         id,
@@ -150,6 +182,7 @@ export async function POST(request: Request) {
         userId: session.user.id,
         visibility: selectedVisibilityType,
       });
+      await persistUserMessage();
       titlePromise = generateTitleFromUserMessage({ message });
     }
 
@@ -214,26 +247,12 @@ export async function POST(request: Request) {
       longitude,
     };
 
-    if (message?.role === "user") {
-      await saveMessages({
-        messages: [
-          {
-            attachments: [],
-            chatId: id,
-            createdAt: new Date(),
-            id: message.id,
-            parts: message.parts,
-            role: "user",
-          },
-        ],
-      });
-    }
-
     const modelConfig = chatModels.find((m) => m.id === chatModel);
-    const modelCapabilities = await getCapabilities();
     const capabilities = modelCapabilities[chatModel];
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
+    const isGoogleModel =
+      chatModel.startsWith("google/") || chatModel.startsWith("gemini");
 
     const modelMessages = await convertToModelMessages(uiMessages);
 
@@ -350,6 +369,13 @@ export async function POST(request: Request) {
             ...(modelConfig?.reasoningEffort && {
               openai: { reasoningEffort: modelConfig.reasoningEffort },
             }),
+            // Fast models: skip Gemini's "thinking" pass so the first token arrives
+            // in ~1s instead of several seconds. The deterministic requirement
+            // parser + prompt hints keep tool arguments accurate without it.
+            ...(isGoogleModel &&
+              !isReasoningModel && {
+                google: { thinkingConfig: { thinkingBudget: 0 } },
+              }),
           },
           stopWhen: isStepCount(5),
           telemetry: {

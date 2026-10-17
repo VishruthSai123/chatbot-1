@@ -2,6 +2,7 @@
 import type { UseChatHelpers } from "@ai-sdk/react";
 import { Loader2 } from "lucide-react";
 import { useCallback } from "react";
+import { assistantMessageBody } from "@/lib/chat/message-state";
 import type { Vote } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn, sanitizeText } from "@/lib/utils";
@@ -127,7 +128,11 @@ const PurePreviewMessage = ({
         (part as { type: string }).type === "error"
     )
   );
-  const isThinking = isAssistant && (isLoading || !hasAnyContent);
+  const body = assistantMessageBody({
+    hasAnyContent,
+    isAssistant,
+    isLoading,
+  });
 
   const attachments = attachmentsFromMessage.length > 0 && (
     <div
@@ -454,9 +459,9 @@ const PurePreviewMessage = ({
   );
 
   const content =
-    isThinking || (isAssistant && isLoading) ? (
+    body === "waiting" ? (
       <WaitingText />
-    ) : !hasAnyContent && isAssistant ? (
+    ) : body === "empty" ? (
       <div className="text-xs text-muted-foreground italic flex items-center gap-1.5 py-1">
         No response received. Please try again.
       </div>
