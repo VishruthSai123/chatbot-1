@@ -26,7 +26,6 @@ interface ResizerInspectorProps {
   isProcessing: boolean;
   onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
-  originalSrc: string | null;
   setIsProcessing: (val: boolean) => void;
 }
 
@@ -51,7 +50,6 @@ export const ResizerInspector = memo(function InnerResizerInspector({
   appliedParams,
   documentId,
   imageSrc,
-  originalSrc,
   onUpdateImage,
   isProcessing,
   setIsProcessing,
@@ -167,7 +165,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
           body: JSON.stringify({
             action: "resize_physical",
             documentId,
-            image: originalSrc || imageSrc,
+            image: imageSrc,
             params: {
               aspectRatio: aspect === "free" ? undefined : aspect,
               dpi,
@@ -221,7 +219,6 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    originalSrc,
     imageSrc,
     documentId,
     width,

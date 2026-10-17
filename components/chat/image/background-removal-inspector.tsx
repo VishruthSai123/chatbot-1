@@ -87,7 +87,7 @@ export const BackgroundRemovalInspector = memo(
             body: JSON.stringify({
               action: "remove_bg",
               documentId,
-              image: originalSrc || imageSrc,
+              image: imageSrc,
               params: {
                 color: bgColor,
                 mode: bgMode,
@@ -139,7 +139,6 @@ export const BackgroundRemovalInspector = memo(
       onRequireAuth,
       isProcessing,
       setIsProcessing,
-      originalSrc,
       imageSrc,
       documentId,
       bgMode,

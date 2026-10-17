@@ -126,14 +126,16 @@ export function ImageToolCard({
 
   const documentId = output?.id;
 
-  const { data: documents } = useSWR<Document[]>(
+  const { data: documents, mutate } = useSWR<Document[]>(
     documentId
       ? `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`
       : null,
     fetcher
   );
 
-  const docRecord = documents?.[0];
+  // The card represents the present state of this document, so read the newest
+  // version rather than the oldest one (which is the untouched upload).
+  const docRecord = documents?.at(-1);
   const imageBase64 = docRecord?.content;
 
   const handleOpenInspector = useCallback(() => {
@@ -199,22 +201,12 @@ export function ImageToolCard({
         }));
 
         if (documentId) {
-          await fetch(
-            `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`,
-            {
-              body: JSON.stringify({
-                content: imageBase64,
-                isManualEdit: true,
-                kind: "image",
-                title: docRecord?.title || config.label,
-              }),
-              headers: { "Content-Type": "application/json" },
-              method: "POST",
-            }
-          );
+          // Re-read the version list so the canvas lands on this (newest) version
+          // instead of keeping the cursor on an older one.
+          await mutate();
         }
 
-        toast.success("Restored image version to canvas");
+        toast.success("Image restored to the canvas");
       } catch (err: any) {
         console.error("Failed to restore image version:", err);
         toast.error("Failed to restore image");
@@ -223,6 +215,7 @@ export function ImageToolCard({
     [
       imageBase64,
       documentId,
+      mutate,
       setArtifact,
       docRecord?.title,
       config.label,

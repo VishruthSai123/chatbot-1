@@ -5,6 +5,7 @@ import type { ImageToolMode } from "@/components/chat/artifact";
 import { guestRegex } from "@/lib/constants";
 import {
   getDocumentById,
+  getDocumentsById,
   getLatestDocumentByKind,
   getMessagesByChatId,
   isValidUUID,
@@ -40,6 +41,8 @@ type ImageToolsProps = {
   activeImage?: {
     documentId?: string;
     toolMode?: string;
+    /** 0-based index of the image version on screen; edits target that version. */
+    versionIndex?: number;
   };
   /**
    * Deterministically parsed geometry from the user's latest message. Explicit
@@ -119,7 +122,8 @@ async function resolveImageSource(
   documentId?: string,
   imageUrl?: string,
   chatId?: string,
-  messagesContext?: ChatMessage[]
+  messagesContext?: ChatMessage[],
+  versionIndex?: number
 ): Promise<{ source: string; documentId: string; title: string }> {
   if (!session.user?.id) {
     throw new Error("Unauthorized");
@@ -156,6 +160,39 @@ async function resolveImageSource(
 
   // 2. If an explicit document UUID was provided, look it up in active registry or database
   if (documentId && isValidUUID(documentId)) {
+    // When the workbench is showing an older version (Undo / Redo), edit exactly
+    // that version instead of the newest one. The registry only ever caches the
+    // head, so a specific version is resolved straight from the version list.
+    if (typeof versionIndex === "number" && versionIndex >= 0) {
+      try {
+        const versions = await getDocumentsById({ id: documentId });
+        const requested = versions[versionIndex];
+        const isHead = Boolean(
+          requested && versionIndex === versions.length - 1
+        );
+
+        if (requested?.userId === session.user.id && requested.content) {
+          if (isHead) {
+            activeImageRegistry.setActiveImage({
+              base64: requested.content,
+              chatId,
+              documentId: requested.id,
+              title: requested.title,
+              userId: session.user.id,
+            });
+          }
+
+          return {
+            documentId: requested.id,
+            source: requested.content,
+            title: requested.title,
+          };
+        }
+      } catch (versionErr) {
+        console.warn("Non-fatal: Failed to resolve image version:", versionErr);
+      }
+    }
+
     const cachedByDocId = activeImageRegistry.getActiveImage({ documentId });
     if (cachedByDocId?.base64) {
       return {
@@ -596,7 +633,8 @@ export const imageResize = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -803,7 +841,8 @@ export const imageRemoveBg = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -953,7 +992,8 @@ export const imageCrop = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -1103,7 +1143,8 @@ export const imageCompress = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -1219,7 +1260,8 @@ export const imageConvert = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -1332,7 +1374,8 @@ export const imageUpscaleEnhance = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -1495,7 +1538,8 @@ export const imagePixelate = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };
@@ -1609,7 +1653,8 @@ export const imageOcr = ({
             id ?? activeImage?.documentId,
             imageUrl,
             chatId,
-            messages
+            messages,
+            activeImage?.versionIndex
           );
         } catch (err: any) {
           return { error: err.message };

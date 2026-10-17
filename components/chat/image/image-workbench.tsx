@@ -10,19 +10,22 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ImageToolMode } from "@/components/chat/artifact";
 import { ArtifactCloseButton } from "@/components/chat/artifact-close-button";
 import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
+import { aspectRatioInPercent, type CropBox } from "@/lib/image/crop-box";
+import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
 import { cn } from "@/lib/utils";
 import { BeforeAfterSlider } from "../before-after-slider";
 import { BackgroundRemovalInspector } from "./background-removal-inspector";
 import { CompressionInspector } from "./compression-inspector";
 import { ConverterInspector } from "./converter-inspector";
-import { type CropBox, CropInspector } from "./crop-inspector";
+import { CropInspector } from "./crop-inspector";
+import { CropOverlay, CropShade } from "./crop-overlay";
 import { OcrInspector } from "./ocr-inspector";
 import { PixelatorInspector } from "./pixelator-inspector";
 import { ResizerInspector } from "./resizer-inspector";
@@ -261,93 +264,22 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     y: 10,
   });
   const [selectedAspect, setSelectedAspect] = useState<string>("free");
-  const [cropDragMode, setCropDragMode] = useState<string | null>(null);
-  const cropStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    initialBox: CropBox;
-  }>({
-    clientX: 0,
-    clientY: 0,
-    initialBox: { height: 80, width: 80, x: 10, y: 10 },
-  });
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleCropMouseDown = (e: React.MouseEvent, mode: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setCropDragMode(mode);
-    cropStartRef.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      initialBox: { ...cropBox },
-    };
-  };
+  const isCropping = activeToolMode === "crop";
 
-  useEffect(() => {
-    if (!cropDragMode) {
-      return;
-    }
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const container = imageContainerRef.current;
-      if (!container) {
-        return;
-      }
-      const rect = container.getBoundingClientRect();
-
-      const deltaXPct =
-        ((e.clientX - cropStartRef.current.clientX) / rect.width) * 100;
-      const deltaYPct =
-        ((e.clientY - cropStartRef.current.clientY) / rect.height) * 100;
-      const init = cropStartRef.current.initialBox;
-
-      if (cropDragMode === "move") {
-        const nextX = Math.max(
-          0,
-          Math.min(100 - init.width, init.x + deltaXPct)
-        );
-        const nextY = Math.max(
-          0,
-          Math.min(100 - init.height, init.y + deltaYPct)
-        );
-        setCropBox((prev) => ({ ...prev, x: nextX, y: nextY }));
-      } else if (cropDragMode === "se") {
-        const nextW = Math.max(
-          10,
-          Math.min(100 - init.x, init.width + deltaXPct)
-        );
-        const nextH = Math.max(
-          10,
-          Math.min(100 - init.y, init.height + deltaYPct)
-        );
-        setCropBox((prev) => ({ ...prev, height: nextH, width: nextW }));
-      } else if (cropDragMode === "nw") {
-        const nextX = Math.max(
-          0,
-          Math.min(init.x + init.width - 10, init.x + deltaXPct)
-        );
-        const nextY = Math.max(
-          0,
-          Math.min(init.y + init.height - 10, init.y + deltaYPct)
-        );
-        const nextW = init.width - (nextX - init.x);
-        const nextH = init.height - (nextY - init.y);
-        setCropBox({ height: nextH, width: nextW, x: nextX, y: nextY });
-      }
-    };
-
-    const handleMouseUp = () => {
-      setCropDragMode(null);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [cropDragMode]);
+  /**
+   * Locked aspect translated into percentage space, so dragging a handle keeps
+   * the requested pixel ratio on non-square images.
+   */
+  const cropAspectK = useMemo(() => {
+    const preset = CROP_ASPECT_PRESETS.find((p) => p.key === selectedAspect);
+    return aspectRatioInPercent({
+      naturalHeight,
+      naturalWidth,
+      ratio: preset?.ratio ?? null,
+    });
+  }, [selectedAspect, naturalHeight, naturalWidth]);
 
   const canUndo = (currentVersionIndex ?? 0) > 0;
   const canRedo = (currentVersionIndex ?? 0) < (totalVersions ?? 1) - 1;
@@ -410,10 +342,10 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
   return (
     <div className="flex h-full w-full flex-col bg-background text-foreground overflow-hidden">
-      {/* ─── Unified Studio Header ──────── */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 bg-muted/20 px-3 backdrop-blur-sm">
+      {/* ─── Unified Studio Header: identity + actions (tools live in row 2) ─── */}
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-3 backdrop-blur-sm">
         {/* Left: Close Button + Title + Version + Dimensions */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex min-w-0 items-center gap-2.5">
           <ArtifactCloseButton />
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
@@ -434,34 +366,8 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
           </div>
         </div>
 
-        {/* Center: Tool Mode Switcher (Desktop) */}
-        <div className="hidden md:flex items-center gap-1.5 rounded-xl bg-muted/30 p-1 border border-border/40">
-          {TOOL_MODES.map((mode) => {
-            const isActive = activeToolMode === mode.key;
-            return (
-              <button
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all cursor-pointer whitespace-nowrap",
-                  isActive
-                    ? "bg-foreground text-background shadow-xs font-semibold"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-                key={mode.key}
-                onClick={() => {
-                  handleToolModeChange(mode.key);
-                  setIsInspectorOpen(true);
-                }}
-                type="button"
-              >
-                <span className="text-xs select-none">{mode.icon}</span>
-                <span>{mode.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
         {/* Right: History Undo/Redo, Desktop Zoom, Quick Actions, Inspector Toggle */}
-        <div className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
           {/* History Undo / Redo */}
           {handleVersionChange && (totalVersions ?? 1) > 1 && (
             <div className="flex items-center gap-0.5 pr-1">
@@ -550,6 +456,34 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         </div>
       </div>
 
+      {/* ─── Desktop Tool Strip: its own row so the header never floods ────── */}
+      <div className="hidden shrink-0 overflow-x-auto border-b border-border/60 bg-muted/10 [scrollbar-width:none] md:block [&::-webkit-scrollbar]:hidden">
+        <div className="mx-auto flex w-max items-center gap-1 px-3 py-1.5">
+          {TOOL_MODES.map((mode) => {
+            const isActive = activeToolMode === mode.key;
+            return (
+              <button
+                className={cn(
+                  "flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                  isActive
+                    ? "bg-foreground font-semibold text-background shadow-xs"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+                key={mode.key}
+                onClick={() => {
+                  handleToolModeChange(mode.key);
+                  setIsInspectorOpen(true);
+                }}
+                type="button"
+              >
+                <span className="select-none text-xs">{mode.icon}</span>
+                <span>{mode.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Guest Mode Alert Banner */}
       {isGuest ? (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3.5 py-1.5 text-xs text-amber-500">
@@ -573,7 +507,12 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
       <div className="relative flex flex-1 overflow-hidden flex-col md:flex-row">
         {/* Left: Focused Image Canvas Area */}
         <div
-          className="relative flex flex-1 items-center justify-center overflow-auto p-4 bg-zinc-950/40 min-h-[220px]"
+          className={cn(
+            "relative flex min-h-[220px] flex-1 items-center justify-center overflow-auto bg-zinc-950/40 p-4",
+            // Reserve the space the mobile bottom sheet covers so the whole crop
+            // area stays visible and draggable while cropping.
+            isCropping && isInspectorOpen && "pb-[56vh] md:pb-4"
+          )}
           onTouchEnd={handleTouchEnd}
           onTouchMove={handleTouchMove}
           onTouchStart={handleTouchStart}
@@ -609,7 +548,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             </div>
           ) : (
             <div
-              className="relative flex items-center justify-center transition-transform duration-100 select-none"
+              className="relative flex select-none items-center justify-center transition-transform duration-100"
               ref={imageContainerRef}
               style={{
                 transform: `scale(${zoom})`,
@@ -618,7 +557,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
             >
               {/* Subtle Checkerboard Backplate for Transparency */}
               <div
-                className="relative rounded-lg shadow-md border border-border/40 overflow-hidden"
+                className="relative overflow-hidden rounded-lg border border-border/40 shadow-md"
                 style={{
                   backgroundColor: "#09090b",
                   backgroundImage: `
@@ -634,54 +573,34 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 {/* biome-ignore lint/performance/noImgElement: dynamic base64 preview */}
                 <img
                   alt={title || "Processed photo"}
-                  className="max-h-[70vh] max-w-full object-contain pointer-events-none"
+                  className={cn(
+                    "pointer-events-none max-w-full object-contain",
+                    isCropping ? "max-h-[30vh] md:max-h-[70vh]" : "max-h-[70vh]"
+                  )}
                   src={formatSrc(currentBase64)}
                 />
 
-                {/* Interactive Crop Box Overlay (when Crop tool is active) */}
-                {activeToolMode === "crop" && (
-                  // biome-ignore lint/a11y/noStaticElementInteractions: canvas crop overlay
-                  // biome-ignore lint/a11y/noNoninteractiveElementInteractions: canvas crop overlay
-                  <div
-                    className="absolute border-2 border-emerald-400 bg-emerald-500/10 cursor-move shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]"
-                    onMouseDown={(e) => handleCropMouseDown(e, "move")}
-                    style={{
-                      height: `${cropBox.height}%`,
-                      left: `${cropBox.x}%`,
-                      top: `${cropBox.y}%`,
-                      width: `${cropBox.width}%`,
-                    }}
-                  >
-                    {/* Top-Left Resize Handle */}
-                    {/* biome-ignore lint/a11y/noStaticElementInteractions: crop resize handle */}
-                    {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: crop resize handle */}
-                    <div
-                      className="absolute -top-1.5 -left-1.5 size-3 rounded-full bg-emerald-400 border border-zinc-900 cursor-nwse-resize shadow"
-                      onMouseDown={(e) => handleCropMouseDown(e, "nw")}
-                    />
-
-                    {/* Bottom-Right Resize Handle */}
-                    {/* biome-ignore lint/a11y/noStaticElementInteractions: crop resize handle */}
-                    {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: crop resize handle */}
-                    <div
-                      className="absolute -bottom-1.5 -right-1.5 size-3 rounded-full bg-emerald-400 border border-zinc-900 cursor-nwse-resize shadow"
-                      onMouseDown={(e) => handleCropMouseDown(e, "se")}
-                    />
-
-                    {/* Crop Dimension Tag */}
-                    <div className="absolute bottom-1 right-1 rounded bg-zinc-900/90 px-1.5 py-0.5 font-mono text-[9px] text-zinc-200 pointer-events-none">
-                      {Math.round((cropBox.width / 100) * naturalWidth)}×
-                      {Math.round((cropBox.height / 100) * naturalHeight)}
-                    </div>
-                  </div>
-                )}
+                {/* Shading + guides for the crop selection, clipped to the image */}
+                {isCropping ? <CropShade box={cropBox} /> : null}
               </div>
+
+              {/* Interactive crop frame: pointer-driven, so it works with touch */}
+              {isCropping ? (
+                <CropOverlay
+                  aspectK={cropAspectK}
+                  box={cropBox}
+                  naturalHeight={naturalHeight}
+                  naturalWidth={naturalWidth}
+                  onChange={setCropBox}
+                  zoom={zoom}
+                />
+              ) : null}
             </div>
           )}
 
-          {/* Floating horizontal tool navbar (glassmorphic, scrollable pill) */}
+          {/* Floating tool pill — mobile only; desktop has the tool strip above */}
           {!isInspectorOpen && (
-            <div className="fixed bottom-6 left-1/2 z-40 w-[calc(100vw-32px)] -translate-x-1/2 select-none animate-in fade-in slide-in-from-bottom-3 duration-200 md:w-auto md:max-w-2xl">
+            <div className="fixed bottom-6 left-1/2 z-40 w-[calc(100vw-32px)] -translate-x-1/2 select-none animate-in fade-in slide-in-from-bottom-3 duration-200 md:hidden">
               <div className="relative mx-auto">
                 <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 rounded-l-full bg-gradient-to-r from-background/90 to-transparent" />
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 rounded-r-full bg-gradient-to-l from-background/90 to-transparent" />
@@ -804,7 +723,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 isProcessing={isProcessing}
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
-                originalSrc={originalBase64}
                 setIsProcessing={setIsProcessing}
               />
             )}
@@ -854,7 +772,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 isProcessing={isProcessing}
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
-                originalSrc={originalBase64}
                 setIsProcessing={setIsProcessing}
               />
             )}
@@ -868,7 +785,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 isProcessing={isProcessing}
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
-                originalSrc={originalBase64}
                 setIsProcessing={setIsProcessing}
               />
             )}
@@ -882,7 +798,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 isProcessing={isProcessing}
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
-                originalSrc={originalBase64}
                 setIsProcessing={setIsProcessing}
               />
             )}

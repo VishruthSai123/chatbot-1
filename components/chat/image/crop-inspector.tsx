@@ -1,16 +1,23 @@
 "use client";
 
-import { ChevronDown, Crop, Download, Loader2, RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  Crop,
+  Crosshair,
+  Download,
+  Loader2,
+  Maximize2,
+  RotateCcw,
+} from "lucide-react";
 import { memo, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import {
+  aspectRatioInPercent,
+  boxForAspect,
+  type CropBox,
+  fullCropBox,
+} from "@/lib/image/crop-box";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
-
-export interface CropBox {
-  height: number; // percentage 0 - 100
-  width: number; // percentage 0 - 100
-  x: number; // percentage 0 - 100
-  y: number; // percentage 0 - 100
-}
 
 interface CropInspectorProps {
   /** Parameters the model applied on the last image tool call; pre-fills the panel. */
@@ -58,39 +65,39 @@ export const CropInspector = memo(function InnerCropInspector({
     (presetKey: string) => {
       setSelectedAspect(presetKey);
       const preset = CROP_ASPECT_PRESETS.find((p) => p.key === presetKey);
-      if (!preset?.ratio || !naturalWidth || !naturalHeight) {
-        return;
-      }
-
-      // Adjust cropBox height to match aspect ratio based on natural image dimensions
-      const imageAspect = naturalWidth / naturalHeight;
-      const targetAspect = preset.ratio;
-
-      let newWidthPct = 80;
-      let newHeightPct = 80;
-
-      if (targetAspect > imageAspect) {
-        newWidthPct = 80;
-        newHeightPct = (newWidthPct * imageAspect) / targetAspect;
-      } else {
-        newHeightPct = 80;
-        newWidthPct = (newHeightPct * targetAspect) / imageAspect;
-      }
-
-      setCropBox({
-        height: Math.min(100, newHeightPct),
-        width: Math.min(100, newWidthPct),
-        x: Math.max(0, (100 - newWidthPct) / 2),
-        y: Math.max(0, (100 - newHeightPct) / 2),
-      });
+      setCropBox(
+        boxForAspect(
+          aspectRatioInPercent({
+            naturalHeight,
+            naturalWidth,
+            ratio: preset?.ratio ?? null,
+          })
+        )
+      );
     },
-    [naturalWidth, naturalHeight, setCropBox, setSelectedAspect]
+    [naturalHeight, naturalWidth, setCropBox, setSelectedAspect]
   );
 
+  const currentAspectK = aspectRatioInPercent({
+    naturalHeight,
+    naturalWidth,
+    ratio:
+      CROP_ASPECT_PRESETS.find((p) => p.key === selectedAspect)?.ratio ?? null,
+  });
+
   const handleResetCrop = useCallback(() => {
-    setCropBox({ height: 80, width: 80, x: 10, y: 10 });
     setSelectedAspect("free");
+    setCropBox(boxForAspect(null));
   }, [setCropBox, setSelectedAspect]);
+
+  const handleFullFrame = useCallback(() => {
+    setSelectedAspect("free");
+    setCropBox(fullCropBox());
+  }, [setCropBox, setSelectedAspect]);
+
+  const handleCenterCrop = useCallback(() => {
+    setCropBox(boxForAspect(currentAspectK));
+  }, [currentAspectK, setCropBox]);
 
   // Pre-fill from the values the model applied via chat, when present.
   useEffect(() => {
@@ -255,6 +262,11 @@ export const CropInspector = memo(function InnerCropInspector({
             </select>
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           </div>
+          {/* Touch guidance — the crop frame on the canvas is fully draggable */}
+          <p className="text-[11px] leading-relaxed text-muted-foreground md:hidden">
+            Drag a corner or edge to resize, drag inside the box to move it, and
+            pinch outside the box to zoom.
+          </p>
         </div>
 
         {/* Crop Boundary Telemetry */}
@@ -322,7 +334,7 @@ export const CropInspector = memo(function InnerCropInspector({
 
         <div className="flex items-center gap-2">
           <button
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={handleResetCrop}
             type="button"
           >
@@ -330,12 +342,29 @@ export const CropInspector = memo(function InnerCropInspector({
             Reset
           </button>
           <button
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors cursor-pointer"
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={handleFullFrame}
+            type="button"
+          >
+            <Maximize2 className="size-3.5" />
+            Full
+          </button>
+          <button
+            className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={handleCenterCrop}
+            type="button"
+          >
+            <Crosshair className="size-3.5" />
+            Center
+          </button>
+          <button
+            aria-label="Download current image"
+            className="flex cursor-pointer items-center justify-center rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5 text-foreground transition-colors hover:bg-muted"
             onClick={handleDownload}
+            title="Download current image"
             type="button"
           >
             <Download className="size-3.5" />
-            Download
           </button>
         </div>
       </div>

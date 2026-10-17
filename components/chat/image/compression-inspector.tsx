@@ -96,7 +96,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           body: JSON.stringify({
             action: "compress",
             documentId,
-            image: originalSrc || imageSrc,
+            image: imageSrc,
             params: {
               format,
               quality,
@@ -145,7 +145,6 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    originalSrc,
     imageSrc,
     documentId,
     quality,

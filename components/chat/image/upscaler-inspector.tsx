@@ -16,7 +16,6 @@ interface UpscalerInspectorProps {
   isProcessing: boolean;
   onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
-  originalSrc: string | null;
   setIsProcessing: (val: boolean) => void;
 }
 
@@ -67,7 +66,6 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
   appliedParams,
   documentId,
   imageSrc,
-  originalSrc,
   onUpdateImage,
   isProcessing,
   setIsProcessing,
@@ -119,7 +117,7 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
           body: JSON.stringify({
             action: "upscale",
             documentId,
-            image: originalSrc || imageSrc,
+            image: imageSrc,
             params: { enhance, format, quality: 95, scale, sharpen },
           }),
           headers: { "Content-Type": "application/json" },
@@ -164,7 +162,6 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    originalSrc,
     imageSrc,
     documentId,
     scale,

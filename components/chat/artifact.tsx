@@ -63,6 +63,11 @@ export type UIArtifact = {
   /** Parameters the model applied on the last image tool call; pre-fills inspectors. */
   toolParams?: Record<string, unknown> | null;
   ocrText?: string;
+  /**
+   * Index of the image version currently on screen (0-based). Image tools edit
+   * exactly this version, so stepping back with Undo changes what gets edited.
+   */
+  versionIndex?: number;
 };
 
 function PureArtifact({
@@ -154,6 +159,32 @@ function PureArtifact({
     }
   }, [documents, setArtifact, artifact.status, isContentDirty]);
 
+  // Publish which version is on screen so image tools — including chat-driven ones
+  // that resolve the image on the server — edit exactly the version being viewed.
+  useEffect(() => {
+    setArtifact((current) =>
+      current.versionIndex === currentVersionIndex
+        ? current
+        : { ...current, versionIndex: currentVersionIndex }
+    );
+  }, [currentVersionIndex, setArtifact]);
+
+  // A streamed tool result (or a workbench edit) appends a version on the server.
+  // Re-read the list whenever the image changes so the cursor lands on that new
+  // version — otherwise a cursor parked on an older version by Undo would keep
+  // showing the old image even though the edit was applied to it.
+  const lastImageContentRef = useRef<string>("");
+  useEffect(() => {
+    if (artifact.kind !== "image") {
+      return;
+    }
+    if (artifact.content === lastImageContentRef.current) {
+      return;
+    }
+    lastImageContentRef.current = artifact.content;
+    mutateDocuments();
+  }, [artifact.content, artifact.kind, mutateDocuments]);
+
   useEffect(() => {
     mutateDocuments();
   }, [mutateDocuments]);
@@ -165,6 +196,12 @@ function PureArtifact({
       if (!artifact) {
         return;
       }
+
+      // Every applied image edit is a discrete, undoable step, so it is persisted
+      // as a NEW version. The text/code behaviour of overwriting the newest version
+      // would silently rewrite the version the user had stepped away from with Undo
+      // while they were looking at an older one.
+      const isImage = artifact.kind === "image";
 
       mutate<Document[]>(
         `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
@@ -190,7 +227,7 @@ function PureArtifact({
             {
               body: JSON.stringify({
                 content: updatedContent,
-                isManualEdit: true,
+                isManualEdit: !isImage,
                 kind: artifact.kind,
                 title: artifact.title,
               }),
@@ -200,11 +237,25 @@ function PureArtifact({
 
           setIsContentDirty(false);
 
-          return currentDocuments.map((doc, i) =>
-            i === currentDocuments.length - 1
-              ? { ...doc, content: updatedContent }
-              : doc
-          );
+          if (!isImage) {
+            return currentDocuments.map((doc, i) =>
+              i === currentDocuments.length - 1
+                ? { ...doc, content: updatedContent }
+                : doc
+            );
+          }
+
+          // Images: append the edit as a new version. The cursor then snaps to it
+          // via the documents effect, the result becomes what the user sees, and
+          // Undo can step back to the previous state.
+          return [
+            ...currentDocuments,
+            {
+              ...currentDocument,
+              content: updatedContent,
+              createdAt: new Date(),
+            },
+          ];
         },
         { revalidate: false }
       );

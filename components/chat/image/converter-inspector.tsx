@@ -17,7 +17,6 @@ interface ConverterInspectorProps {
   isProcessing: boolean;
   onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
-  originalSrc: string | null;
   setIsProcessing: (val: boolean) => void;
 }
 
@@ -25,7 +24,6 @@ export const ConverterInspector = memo(function InnerConverterInspector({
   appliedParams,
   documentId,
   imageSrc,
-  originalSrc,
   onUpdateImage,
   isProcessing,
   setIsProcessing,
@@ -75,7 +73,7 @@ export const ConverterInspector = memo(function InnerConverterInspector({
           body: JSON.stringify({
             action: "convert",
             documentId,
-            image: originalSrc || imageSrc,
+            image: imageSrc,
             params: { quality, targetFormat },
           }),
           headers: { "Content-Type": "application/json" },
@@ -122,7 +120,6 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    originalSrc,
     imageSrc,
     documentId,
     quality,

@@ -37,6 +37,7 @@ export const postRequestBodySchema = z.object({
     .object({
       documentId: z.string().optional(),
       toolMode: z.string().optional(),
+      versionIndex: z.number().int().min(0).optional(),
     })
     .optional(),
   id: z.uuid(),

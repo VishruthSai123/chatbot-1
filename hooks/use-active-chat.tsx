@@ -104,12 +104,20 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const activeImageRef = useRef<{
     documentId: string;
     toolMode?: string;
+    versionIndex?: number;
   } | null>(null);
   useEffect(() => {
     const documentId = activeArtifact?.documentId;
+    const versionIndex = activeArtifact?.versionIndex;
     activeImageRef.current =
       activeArtifact?.kind === "image" && documentId && documentId !== "init"
-        ? { documentId, toolMode: activeArtifact.toolMode }
+        ? {
+            documentId,
+            toolMode: activeArtifact.toolMode,
+            ...(typeof versionIndex === "number" && versionIndex >= 0
+              ? { versionIndex }
+              : {}),
+          }
         : null;
   }, [activeArtifact]);
 

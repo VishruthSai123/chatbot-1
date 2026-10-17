@@ -16,7 +16,6 @@ interface PixelatorInspectorProps {
   isProcessing: boolean;
   onRequireAuth?: () => void;
   onUpdateImage: (newBase64: string) => void;
-  originalSrc: string | null;
   setIsProcessing: (val: boolean) => void;
 }
 
@@ -24,7 +23,6 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
   appliedParams,
   documentId,
   imageSrc,
-  originalSrc,
   onUpdateImage,
   isProcessing,
   setIsProcessing,
@@ -64,7 +62,7 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
           body: JSON.stringify({
             action: "pixelate",
             documentId,
-            image: originalSrc || imageSrc,
+            image: imageSrc,
             params: { blockSize, format: "png", mode, quality: 95 },
           }),
           headers: { "Content-Type": "application/json" },
@@ -111,7 +109,6 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    originalSrc,
     imageSrc,
     documentId,
     blockSize,
