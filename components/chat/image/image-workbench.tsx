@@ -555,12 +555,21 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 transformOrigin: "center center",
               }}
             >
-              {/* Subtle Checkerboard Backplate for Transparency */}
+              {/*
+                The frame is a ring (box-shadow) rather than a border on purpose:
+                the crop shade is clipped to this box while the crop frame lives
+                on the wrapper, so any inner border would offset the two by a
+                pixel and the guides would stop lining up with the frame.
+                The checkerboard is also swapped for a flat plate while cropping
+                so its own 16px grid never competes with the crop guides.
+              */}
               <div
-                className="relative overflow-hidden rounded-lg border border-border/40 shadow-md"
+                className="relative overflow-hidden rounded-lg shadow-md ring-1 ring-border/40"
                 style={{
                   backgroundColor: "#09090b",
-                  backgroundImage: `
+                  backgroundImage: isCropping
+                    ? "none"
+                    : `
                     linear-gradient(45deg, #18181b 25%, transparent 25%),
                     linear-gradient(-45deg, #18181b 25%, transparent 25%),
                     linear-gradient(45deg, transparent 75%, #18181b 75%),
