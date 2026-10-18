@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  Check,
   ChevronDown,
+  Crop,
   Download,
   Loader2,
   RefreshCw,
@@ -55,6 +57,8 @@ export const BackgroundRemovalInspector = memo(
       "transparent"
     );
     const [bgColor, setBgColor] = useState<string>("#ffffff");
+    const [edgeSmoothing, setEdgeSmoothing] = useState<number>(25);
+    const [autoTrim, setAutoTrim] = useState<boolean>(false);
 
     // Pre-fill from the values the model applied via chat, when present.
     useEffect(() => {
@@ -69,6 +73,12 @@ export const BackgroundRemovalInspector = memo(
       }
       if (typeof appliedParams.color === "string") {
         setBgColor(appliedParams.color);
+      }
+      if (typeof appliedParams.edgeSmoothing === "number") {
+        setEdgeSmoothing(appliedParams.edgeSmoothing);
+      }
+      if (typeof appliedParams.autoTrim === "boolean") {
+        setAutoTrim(appliedParams.autoTrim);
       }
     }, [appliedParams]);
 
@@ -91,7 +101,9 @@ export const BackgroundRemovalInspector = memo(
               action: "remove_bg",
               documentId,
               params: {
+                autoTrim,
                 color: bgColor,
+                edgeSmoothing,
                 mode: bgMode,
                 quality: 95,
               },
@@ -125,10 +137,16 @@ export const BackgroundRemovalInspector = memo(
         const data = await response.json();
         if (data.result?.base64) {
           onUpdateImage(data.result.base64, Boolean(data.persisted));
+          const dimensions =
+            typeof data.result.width === "number" &&
+            typeof data.result.height === "number"
+              ? ` (${data.result.width} × ${data.result.height})`
+              : "";
+          const framing = autoTrim ? ", cropped to the subject" : "";
           toast.success(
             bgMode === "solid_color"
-              ? `Background backfilled with ${bgColor}`
-              : "Background removed with transparent alpha cutout"
+              ? `Background replaced with ${bgColor}${framing}${dimensions}`
+              : `Background removed with transparent alpha cutout${framing}${dimensions}`
           );
         }
       } catch (err: any) {
@@ -145,6 +163,8 @@ export const BackgroundRemovalInspector = memo(
       documentId,
       bgMode,
       bgColor,
+      edgeSmoothing,
+      autoTrim,
       onUpdateImage,
       versionIndex,
     ]);
@@ -275,6 +295,65 @@ export const BackgroundRemovalInspector = memo(
               </div>
             </div>
           )}
+
+          {/* Subject framing and edge character of the native matte */}
+          <div className="space-y-2.5 pt-0.5">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label
+                  className="text-xs font-medium text-foreground"
+                  htmlFor="bg-edge-smoothing"
+                >
+                  Edge smoothing
+                </label>
+                <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                  {edgeSmoothing === 0
+                    ? "Crisp"
+                    : edgeSmoothing >= 70
+                      ? "Soft"
+                      : `${edgeSmoothing}%`}
+                </span>
+              </div>
+              <input
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-foreground disabled:opacity-50"
+                disabled={isProcessing}
+                id="bg-edge-smoothing"
+                max={100}
+                min={0}
+                onChange={(event) =>
+                  setEdgeSmoothing(Number(event.target.value))
+                }
+                step={5}
+                type="range"
+                value={edgeSmoothing}
+              />
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Low keeps product and logo edges razor sharp, high blends fine
+                detail like hair.
+              </p>
+            </div>
+
+            <button
+              className={cn(
+                "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors cursor-pointer",
+                autoTrim
+                  ? "border-foreground/50 bg-foreground/5 font-medium text-foreground"
+                  : "border-border/50 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+              onClick={() => setAutoTrim((value) => !value)}
+              type="button"
+            >
+              <span className="flex items-center gap-1.5">
+                <Crop className="size-3.5" />
+                Auto-crop to subject
+              </span>
+              {autoTrim ? (
+                <Check className="size-3.5" />
+              ) : (
+                <span className="size-3.5 rounded-sm border border-border" />
+              )}
+            </button>
+          </div>
 
           {/* Before / After Toggle */}
           {originalSrc ? (

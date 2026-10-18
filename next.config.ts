@@ -55,6 +55,22 @@ const nextConfig: NextConfig = {
     },
     incomingRequests: false,
   },
+  // `onnxruntime-node` dlopen()s a native shared library that no JavaScript
+  // `require` mentions (libonnxruntime.so.1.17.0 / onnxruntime.dll), and the
+  // background-removal model is a set of content-addressed ONNX chunks. Neither is
+  // visible to static tracing, so the deployed function would crash with
+  // "libonnxruntime.so.1.17.0: cannot open shared object file". These globs copy
+  // them into the two functions that can run image models.
+  outputFileTracingIncludes: {
+    "/api/chat": [
+      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
+      "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+    ],
+    "/api/tools/image": [
+      "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
+      "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+    ],
+  },
   poweredByHeader: false,
   reactCompiler: true,
   serverExternalPackages: [

@@ -773,12 +773,14 @@ export const imageRemoveBg = ({
 }: ImageToolsProps) =>
   tool({
     description:
-      "Remove the background of an image using native neural segmentation. Can produce transparent alpha PNG or composite onto solid passport-compliant white/neutral background.",
+      "Remove the background of an image using native on-device neural segmentation. Returns a transparent alpha PNG, or composites onto a solid passport-compliant colour after edge colour decontamination. Can auto-crop to the subject.",
     execute: async ({
       id,
       imageUrl,
       mode = "transparent",
       color = "#ffffff",
+      edgeSmoothing,
+      autoTrim,
     }) => {
       try {
         if (checkIsGuest(session)) {
@@ -810,7 +812,9 @@ export const imageRemoveBg = ({
         const result = await executeRemoveBg(
           resolved.source,
           {
+            autoTrim,
             color,
+            edgeSmoothing,
             format: mode === "solid_color" ? "jpeg" : "png",
             mode,
             quality: 95,
@@ -852,7 +856,7 @@ export const imageRemoveBg = ({
           base64: result.base64,
           id: validDocId,
           mode: "remove_bg",
-          params: { color, mode },
+          params: { autoTrim, color, edgeSmoothing, mode },
           title: resolved.title,
         });
 
@@ -873,12 +877,28 @@ export const imageRemoveBg = ({
       }
     },
     inputSchema: z.object({
+      autoTrim: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Crop the result to the subject's bounding box with a small margin. Use for passport, visa and profile photos."
+        ),
       color: z
         .string()
         .optional()
         .default("#ffffff")
         .describe(
           "Hex color code when mode is 'solid_color' (e.g. '#ffffff' for passport/visa compliance)"
+        ),
+      edgeSmoothing: z
+        .number()
+        .min(0)
+        .max(100)
+        .optional()
+        .default(25)
+        .describe(
+          "Edge character: 0 = crisp hard edge (logos, products), 100 = soft feathered edge (hair, fur)."
         ),
       id: z
         .string()

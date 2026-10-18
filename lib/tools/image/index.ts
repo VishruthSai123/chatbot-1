@@ -1,7 +1,14 @@
 import "server-only";
 
 import { getDocumentById, getLatestDocumentByKind } from "@/lib/db/queries";
-import { removeImageBackground } from "@/lib/image/background-removal";
+import {
+  alphaBounds,
+  decontaminate,
+  expandBounds,
+  hexToRgb,
+  toAlphaFloats,
+} from "@/lib/image/alpha";
+import { segmentImage } from "@/lib/image/background-removal";
 import { decodeBase64Image } from "@/lib/image/base64";
 import {
   compressImage,
@@ -10,6 +17,7 @@ import {
   cropToAspect,
   getImageMetadata,
   getSharp,
+  type ImageFormat,
   pixelateImage,
   resizeToSpec,
   rotateImage,
@@ -37,6 +45,9 @@ export type ImageFallbackContext = {
   chatId?: string;
   userId?: string;
 };
+
+/** Colour channels in the decoded base image a matte is joined onto. */
+const RGB_CHANNELS = 3;
 
 /**
  * Extracts a Supabase storage key from an artifact URL, path, or signed URL.
@@ -370,6 +381,49 @@ export async function parseImageInput(
   };
 }
 
+/** Fraction of the subject's size kept as breathing room when auto-cropping. */
+const TRIM_PADDING_RATIO = 0.02;
+/** Alpha below this counts as background when measuring the subject. */
+const TRIM_ALPHA_THRESHOLD = 0.02;
+
+/**
+ * Bounding box of the subject, padded so a cutout is never flush with the frame.
+ * Returns `null` when the matte is empty (nothing to keep).
+ */
+function trimBounds(
+  alpha: Buffer,
+  width: number,
+  height: number
+): { height: number; left: number; top: number; width: number } | null {
+  const bounds = alphaBounds(
+    toAlphaFloats(alpha),
+    width,
+    height,
+    TRIM_ALPHA_THRESHOLD
+  );
+  if (!bounds) {
+    return null;
+  }
+
+  const subject = Math.max(
+    bounds.right - bounds.left + 1,
+    bounds.bottom - bounds.top + 1
+  );
+  const padded = expandBounds(
+    bounds,
+    Math.max(2, Math.round(subject * TRIM_PADDING_RATIO)),
+    width,
+    height
+  );
+
+  return {
+    height: padded.bottom - padded.top + 1,
+    left: padded.left,
+    top: padded.top,
+    width: padded.right - padded.left + 1,
+  };
+}
+
 /**
  * Formats a Buffer result into ImageOperationResult.
  */
@@ -440,7 +494,12 @@ export async function executeResize(
 }
 
 /**
- * Execute native background removal with transparent alpha or solid color backfill.
+ * Execute native background removal.
+ *
+ * The matte is predicted on-device, edge-refined, then either kept as a
+ * transparent PNG or composited onto a solid colour. Semi-transparent edge pixels
+ * are colour-decontaminated first, which is what stops hair from picking up a
+ * bright or dark fringe around the subject.
  */
 export async function executeRemoveBg(
   input: string | Buffer,
@@ -448,39 +507,79 @@ export async function executeRemoveBg(
   fallbackContext?: ImageFallbackContext
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const sharp = await getSharp();
+  const color = params.color ?? "#ffffff";
+  const mode = params.mode ?? "transparent";
+  const quality = params.quality ?? 95;
 
-  // 1. Run neural segmentation to extract transparent foreground
-  const bgResult = await removeImageBackground(buffer);
+  const matte = await segmentImage(buffer, {
+    edgeSmoothing: params.edgeSmoothing,
+  });
+  const { alpha, height, source, width } = matte;
+  const solid = mode === "solid_color";
+  const format: ImageFormat = solid ? (params.format ?? "jpeg") : "png";
 
-  if (params.mode === "solid_color" && params.color) {
-    const sharp = await getSharp();
-    // Composite transparent foreground over solid color background
-    const compositeBuffer = await sharp({
-      create: {
-        background: params.color,
-        channels: 4,
-        height: bgResult.height,
-        width: bgResult.width,
-      },
-    })
-      .composite([{ blend: "over", input: bgResult.buffer }])
-      .toFormat(params.format === "png" ? "png" : "jpeg", {
-        quality: params.quality ?? 95,
-      })
-      .toBuffer();
-
-    const meta = await sharp(compositeBuffer).metadata();
-    return formatResult(
-      compositeBuffer,
-      meta.width ?? bgResult.width,
-      meta.height ?? bgResult.height,
-      meta.format ?? params.format ?? "jpeg",
-      meta.density
+  // Semi-transparent pixels still carry the old background colour, which shows up
+  // as a fringe once the cutout sits on the new one. Solving
+  // `observed = foreground * alpha + fill * (1 - alpha)` for the foreground
+  // removes it before compositing.
+  //
+  // The base image is decoded to an explicit three-channel raw buffer: joining the
+  // matte onto a *decoded* sharp pipeline (`.removeAlpha().joinChannel(...)`) drops
+  // the matte again, because `removeAlpha` strips the last band after the join, and
+  // the result is a fully opaque image that looks plausible enough to ship.
+  const rgb = await sharp(source)
+    .removeAlpha()
+    .toColourspace("srgb")
+    .raw()
+    .toBuffer();
+  if (rgb.length !== width * height * RGB_CHANNELS) {
+    throw new Error(
+      `Expected ${width * height * RGB_CHANNELS} colour bytes for the cutout, got ${rgb.length}.`
     );
   }
 
-  // Transparent output (always PNG)
-  return formatResult(bgResult.buffer, bgResult.width, bgResult.height, "png");
+  const pixels = solid
+    ? decontaminate(rgb, toAlphaFloats(alpha), width, height, hexToRgb(color))
+    : rgb;
+  // sharp applies `joinChannel` at the very end of its pipeline, so anything
+  // chained after it — including `extract` and `flatten` — is silently ignored (the
+  // uncropped, unflattened frame comes back with no error). Compose to raw first,
+  // then crop and flatten in a second pipeline.
+  const { data: composed, info } = await sharp(pixels, {
+    raw: { channels: RGB_CHANNELS, height, width },
+  })
+    .joinChannel(alpha, { raw: { channels: 1, height, width } })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const crop = params.autoTrim ? trimBounds(alpha, width, height) : null;
+  let output = sharp(composed, {
+    raw: { channels: info.channels, height, width },
+  });
+  // Flattening is only meaningful for a solid fill: it drops the matte the cutout
+  // was decontaminated against, so semi-transparent edges cannot show through.
+  if (solid) {
+    output = output.flatten({ background: color });
+  }
+  if (crop) {
+    output = output.extract(crop);
+  }
+  const outputBuffer = await output.toFormat(format, { quality }).toBuffer();
+
+  const meta = await sharp(outputBuffer).metadata();
+  if (!solid && !meta.hasAlpha) {
+    throw new Error(
+      "The background was removed but the transparent cutout lost its alpha channel."
+    );
+  }
+  return formatResult(
+    outputBuffer,
+    meta.width ?? width,
+    meta.height ?? height,
+    meta.format ?? format,
+    meta.density
+  );
 }
 
 /**

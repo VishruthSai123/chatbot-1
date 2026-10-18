@@ -119,7 +119,23 @@ export const resizeSchema = z
 export type ResizeInput = z.input<typeof resizeSchema>;
 
 export const removeBgSchema = z.object({
+  autoTrim: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "Crop the result to the subject's bounding box plus a small margin, so passport/profile photos are framed on the person."
+    ),
   color: hexColorSchema.optional().default("#ffffff"),
+  edgeSmoothing: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .default(25)
+    .describe(
+      "Edge character of the cutout: 0 = crisp hard edge, 100 = soft feathered edge."
+    ),
   format: imageFormatSchema.optional().default("png"),
   mode: z
     .enum(["transparent", "solid_color"])
