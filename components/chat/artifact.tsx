@@ -192,7 +192,12 @@ function PureArtifact({
   const { mutate } = useSWRConfig();
 
   const handleContentChange = useCallback(
-    (updatedContent: string) => {
+    (
+      updatedContent: string,
+      options?: {
+        persisted?: boolean;
+      }
+    ) => {
       if (!artifact) {
         return;
       }
@@ -222,18 +227,24 @@ function PureArtifact({
             return currentDocuments;
           }
 
-          await fetch(
-            `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
-            {
-              body: JSON.stringify({
-                content: updatedContent,
-                isManualEdit: !isImage,
-                kind: artifact.kind,
-                title: artifact.title,
-              }),
-              method: "POST",
-            }
-          );
+          // The image pipeline persists its own output, so posting the bytes back
+          // here would be both redundant and fatal for a full-resolution photo: a
+          // request body over 4.5 MB is rejected by the platform before it reaches
+          // us. Only advance the local version list.
+          if (!options?.persisted) {
+            await fetch(
+              `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
+              {
+                body: JSON.stringify({
+                  content: updatedContent,
+                  isManualEdit: !isImage,
+                  kind: artifact.kind,
+                  title: artifact.title,
+                }),
+                method: "POST",
+              }
+            );
+          }
 
           setIsContentDirty(false);
 
@@ -247,7 +258,9 @@ function PureArtifact({
 
           // Images: append the edit as a new version. The cursor then snaps to it
           // via the documents effect, the result becomes what the user sees, and
-          // Undo can step back to the previous state.
+          // Undo can step back to the previous state. Appending optimistically —
+          // rather than waiting for a refetch — is also what keeps the *next* edit
+          // aimed at this new version.
           return [
             ...currentDocuments,
             {
@@ -267,7 +280,11 @@ function PureArtifact({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveContent = useCallback(
-    (updatedContent: string, debounce: boolean) => {
+    (
+      updatedContent: string,
+      debounce: boolean,
+      options?: { persisted?: boolean }
+    ) => {
       latestContentRef.current = updatedContent;
       setIsContentDirty(true);
 
@@ -278,11 +295,11 @@ function PureArtifact({
 
       if (debounce) {
         saveTimerRef.current = setTimeout(() => {
-          handleContentChange(latestContentRef.current);
+          handleContentChange(latestContentRef.current, options);
           saveTimerRef.current = null;
         }, 2000);
       } else {
-        handleContentChange(updatedContent);
+        handleContentChange(updatedContent, options);
       }
     },
     [handleContentChange]

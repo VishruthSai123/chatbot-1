@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { guestRegex } from "@/lib/constants";
-import {
-  getDocumentById,
-  getLatestDocumentByKind,
-  saveDocument,
-} from "@/lib/db/queries";
+import { getLatestDocumentByKind, saveDocument } from "@/lib/db/queries";
+import { resolveDocumentImage } from "@/lib/image/resolve-source";
 import { activeImageRegistry } from "@/lib/image/session-registry";
+import { MAX_INLINE_BASE64_CHARS } from "@/lib/storage/limits";
 import {
   executeCompress,
   executeConvert,
@@ -56,50 +54,58 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, image, documentId, chatId, title, params } = body;
+    const { action, image, documentId, chatId, title, params, versionIndex } =
+      body;
 
-    let imageSource = image;
-    if (!imageSource && documentId) {
-      // 1. Check in-memory registry
-      const cached = activeImageRegistry.getActiveImage({
+    // An inline base64 image is the old contract. It still works, but it crosses a
+    // serverless request body and therefore caps out at 4.5 MB, so reject anything
+    // that would be killed by the platform with an actionable message instead.
+    if (typeof image === "string" && image.length > MAX_INLINE_BASE64_CHARS) {
+      return NextResponse.json(
+        {
+          error:
+            "This image is too large to send inline. Reopen it from the workbench so the edit can reference its document instead.",
+          tooLarge: true,
+        },
+        { status: 413 }
+      );
+    }
+
+    let imageSource: string | undefined;
+    let resolvedDocumentId = documentId as string | undefined;
+    let resolvedTitle = title as string | undefined;
+
+    if (!image && documentId) {
+      const resolved = await resolveDocumentImage({
+        chatId,
         documentId,
         userId: session.user.id,
+        versionIndex,
       });
-      if (cached?.base64) {
-        imageSource = cached.base64;
-      } else {
-        // 2. Query database
-        try {
-          const doc = await getDocumentById({ id: documentId });
-          if (doc?.content) {
-            imageSource = doc.content;
-            activeImageRegistry.setActiveImage({
-              base64: doc.content,
-              documentId: doc.id,
-              title: doc.title,
-              userId: session.user.id,
-            });
-          }
-        } catch (err) {
-          console.warn(
-            "Failed to retrieve document for image processing:",
-            err
-          );
-        }
+
+      if (resolved) {
+        imageSource = resolved.base64;
+        resolvedDocumentId = resolved.documentId;
+        resolvedTitle = resolved.title;
       }
     }
 
-    // 3. Fall back to active image for user if still missing
+    if (!imageSource) {
+      imageSource = image;
+    }
+
+    // Fall back to the active image for the user if still missing
     if (!imageSource) {
       const userCached = activeImageRegistry.getActiveImage({
         userId: session.user.id,
       });
       if (userCached?.base64) {
         imageSource = userCached.base64;
+        resolvedDocumentId ??= userCached.documentId;
       }
     }
 
-    // 4. Last-resort durable fallback: newest persisted image Document for the user.
+    // Last-resort durable fallback: newest persisted image Document for the user.
     // Keeps edits working across cold starts, reloads and expired signed URLs.
     if (!imageSource) {
       try {
@@ -109,6 +115,8 @@ export async function POST(request: Request) {
         });
         if (latest?.content) {
           imageSource = latest.content;
+          resolvedDocumentId ??= latest.id;
+          resolvedTitle ??= latest.title;
           activeImageRegistry.setActiveImage({
             base64: latest.content,
             documentId: latest.id,
@@ -130,7 +138,7 @@ export async function POST(request: Request) {
 
     const fallbackContext = {
       chatId,
-      documentId,
+      documentId: resolvedDocumentId,
       userId: session.user.id,
     };
 
@@ -206,28 +214,36 @@ export async function POST(request: Request) {
     if (result?.base64) {
       activeImageRegistry.setActiveImage({
         base64: result.base64,
-        documentId,
-        title: title ?? "Image",
+        documentId: resolvedDocumentId,
+        title: resolvedTitle ?? "Image",
         userId: session.user.id,
       });
     }
 
-    // If documentId is provided, save updated version to history
-    if (documentId && result?.base64) {
+    // Persist the result here rather than making the browser send the edited bytes
+    // back up: the tool already holds them, and a request body is exactly what
+    // cannot carry a full-resolution image. `persisted` tells the client its edit
+    // is already durable so it does not re-upload the same bytes.
+    let persisted = false;
+
+    if (resolvedDocumentId && result?.base64) {
       try {
         await saveDocument({
           content: result.base64,
-          id: documentId,
+          id: resolvedDocumentId,
           kind: "image",
-          title: title ?? "Image",
+          title: resolvedTitle ?? "Image",
           userId: session.user.id,
         });
+        persisted = true;
       } catch (err) {
         console.warn("Failed to persist document version:", err);
       }
     }
 
     return NextResponse.json({
+      documentId: resolvedDocumentId,
+      persisted,
       result,
       success: true,
     });

@@ -5,7 +5,6 @@ import type { ImageToolMode } from "@/components/chat/artifact";
 import { guestRegex } from "@/lib/constants";
 import {
   getDocumentById,
-  getDocumentsById,
   getLatestDocumentByKind,
   getMessagesByChatId,
   isValidUUID,
@@ -14,6 +13,7 @@ import {
 import type { DimensionSpec } from "@/lib/image/dimensions";
 import { findPresetsByQuery, getPresetByKey } from "@/lib/image/presets";
 import { applyResizeRequirement } from "@/lib/image/requirements";
+import { resolveDocumentImage } from "@/lib/image/resolve-source";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import {
   executeCompress,
@@ -158,68 +158,23 @@ async function resolveImageSource(
   const cleanImageUrl =
     imageUrl && !isInternalModelUrl(imageUrl) ? imageUrl.trim() : undefined;
 
-  // 2. If an explicit document UUID was provided, look it up in active registry or database
+  // 2. If an explicit document UUID was provided, resolve it through the shared
+  // resolver so the chat tools and the workbench agree on *which* image an edit
+  // applies to (exact version, registry head, or newest row — all owner-checked).
   if (documentId && isValidUUID(documentId)) {
-    // When the workbench is showing an older version (Undo / Redo), edit exactly
-    // that version instead of the newest one. The registry only ever caches the
-    // head, so a specific version is resolved straight from the version list.
-    if (typeof versionIndex === "number" && versionIndex >= 0) {
-      try {
-        const versions = await getDocumentsById({ id: documentId });
-        const requested = versions[versionIndex];
-        const isHead = Boolean(
-          requested && versionIndex === versions.length - 1
-        );
+    const resolvedDocument = await resolveDocumentImage({
+      chatId,
+      documentId,
+      userId: session.user.id,
+      versionIndex,
+    });
 
-        if (requested?.userId === session.user.id && requested.content) {
-          if (isHead) {
-            activeImageRegistry.setActiveImage({
-              base64: requested.content,
-              chatId,
-              documentId: requested.id,
-              title: requested.title,
-              userId: session.user.id,
-            });
-          }
-
-          return {
-            documentId: requested.id,
-            source: requested.content,
-            title: requested.title,
-          };
-        }
-      } catch (versionErr) {
-        console.warn("Non-fatal: Failed to resolve image version:", versionErr);
-      }
-    }
-
-    const cachedByDocId = activeImageRegistry.getActiveImage({ documentId });
-    if (cachedByDocId?.base64) {
+    if (resolvedDocument) {
       return {
-        documentId,
-        source: cachedByDocId.base64,
-        title: cachedByDocId.title || "Photo",
+        documentId: resolvedDocument.documentId,
+        source: resolvedDocument.base64,
+        title: resolvedDocument.title,
       };
-    }
-
-    try {
-      const doc = await getDocumentById({ id: documentId });
-      if (doc && doc.userId === session.user.id && doc.content) {
-        activeImageRegistry.setActiveImage({
-          base64: doc.content,
-          chatId,
-          documentId: doc.id,
-          title: doc.title,
-          userId: session.user.id,
-        });
-        return {
-          documentId: doc.id,
-          source: doc.content,
-          title: doc.title,
-        };
-      }
-    } catch (docErr) {
-      console.warn("Non-fatal: Document lookup error:", docErr);
     }
   }
 

@@ -20,10 +20,12 @@ interface BackgroundRemovalInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   originalSrc: string | null;
   setIsComparing: (val: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 const QUICK_COLORS = [
@@ -47,6 +49,7 @@ export const BackgroundRemovalInspector = memo(
     setIsComparing,
     isGuest,
     onRequireAuth,
+    versionIndex,
   }: BackgroundRemovalInspectorProps) {
     const [bgMode, setBgMode] = useState<"transparent" | "solid_color">(
       "transparent"
@@ -87,12 +90,12 @@ export const BackgroundRemovalInspector = memo(
             body: JSON.stringify({
               action: "remove_bg",
               documentId,
-              image: imageSrc,
               params: {
                 color: bgColor,
                 mode: bgMode,
                 quality: 95,
               },
+              versionIndex,
             }),
             headers: { "Content-Type": "application/json" },
             method: "POST",
@@ -121,7 +124,7 @@ export const BackgroundRemovalInspector = memo(
 
         const data = await response.json();
         if (data.result?.base64) {
-          onUpdateImage(data.result.base64);
+          onUpdateImage(data.result.base64, Boolean(data.persisted));
           toast.success(
             bgMode === "solid_color"
               ? `Background backfilled with ${bgColor}`
@@ -139,11 +142,11 @@ export const BackgroundRemovalInspector = memo(
       onRequireAuth,
       isProcessing,
       setIsProcessing,
-      imageSrc,
       documentId,
       bgMode,
       bgColor,
       onUpdateImage,
+      versionIndex,
     ]);
 
     const handleDownload = useCallback(() => {

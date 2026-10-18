@@ -2,6 +2,9 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { buildStorageKey } from "@/lib/storage/keys";
+import { ARTIFACTS_BUCKET, safeStorageFilename } from "@/lib/storage/limits";
+
 let _supabaseAdmin: SupabaseClient | null = null;
 
 export function getStorageClient(): SupabaseClient {
@@ -39,7 +42,7 @@ export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
   },
 });
 
-export const BUCKET_NAME = "artifacts";
+export const BUCKET_NAME = ARTIFACTS_BUCKET;
 
 export type UploadResult = {
   storageKey: string;
@@ -48,6 +51,40 @@ export type UploadResult = {
   contentType: string;
   size: number;
 };
+
+export type SignedUpload = {
+  token: string;
+  uploadUrl: string;
+};
+
+/**
+ * Mint a short-lived URL the *browser* can PUT the bytes to, so the file never
+ * travels through the serverless function (and therefore never hits the 4.5 MB
+ * request-body ceiling that caused `FUNCTION_PAYLOAD_TOO_LARGE`).
+ */
+export async function createSignedUpload(
+  storageKey: string
+): Promise<SignedUpload> {
+  const { data, error } = await supabaseAdmin.storage
+    .from(BUCKET_NAME)
+    .createSignedUploadUrl(storageKey, { upsert: false });
+
+  if (error || !data?.signedUrl || !data.token) {
+    throw new Error(
+      `Failed to create signed upload URL: ${error?.message ?? "no URL returned"}`
+    );
+  }
+
+  return { token: data.token, uploadUrl: data.signedUrl };
+}
+
+export async function artifactExists(storageKey: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.storage
+    .from(BUCKET_NAME)
+    .exists(storageKey);
+
+  return Boolean(data) && !error;
+}
 
 /**
  * Upload an artifact buffer or stream to private Supabase Storage
@@ -65,9 +102,8 @@ export async function uploadArtifact({
   userId: string;
   chatId?: string;
 }): Promise<UploadResult> {
-  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const folder = chatId ? `${userId}/${chatId}` : `${userId}/general`;
-  const storageKey = `${folder}/${Date.now()}-${safeName}`;
+  const safeName = safeStorageFilename(filename);
+  const storageKey = buildStorageKey({ chatId, filename, userId });
 
   const { error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)

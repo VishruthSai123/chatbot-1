@@ -30,12 +30,14 @@ interface CropInspectorProps {
   naturalHeight: number;
   naturalWidth: number;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   originalSrc?: string | null;
   selectedAspect: string;
   setCropBox: (box: CropBox | ((prev: CropBox) => CropBox)) => void;
   setIsProcessing: (val: boolean) => void;
   setSelectedAspect: (aspect: string) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 export const CropInspector = memo(function InnerCropInspector({
@@ -54,6 +56,7 @@ export const CropInspector = memo(function InnerCropInspector({
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: CropInspectorProps) {
   // Compute pixel dimensions
   const pixelLeft = Math.round((cropBox.x / 100) * naturalWidth);
@@ -156,13 +159,13 @@ export const CropInspector = memo(function InnerCropInspector({
           body: JSON.stringify({
             action: "crop",
             documentId,
-            image: imageSrc,
             params: {
               height: pixelHeight,
               left: pixelLeft,
               top: pixelTop,
               width: pixelWidth,
             },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -191,7 +194,7 @@ export const CropInspector = memo(function InnerCropInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
           `Photo cropped to ${data.result.width}×${data.result.height} px`
         );
@@ -208,7 +211,6 @@ export const CropInspector = memo(function InnerCropInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     pixelLeft,
     pixelTop,
@@ -216,6 +218,7 @@ export const CropInspector = memo(function InnerCropInspector({
     pixelHeight,
     onUpdateImage,
     handleResetCrop,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {

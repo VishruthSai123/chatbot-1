@@ -2,6 +2,7 @@ import "server-only";
 
 import { getDocumentById, getLatestDocumentByKind } from "@/lib/db/queries";
 import { removeImageBackground } from "@/lib/image/background-removal";
+import { decodeBase64Image } from "@/lib/image/base64";
 import {
   compressImage,
   convertImage,
@@ -267,6 +268,18 @@ export async function parseImageInput(
         return recovered;
       }
     }
+  }
+
+  // 4b. Raw base64 image data.
+  //
+  // This must run *before* the URL handling below. Base64 for a JPEG always
+  // starts `"/9j/…"`, so the leading slash would otherwise be read as a
+  // root-relative path, rewritten to `http://localhost:…/9j/…`, fail to fetch,
+  // and silently recover using whichever image was newest — turning "edit the
+  // version I am looking at" into "edit the head".
+  const decoded = decodeBase64Image(trimmed);
+  if (decoded) {
+    return decoded;
   }
 
   // 5. Handle remote HTTP/HTTPS or relative URLs

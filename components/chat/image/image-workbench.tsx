@@ -37,7 +37,11 @@ interface ImageWorkbenchProps {
   documentId?: string;
   handleVersionChange?: (type: "next" | "prev" | "toggle" | "latest") => void;
   isInline?: boolean;
-  onSaveContent?: (newBase64: string, debounce: boolean) => void;
+  onSaveContent?: (
+    newBase64: string,
+    debounce: boolean,
+    options?: { persisted?: boolean }
+  ) => void;
   title: string;
   totalVersions?: number;
 }
@@ -323,12 +327,13 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     toast.success("Download started!");
   }, [currentBase64, formatSrc]);
 
-  // Image update handler from inspectors
+  // Image update handler from inspectors. `persisted` means the tool route already
+  // stored this version server-side, so the save must not send the bytes back up.
   const handleUpdateImage = useCallback(
-    (newBase64: string) => {
+    (newBase64: string, persisted = false) => {
       setCurrentBase64(newBase64);
       if (onSaveContent) {
-        onSaveContent(newBase64, false);
+        onSaveContent(newBase64, false, { persisted });
       }
       setArtifact((prev) => ({
         ...prev,
@@ -720,6 +725,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 originalSrc={originalBase64}
                 setIsComparing={setIsComparing}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -733,6 +739,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -753,6 +760,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 setCropBox={setCropBox}
                 setIsProcessing={setIsProcessing}
                 setSelectedAspect={setSelectedAspect}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -769,6 +777,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 originalSrc={originalBase64}
                 setIsComparing={setIsComparing}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -782,6 +791,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -795,6 +805,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -808,6 +819,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
                 onRequireAuth={() => setShowAuthModal(true)}
                 onUpdateImage={handleUpdateImage}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
 
@@ -815,12 +827,12 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
               <OcrInspector
                 appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
-                imageSrc={currentBase64}
                 isGuest={isGuest}
                 isProcessing={isProcessing}
                 ocrText={artifact.ocrText}
                 onRequireAuth={() => setShowAuthModal(true)}
                 setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
               />
             )}
           </div>

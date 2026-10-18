@@ -41,7 +41,17 @@ type ArtifactContent<M = any> = {
   currentVersionIndex: number;
   status: "streaming" | "idle";
   suggestions: Suggestion[];
-  onSaveContent: (updatedContent: string, debounce: boolean) => void;
+  onSaveContent: (
+    updatedContent: string,
+    debounce: boolean,
+    /**
+     * `persisted: true` means the caller already stored this content server-side
+     * (the image tools do, because an edit result cannot be uploaded from the
+     * browser without hitting the serverless request-body limit). The save then
+     * only updates the local version list instead of re-uploading the bytes.
+     */
+    options?: { persisted?: boolean }
+  ) => void;
   isInline: boolean;
   getDocumentContentById: (index: number) => string;
   isLoading: boolean;

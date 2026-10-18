@@ -8,22 +8,23 @@ interface OcrInspectorProps {
   /** Parameters the model applied on the last image tool call; pre-fills the panel. */
   appliedParams?: Record<string, unknown> | null;
   documentId?: string;
-  imageSrc: string;
   isGuest?: boolean;
   isProcessing: boolean;
   ocrText?: string;
   onRequireAuth?: () => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 export const OcrInspector = memo(function InnerOcrInspector({
   documentId,
-  imageSrc,
   ocrText,
   isProcessing,
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: OcrInspectorProps) {
   const [text, setText] = useState<string>(ocrText ?? "");
   const [ranOnce, setRanOnce] = useState<boolean>(Boolean(ocrText));
@@ -52,8 +53,8 @@ export const OcrInspector = memo(function InnerOcrInspector({
           body: JSON.stringify({
             action: "ocr",
             documentId,
-            image: imageSrc,
             params: { format: "markdown" },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -100,8 +101,8 @@ export const OcrInspector = memo(function InnerOcrInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
+    versionIndex,
   ]);
 
   const handleCopy = useCallback(async () => {

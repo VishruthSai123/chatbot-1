@@ -25,8 +25,10 @@ interface ResizerInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 const DPI_VALUES: DpiOption[] = [72, 150, 300, 600];
@@ -55,6 +57,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: ResizerInspectorProps) {
   const [selectedPreset, setSelectedPreset] =
     useState<string>("indian_passport");
@@ -165,7 +168,6 @@ export const ResizerInspector = memo(function InnerResizerInspector({
           body: JSON.stringify({
             action: "resize_physical",
             documentId,
-            image: imageSrc,
             params: {
               aspectRatio: aspect === "free" ? undefined : aspect,
               dpi,
@@ -175,6 +177,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
               unit,
               width,
             },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -203,7 +206,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
           `Resized to ${width}×${height} ${unit} (${data.result.width}×${data.result.height} px)`
         );
@@ -219,7 +222,6 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     width,
     height,
@@ -228,6 +230,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     fit,
     onUpdateImage,
     aspect,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {

@@ -15,8 +15,10 @@ interface UpscalerInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 function ToggleRow({
@@ -71,6 +73,7 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: UpscalerInspectorProps) {
   const [scale, setScale] = useState<2 | 4>(2);
   const [sharpen, setSharpen] = useState<boolean>(true);
@@ -117,8 +120,8 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
           body: JSON.stringify({
             action: "upscale",
             documentId,
-            image: imageSrc,
             params: { enhance, format, quality: 95, scale, sharpen },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -146,7 +149,7 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
           `Upscaled ${scale}x to ${data.result.width}×${data.result.height} px`
         );
@@ -162,13 +165,13 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     scale,
     sharpen,
     enhance,
     format,
     onUpdateImage,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {

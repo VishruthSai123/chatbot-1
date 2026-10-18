@@ -4,59 +4,120 @@ import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
 import { saveDocument } from "@/lib/db/queries";
 import { activeImageRegistry } from "@/lib/image/session-registry";
-import { uploadArtifact } from "@/lib/storage";
+import {
+  artifactExists,
+  createSignedUpload,
+  downloadArtifact,
+  getArtifactSignedUrl,
+  type UploadResult,
+  uploadArtifact,
+} from "@/lib/storage";
+import { ensureArtifactsBucket } from "@/lib/storage/bucket";
+import { buildStorageKey, isOwnedStorageKey } from "@/lib/storage/keys";
+import {
+  ARTIFACTS_BUCKET,
+  formatBytes,
+  MAX_UPLOAD_BYTES,
+  SAFE_MULTIPART_BYTES,
+  safeStorageFilename,
+  validateUpload,
+} from "@/lib/storage/limits";
 import { generateUUID } from "@/lib/utils";
 
-const ALLOWED_MIME_TYPES = [
-  // Images
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-  // Documents & PDFs
-  "application/pdf",
-  "text/plain",
-  "text/markdown",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  // Spreadsheets
-  "text/csv",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  // Presentations
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  // Audio & Video
-  "audio/mpeg",
-  "audio/wav",
-  "audio/mp4",
-  "audio/ogg",
-  "audio/webm",
-  "video/mp4",
-  "video/webm",
-  "video/quicktime",
-  // Generic fallback for binary files with valid extensions
-  "application/octet-stream",
-];
+const PREVIEW_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (Supabase Free limit)
+/**
+ * Uploads do **not** stream the file through this function.
+ *
+ * Vercel caps a serverless request body at 4.5 MB and answers
+ * `413 FUNCTION_PAYLOAD_TOO_LARGE` before any of our code runs, so proxying the
+ * bytes could never carry a phone photo. Instead the browser asks for a signed
+ * upload URL (`step: "sign"`), PUTs the bytes straight to Supabase Storage, then
+ * reports back (`step: "complete"`) so we can create the Document row and sign a
+ * preview URL. Only metadata crosses this function.
+ *
+ * `multipart/form-data` is still accepted for small files as a compatibility
+ * fallback, and is hard-capped below the platform ceiling so it can never be the
+ * thing that fails.
+ */
 
-const FileSchema = z.object({
-  file: z
-    .instanceof(Blob)
-    .refine((file) => file.size <= MAX_FILE_SIZE, {
-      message: "File size should be less than 50MB",
-    })
-    .refine(
-      (file) =>
-        ALLOWED_MIME_TYPES.includes(file.type) ||
-        file.type.startsWith("image/") ||
-        file.type.startsWith("text/"),
-      {
-        message:
-          "Unsupported file type. Please upload a supported image, PDF, document, or spreadsheet.",
-      }
-    ),
+const UploadMetaSchema = z.object({
+  chatId: z.string().min(1).max(200).optional(),
+  contentType: z.string().min(1).max(255),
+  filename: z.string().min(1).max(200),
+  size: z.number().int().nonnegative(),
 });
+
+const JsonRequestSchema = z.discriminatedUnion("step", [
+  UploadMetaSchema.extend({ step: z.literal("sign") }),
+  UploadMetaSchema.extend({
+    step: z.literal("complete"),
+    storageKey: z.string().min(1).max(512),
+  }),
+]);
+
+type PersistImageArgs = {
+  base64: string;
+  chatId?: string;
+  filename: string;
+  mimeType: string;
+  sourceUrl: string;
+  storageKey: string;
+  userId: string;
+};
+
+/**
+ * Turn an uploaded image into a durable, editable artifact.
+ *
+ * The base64 lives in `document.content` so conversational edits on a later
+ * request never depend on expired signed URLs or on in-memory state, and the
+ * registry pin lets an edit arrive before the next documents fetch.
+ */
+async function persistImageArtifact({
+  base64,
+  chatId,
+  filename,
+  mimeType,
+  sourceUrl,
+  storageKey,
+  userId,
+}: PersistImageArgs): Promise<string | undefined> {
+  let documentId: string | undefined;
+
+  try {
+    const candidateId = generateUUID();
+    await saveDocument({
+      content: base64,
+      id: candidateId,
+      kind: "image",
+      title: filename,
+      userId,
+    });
+    documentId = candidateId;
+  } catch (error) {
+    console.warn(
+      "Non-fatal: failed to persist uploaded image document:",
+      error
+    );
+  }
+
+  try {
+    activeImageRegistry.setActiveImage({
+      base64,
+      chatId,
+      documentId,
+      mimeType,
+      sourceUrl,
+      storageKey,
+      title: filename,
+      userId,
+    });
+  } catch (error) {
+    console.warn("Non-fatal: failed to pin image to active registry:", error);
+  }
+
+  return documentId;
+}
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -65,97 +126,236 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return handleMetadataUpload(request, session.user.id);
+  }
+
+  return handleProxiedUpload(request, session.user.id);
+}
+
+/** `sign` / `complete`: metadata only, no file bytes. */
+async function handleMetadataUpload(request: Request, userId: string) {
+  let payload: unknown;
+
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = JsonRequestSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        error: parsed.error.issues
+          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+          .join(", "),
+      },
+      { status: 400 }
+    );
+  }
+
+  const body = parsed.data;
+  const validation = validateUpload({
+    name: body.filename,
+    size: body.size,
+    type: body.contentType,
+  });
+
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: validation.message },
+      { status: body.size > MAX_UPLOAD_BYTES ? 413 : 400 }
+    );
+  }
+
+  // Best effort: a bucket-configuration hiccup must not block an upload the app
+  // has already validated, so this is logged rather than fatal.
+  await ensureArtifactsBucket().catch((error: unknown) => {
+    console.warn("Could not configure artifacts bucket:", error);
+  });
+
+  if (body.step === "sign") {
+    const storageKey = buildStorageKey({
+      chatId: body.chatId,
+      filename: body.filename,
+      userId,
+    });
+
+    try {
+      const signed = await createSignedUpload(storageKey);
+
+      return NextResponse.json({
+        bucket: ARTIFACTS_BUCKET,
+        contentType: body.contentType,
+        maxBytes: MAX_UPLOAD_BYTES,
+        storageKey,
+        token: signed.token,
+        uploadUrl: signed.uploadUrl,
+      });
+    } catch (error) {
+      console.error("Signed upload URL error:", error);
+      return NextResponse.json(
+        { error: "Storage is unavailable right now. Please try again." },
+        { status: 502 }
+      );
+    }
+  }
+
+  const { storageKey } = body;
+
+  // The leading user id is the ownership boundary: a caller may only finalise an
+  // upload they minted, never someone else's key.
+  if (!isOwnedStorageKey(storageKey, userId)) {
+    return NextResponse.json(
+      { error: "Artifact does not belong to this user." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    if (!(await artifactExists(storageKey))) {
+      return NextResponse.json(
+        { error: "Upload did not reach storage. Please try again." },
+        { status: 409 }
+      );
+    }
+  } catch (error) {
+    console.error("Artifact existence check failed:", error);
+    return NextResponse.json(
+      { error: "Storage is unavailable right now. Please try again." },
+      { status: 502 }
+    );
+  }
+
+  const pathname = safeStorageFilename(body.filename);
+  let url: string;
+
+  try {
+    url = await getArtifactSignedUrl(storageKey, PREVIEW_URL_TTL_SECONDS);
+  } catch (error) {
+    console.error("Signed preview URL error:", error);
+    return NextResponse.json(
+      { error: "Storage is unavailable right now. Please try again." },
+      { status: 502 }
+    );
+  }
+
+  const data: UploadResult = {
+    contentType: body.contentType,
+    pathname,
+    size: body.size,
+    storageKey,
+    url,
+  };
+
+  let documentId: string | undefined;
+
+  if (body.contentType.startsWith("image/")) {
+    try {
+      const buffer = await downloadArtifact(storageKey);
+      documentId = await persistImageArtifact({
+        base64: buffer.toString("base64"),
+        chatId: body.chatId,
+        filename: pathname,
+        mimeType: body.contentType,
+        sourceUrl: url,
+        storageKey,
+        userId,
+      });
+    } catch (error) {
+      // The bytes are safely in storage and previewable, so a failure to inline
+      // them must not turn a successful upload into an error.
+      console.warn("Non-fatal: could not inline uploaded image:", error);
+    }
+  }
+
+  return NextResponse.json({ ...data, documentId });
+}
+
+/** Legacy: bytes travel through this function, so keep them under the ceiling. */
+async function handleProxiedUpload(request: Request, userId: string) {
   if (request.body === null) {
-    return new Response("Request body is empty", { status: 400 });
+    return NextResponse.json(
+      { error: "Request body is empty" },
+      { status: 400 }
+    );
   }
 
   try {
     const formData = await request.formData();
-    const file = formData.get("file") as Blob | null;
+    const file = formData.get("file");
 
-    if (!file) {
+    if (!(file instanceof File)) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    const validatedFile = FileSchema.safeParse({ file });
-
-    if (!validatedFile.success) {
-      const errorMessage = validatedFile.error.issues
-        .map((error) => error.message)
-        .join(", ");
-
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+    if (file.size > SAFE_MULTIPART_BYTES) {
+      return NextResponse.json(
+        {
+          error: `${file.name || "That file"} is ${formatBytes(
+            file.size
+          )}. Files over ${formatBytes(
+            SAFE_MULTIPART_BYTES
+          )} must use the direct upload path.`,
+        },
+        { status: 413 }
+      );
     }
 
-    const fileObj = formData.get("file") as File;
-    const filename = fileObj.name || "upload";
+    const validation = validateUpload({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    });
+
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.message }, { status: 400 });
+    }
+
+    const filename = file.name || "upload";
+    const mimeType = file.type || "application/octet-stream";
     const fileBuffer = await file.arrayBuffer();
     const chatId = (formData.get("chatId") as string) || undefined;
 
+    let data: UploadResult;
+
     try {
-      const data = await uploadArtifact({
+      data = await uploadArtifact({
         chatId,
-        contentType: file.type || "application/octet-stream",
+        contentType: mimeType,
         fileBuffer,
         filename,
-        userId: session.user.id,
+        userId,
       });
-
-      let documentId: string | undefined;
-
-      // Persist turn-zero uploads as durable Document rows (base64 content) and pin
-      // them in the in-memory registry. This survives server restarts / browser
-      // reloads so subsequent conversational edits never depend on ephemeral memory
-      // or expiring signed URLs.
-      if (file.type?.startsWith("image/")) {
-        const base64 = Buffer.from(fileBuffer).toString("base64");
-        const candidateId = generateUUID();
-
-        try {
-          await saveDocument({
-            content: base64,
-            id: candidateId,
-            kind: "image",
-            title: filename,
-            userId: session.user.id,
-          });
-          documentId = candidateId;
-        } catch (dbErr) {
-          console.warn(
-            "Non-fatal: Failed to persist uploaded image document:",
-            dbErr
-          );
-        }
-
-        try {
-          activeImageRegistry.setActiveImage({
-            base64,
-            chatId,
-            documentId,
-            mimeType: file.type,
-            sourceUrl: data.url,
-            storageKey: data.storageKey,
-            title: filename,
-            userId: session.user.id,
-          });
-        } catch (regErr) {
-          console.warn(
-            "Non-fatal: Failed to pin image to active registry:",
-            regErr
-          );
-        }
-      }
-
-      return NextResponse.json({ ...data, documentId });
-    } catch (uploadErr) {
-      console.error("Storage upload error:", uploadErr);
+    } catch (error) {
+      console.error("Storage upload error:", error);
       return NextResponse.json(
         { error: "Upload failed to storage" },
         { status: 500 }
       );
     }
-  } catch (err) {
-    console.error("Upload request processing error:", err);
+
+    let documentId: string | undefined;
+
+    if (mimeType.startsWith("image/")) {
+      documentId = await persistImageArtifact({
+        base64: Buffer.from(fileBuffer).toString("base64"),
+        chatId,
+        filename,
+        mimeType,
+        sourceUrl: data.url,
+        storageKey: data.storageKey,
+        userId,
+      });
+    }
+
+    return NextResponse.json({ ...data, documentId });
+  } catch (error) {
+    console.error("Upload request processing error:", error);
     return NextResponse.json(
       { error: "Failed to process request" },
       { status: 500 }

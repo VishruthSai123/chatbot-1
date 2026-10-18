@@ -15,8 +15,10 @@ interface PixelatorInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 export const PixelatorInspector = memo(function InnerPixelatorInspector({
@@ -28,6 +30,7 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: PixelatorInspectorProps) {
   const [blockSize, setBlockSize] = useState<number>(16);
   const [mode, setMode] = useState<RedactMode>("mosaic");
@@ -62,8 +65,8 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
           body: JSON.stringify({
             action: "pixelate",
             documentId,
-            image: imageSrc,
             params: { blockSize, format: "png", mode, quality: 95 },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -91,7 +94,7 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
           mode === "blur"
             ? `Blurred with a ${blockSize}px radius`
@@ -109,11 +112,11 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     blockSize,
     mode,
     onUpdateImage,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {

@@ -44,6 +44,10 @@ import {
   type ModelCapabilities,
 } from "@/lib/ai/models";
 import type { Attachment, ChatMessage } from "@/lib/types";
+import {
+  UploadError,
+  uploadFile as uploadAttachment,
+} from "@/lib/upload/client";
 import { cn } from "@/lib/utils";
 import {
   PromptInput,
@@ -270,40 +274,16 @@ function PureMultimodalInput({
 
   const uploadFile = useCallback(
     async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (chatId) {
-        formData.append("chatId", chatId);
-      }
-
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/files/upload`,
-          {
-            body: formData,
-            method: "POST",
-          }
+        return await uploadAttachment(file, { chatId });
+      } catch (error) {
+        // The helper already turns platform/transport failures into a readable
+        // message, so surface it verbatim instead of guessing here.
+        toast.error(
+          error instanceof UploadError
+            ? error.message
+            : "Failed to upload file, please try again!"
         );
-
-        if (response.ok) {
-          const data = await response.json();
-          const { url, pathname, contentType, documentId } = data;
-
-          return {
-            contentType,
-            documentId,
-            name: pathname,
-            url,
-          };
-        }
-        try {
-          const { error } = await response.json();
-          toast.error(error || "Upload failed");
-        } catch {
-          toast.error(`Upload failed (${response.status})`);
-        }
-      } catch {
-        toast.error("Failed to upload file, please try again!");
       }
     },
     [chatId]

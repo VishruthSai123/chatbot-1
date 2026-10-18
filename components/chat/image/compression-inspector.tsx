@@ -20,10 +20,12 @@ interface CompressionInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   originalSrc: string | null;
   setIsComparing: (val: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 export const CompressionInspector = memo(function InnerCompressionInspector({
@@ -38,6 +40,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
   setIsComparing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: CompressionInspectorProps) {
   const [targetKb, setTargetKb] = useState<number | null>(50);
   const [quality, setQuality] = useState<number>(75);
@@ -96,12 +99,12 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           body: JSON.stringify({
             action: "compress",
             documentId,
-            image: imageSrc,
             params: {
               format,
               quality,
               targetSizeKb: targetKb || undefined,
             },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -130,7 +133,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         const finalKb = Math.round(data.result.sizeBytes / 1024);
         toast.success(`Compressed photo to ${finalKb} KB`);
       }
@@ -145,12 +148,12 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     quality,
     targetKb,
     format,
     onUpdateImage,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {

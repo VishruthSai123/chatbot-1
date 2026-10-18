@@ -16,8 +16,10 @@ interface ConverterInspectorProps {
   isGuest?: boolean;
   isProcessing: boolean;
   onRequireAuth?: () => void;
-  onUpdateImage: (newBase64: string) => void;
+  onUpdateImage: (newBase64: string, persisted?: boolean) => void;
   setIsProcessing: (val: boolean) => void;
+  /** Which version of the document is on screen; the server resolves its bytes. */
+  versionIndex?: number;
 }
 
 export const ConverterInspector = memo(function InnerConverterInspector({
@@ -29,6 +31,7 @@ export const ConverterInspector = memo(function InnerConverterInspector({
   setIsProcessing,
   isGuest,
   onRequireAuth,
+  versionIndex,
 }: ConverterInspectorProps) {
   const [targetFormat, setTargetFormat] = useState<OutputFormat>("webp");
   const [quality, setQuality] = useState<number>(90);
@@ -73,8 +76,8 @@ export const ConverterInspector = memo(function InnerConverterInspector({
           body: JSON.stringify({
             action: "convert",
             documentId,
-            image: imageSrc,
             params: { quality, targetFormat },
+            versionIndex,
           }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -102,7 +105,7 @@ export const ConverterInspector = memo(function InnerConverterInspector({
 
       const data = await response.json();
       if (data.result?.base64) {
-        onUpdateImage(data.result.base64);
+        onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
           `Converted to ${targetFormat.toUpperCase()} (${Math.round(
             data.result.sizeBytes / 1024
@@ -120,11 +123,11 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     onRequireAuth,
     isProcessing,
     setIsProcessing,
-    imageSrc,
     documentId,
     quality,
     targetFormat,
     onUpdateImage,
+    versionIndex,
   ]);
 
   const handleDownload = useCallback(() => {
