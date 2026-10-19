@@ -3,6 +3,8 @@
 import { Download, Grid3x3, Loader2, Waves } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
 
 type RedactMode = "mosaic" | "blur";
@@ -59,19 +61,16 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "pixelate",
-            documentId,
-            params: { blockSize, format: "png", mode, quality: 95 },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "pixelate",
+          documentId,
+          params: { blockSize, format: "png", mode, quality: 95 },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -124,10 +123,8 @@ export const PixelatorInspector = memo(function InnerPixelatorInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/png;base64,${imageSrc}`;
-    link.download = `redacted-${Date.now()}.png`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName("redacted", imageSrc);
     link.click();
     toast.success("Download started");
   }, [imageSrc]);

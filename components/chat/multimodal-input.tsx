@@ -147,6 +147,7 @@ function PureMultimodalInput({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<string[]>([]);
+  const [draggingFiles, setDraggingFiles] = useState<boolean>(false);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -289,9 +290,11 @@ function PureMultimodalInput({
     [chatId]
   );
 
-  const handleFileChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files || []);
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) {
+        return;
+      }
 
       setUploadQueue(files.map((file) => file.name));
 
@@ -314,6 +317,89 @@ function PureMultimodalInput({
     },
     [setAttachments, uploadFile]
   );
+
+  const handleFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files || []);
+      await handleFiles(files);
+      // Allow re-picking the same file after a failed upload.
+      event.target.value = "";
+    },
+    [handleFiles]
+  );
+
+  /**
+   * Dropping a file anywhere in the window attaches it, instead of letting the
+   * browser navigate to the file and throw the whole conversation away.
+   *
+   * This runs in the capture phase and stops propagation on purpose: the composer
+   * form has its own drop listener that pushes into a local attachment list which
+   * this component never renders, so a drop on the textarea used to be a silent
+   * no-op while a drop anywhere else navigated away. One capture-phase handler
+   * gives both cases the same upload path.
+   */
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      event.dataTransfer?.types?.includes("Files") ?? false;
+
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleHide = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+      // `dragover` repeats while the pointer is over the window, so this only
+      // fires once the drag has genuinely left it.
+      hideTimer = setTimeout(() => setDraggingFiles(false), 160);
+    };
+
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event)) {
+        return;
+      }
+      // Without preventDefault the browser treats the drop as a navigation.
+      event.preventDefault();
+      event.stopPropagation();
+      setDraggingFiles(true);
+      scheduleHide();
+    };
+
+    const onDrop = (event: DragEvent) => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+      setDraggingFiles(false);
+
+      if (!hasFiles(event)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+
+      const dropped = Array.from(event.dataTransfer?.files ?? []);
+      handleFiles(dropped).catch(() => undefined);
+    };
+
+    const onDragEnd = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+      setDraggingFiles(false);
+    };
+
+    window.addEventListener("dragover", onDragOver, true);
+    window.addEventListener("drop", onDrop, true);
+    window.addEventListener("dragend", onDragEnd, true);
+
+    return () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+      window.removeEventListener("dragover", onDragOver, true);
+      window.removeEventListener("drop", onDrop, true);
+      window.removeEventListener("dragend", onDragEnd, true);
+    };
+  }, [handleFiles]);
 
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
@@ -448,6 +534,18 @@ function PureMultimodalInput({
 
   return (
     <div className={cn("relative flex w-full flex-col gap-4", className)}>
+      {draggingFiles ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border/80 bg-card/90 px-8 py-6 shadow-lg">
+            <span className="text-sm font-medium text-foreground">
+              Drop to attach
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Images, PDFs and documents
+            </span>
+          </div>
+        </div>
+      ) : null}
       {editingMessage && onCancelEdit ? (
         <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
           <span>Editing message</span>

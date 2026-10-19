@@ -34,6 +34,7 @@ import {
   imagePixelate,
   imageRemoveBg,
   imageResize,
+  imageRotate,
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
@@ -337,6 +338,7 @@ export async function POST(request: Request) {
                   "imageConvert",
                   "imageUpscaleEnhance",
                   "imagePixelate",
+                  "imageRotate",
                   "imageOcr",
                   "imageListPresets",
                 ],
@@ -442,6 +444,13 @@ export async function POST(request: Request) {
               dataStream,
               messages: uiMessages,
               requirement,
+              session,
+            }),
+            imageRotate: imageRotate({
+              activeImage,
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
               session,
             }),
             imageUpscaleEnhance: imageUpscaleEnhance({

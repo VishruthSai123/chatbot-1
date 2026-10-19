@@ -4,6 +4,7 @@ import { ChevronDown, Download, Loader2, RefreshCw } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { parseAspectRatio } from "@/lib/image/dimensions";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import {
   type DpiOption,
   findPresetsByQuery,
@@ -15,6 +16,7 @@ import {
   physicalToPixels,
   UNIT_OPTIONS,
 } from "@/lib/image/presets";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
 
 interface ResizerInspectorProps {
@@ -162,27 +164,24 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "resize_physical",
-            documentId,
-            params: {
-              aspectRatio: aspect === "free" ? undefined : aspect,
-              dpi,
-              fit,
-              height,
-              quality: 95,
-              unit,
-              width,
-            },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "resize_physical",
+          documentId,
+          params: {
+            aspectRatio: aspect === "free" ? undefined : aspect,
+            dpi,
+            fit,
+            height,
+            quality: 95,
+            unit,
+            width,
+          },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -238,10 +237,11 @@ export const ResizerInspector = memo(function InnerResizerInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/jpeg;base64,${imageSrc}`;
-    link.download = `photo-${width}x${height}${unit}-${Date.now()}.jpg`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName(
+      `photo-${width}x${height}${unit}`,
+      imageSrc
+    );
     link.click();
     toast.success("Download started");
   }, [imageSrc, width, height, unit]);

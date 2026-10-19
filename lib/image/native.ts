@@ -39,6 +39,13 @@ export type ResizeFit = "cover" | "contain" | "fill" | "inside" | "outside";
 
 // ─── Result Types ────────────────────────────────────────────────────────────
 
+/**
+ * Background colour used to flatten a transparent source when the caller has
+ * confirmed an output format that cannot store alpha. Left undefined for every
+ * other request, so a transparent image is never flattened by accident.
+ */
+export type FlattenBackground = string | undefined;
+
 export interface ImageProcessingResult {
   buffer: Buffer;
   density?: number;
@@ -114,11 +121,13 @@ export async function resizeToSpec({
   spec,
   format = "jpeg",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   spec: DimensionSpec;
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult & { geometry: ResolvedGeometry }> {
   const sharp = await getSharp();
   const meta = await sharp(inputBuffer).metadata();
@@ -146,10 +155,16 @@ export async function resizeToSpec({
     pipeline = pipeline.withMetadata({ density: geometry.dpi });
   }
 
-  let outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  let outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
 
   if (geometry.targetSizeKb) {
     const bounded = await compressImage({
+      flattenBackground,
       format,
       inputBuffer: outputBuffer,
       targetSizeKb: geometry.targetSizeKb,
@@ -215,6 +230,7 @@ export async function cropImage({
   height,
   format = "jpeg",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   left: number;
@@ -223,6 +239,7 @@ export async function cropImage({
   height: number;
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   const pipeline = sharp(inputBuffer).extract({
@@ -232,7 +249,12 @@ export async function cropImage({
     width: Math.round(width),
   });
 
-  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
   const meta = await sharp(outputBuffer).metadata();
 
   return {
@@ -258,12 +280,14 @@ export async function cropToAspect({
   mode = "center",
   format = "jpeg",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   aspectRatio: string | number;
   mode?: "center" | "top" | "bottom" | "attention" | "entropy";
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const ratio = parseAspectRatio(aspectRatio);
   if (ratio === null) {
@@ -301,7 +325,12 @@ export async function cropToAspect({
     position,
   });
 
-  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
   const outMeta = await sharp(outputBuffer).metadata();
 
   return {
@@ -323,22 +352,34 @@ export async function rotateImage({
   flipHorizontal = false,
   flipVertical = false,
   background = "#ffffff",
+  keepAlpha = false,
   format = "jpeg",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   degrees?: number;
   flipHorizontal?: boolean;
   flipVertical?: boolean;
   background?: string;
+  /**
+   * Rotating a cutout exposes corners the source never had. Sharp fills them with
+   * `background`, which defaults to opaque — so a 45° turn would paint four white
+   * wedges onto a transparent PNG. With this set the exposed area stays
+   * transparent instead.
+   */
+  keepAlpha?: boolean;
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   let pipeline = sharp(inputBuffer);
 
   if (degrees !== 0) {
-    pipeline = pipeline.rotate(degrees, { background });
+    pipeline = pipeline.rotate(degrees, {
+      background: keepAlpha ? { alpha: 0, b: 0, g: 0, r: 0 } : background,
+    });
   }
 
   if (flipHorizontal) {
@@ -349,7 +390,12 @@ export async function rotateImage({
     pipeline = pipeline.flip();
   }
 
-  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
   const meta = await sharp(outputBuffer).metadata();
 
   return {
@@ -373,11 +419,13 @@ export async function compressImage({
   targetSizeKb,
   quality = 80,
   format = "jpeg",
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   targetSizeKb?: number;
   quality?: number;
   format?: ImageFormat;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
 
@@ -394,7 +442,8 @@ export async function compressImage({
       const testBuffer = await applyFormat(
         sharp(inputBuffer),
         format,
-        mid
+        mid,
+        flattenBackground
       ).toBuffer();
 
       if (testBuffer.length <= targetBytes) {
@@ -408,7 +457,12 @@ export async function compressImage({
     let finalBuffer = bestBuffer;
     if (!finalBuffer) {
       // Even minimum quality exceeds target — return lowest quality output
-      finalBuffer = await applyFormat(sharp(inputBuffer), format, 5).toBuffer();
+      finalBuffer = await applyFormat(
+        sharp(inputBuffer),
+        format,
+        5,
+        flattenBackground
+      ).toBuffer();
     }
 
     const meta = await sharp(finalBuffer).metadata();
@@ -425,7 +479,8 @@ export async function compressImage({
   const outputBuffer = await applyFormat(
     sharp(inputBuffer),
     format,
-    quality
+    quality,
+    flattenBackground
   ).toBuffer();
   const meta = await sharp(outputBuffer).metadata();
 
@@ -445,16 +500,19 @@ export async function convertImage({
   inputBuffer,
   targetFormat,
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   targetFormat: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   const outputBuffer = await applyFormat(
     sharp(inputBuffer),
     targetFormat,
-    quality
+    quality,
+    flattenBackground
   ).toBuffer();
   const meta = await sharp(outputBuffer).metadata();
 
@@ -484,6 +542,7 @@ export async function upscaleToTarget({
   enhance = false,
   format = "jpeg",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   scale?: number;
@@ -494,6 +553,7 @@ export async function upscaleToTarget({
   enhance?: boolean;
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   const meta = await sharp(inputBuffer).metadata();
@@ -535,7 +595,12 @@ export async function upscaleToTarget({
     pipeline = pipeline.modulate({ brightness: 1.02, saturation: 1.05 });
   }
 
-  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
   const outMeta = await sharp(outputBuffer).metadata();
 
   return {
@@ -591,12 +656,14 @@ export async function pixelateImage({
   mode = "mosaic",
   format = "png",
   quality = 95,
+  flattenBackground,
 }: {
   inputBuffer: Buffer;
   blockSize?: number;
   mode?: "mosaic" | "blur";
   format?: ImageFormat;
   quality?: number;
+  flattenBackground?: FlattenBackground;
 }): Promise<ImageProcessingResult> {
   const sharp = await getSharp();
   const meta = await sharp(inputBuffer).metadata();
@@ -621,7 +688,12 @@ export async function pixelateImage({
     kernel: "nearest",
   });
 
-  const outputBuffer = await applyFormat(pipeline, format, quality).toBuffer();
+  const outputBuffer = await applyFormat(
+    pipeline,
+    format,
+    quality,
+    flattenBackground
+  ).toBuffer();
   const outMeta = await sharp(outputBuffer).metadata();
 
   return {
@@ -658,24 +730,36 @@ export async function getImageMetadata(
 
 /**
  * Apply output format and quality settings to a Sharp pipeline.
+ *
+ * `flattenBackground` is the colour a *transparent* source is composited onto
+ * before encoding. It matters because the encoders without an alpha channel
+ * (JPEG) do not merely drop the channel: the colour channels of a cutout still
+ * hold the pixels that were removed, so dropping alpha alone restores the old
+ * background. Flattening first is what makes "JPEG of a cutout" mean what a user
+ * expects — the subject on a solid colour.
  */
 function applyFormat(
   pipeline: Sharp,
   format: ImageFormat,
-  quality: number
+  quality: number,
+  flattenBackground?: FlattenBackground
 ): Sharp {
+  const prepared = flattenBackground
+    ? pipeline.flatten({ background: flattenBackground })
+    : pipeline;
+
   switch (format) {
     case "jpeg":
-      return pipeline.jpeg({ mozjpeg: true, quality });
+      return prepared.jpeg({ mozjpeg: true, quality });
     case "png":
-      return pipeline.png({ compressionLevel: 6, quality });
+      return prepared.png({ compressionLevel: 6, quality });
     case "webp":
-      return pipeline.webp({ quality });
+      return prepared.webp({ quality });
     case "avif":
-      return pipeline.avif({ quality });
+      return prepared.avif({ quality });
     case "tiff":
-      return pipeline.tiff({ quality });
+      return prepared.tiff({ quality });
     default:
-      return pipeline.jpeg({ quality });
+      return prepared.jpeg({ quality });
   }
 }

@@ -13,7 +13,6 @@ type HandleSpec = {
   cursor: string;
   key: CropHandle;
   label: string;
-  position: string;
 };
 
 /** Corner handles are the primary affordance, so they get the larger target. */
@@ -26,6 +25,9 @@ const BRACKET_THICKNESS = 3;
 // Bars straddle the frame line, hence the literal -1.5px offsets below
 // (half the thickness). Kept literal so Tailwind's scanner can see them.
 
+/** Radius of the solid grab knob drawn on each corner. */
+const CORNER_KNOB_PX = 7;
+
 /** Keeps white marks legible on white photos. */
 const KNOB_SHADOW = "shadow-[0_0_4px_rgba(0,0,0,0.6)]";
 
@@ -34,58 +36,63 @@ const HANDLES: HandleSpec[] = [
     cursor: "cursor-nwse-resize",
     key: "nw",
     label: "Resize from the top left",
-    position: "left-0 top-0",
   },
   {
     cursor: "cursor-nesw-resize",
     key: "ne",
     label: "Resize from the top right",
-    position: "right-0 top-0",
   },
   {
     cursor: "cursor-nwse-resize",
     key: "se",
     label: "Resize from the bottom right",
-    position: "bottom-0 right-0",
   },
   {
     cursor: "cursor-nesw-resize",
     key: "sw",
     label: "Resize from the bottom left",
-    position: "bottom-0 left-0",
   },
-  {
-    cursor: "cursor-ns-resize",
-    key: "n",
-    label: "Resize the top edge",
-    position: "left-1/2 top-0",
-  },
-  {
-    cursor: "cursor-ew-resize",
-    key: "e",
-    label: "Resize the right edge",
-    position: "right-0 top-1/2",
-  },
-  {
-    cursor: "cursor-ns-resize",
-    key: "s",
-    label: "Resize the bottom edge",
-    position: "bottom-0 left-1/2",
-  },
-  {
-    cursor: "cursor-ew-resize",
-    key: "w",
-    label: "Resize the left edge",
-    position: "left-0 top-1/2",
-  },
+  { cursor: "cursor-ns-resize", key: "n", label: "Resize the top edge" },
+  { cursor: "cursor-ew-resize", key: "e", label: "Resize the right edge" },
+  { cursor: "cursor-ns-resize", key: "s", label: "Resize the bottom edge" },
+  { cursor: "cursor-ew-resize", key: "w", label: "Resize the left edge" },
 ];
 
-const CORNER_BRACKETS: { key: string; position: string }[] = [
-  { key: "nw", position: "left-[-1.5px] top-[-1.5px]" },
-  { key: "ne", position: "right-[-1.5px] top-[-1.5px]" },
-  { key: "se", position: "bottom-[-1.5px] right-[-1.5px]" },
-  { key: "sw", position: "bottom-[-1.5px] left-[-1.5px]" },
-];
+/** Where each handle sits on the *crop box*, in percentage space. */
+function handleAnchor(box: CropBox, handle: CropHandle) {
+  const movesWest = handle.includes("w");
+  const movesEast = handle.includes("e");
+  const movesNorth = handle.includes("n");
+  const movesSouth = handle.includes("s");
+
+  const left = movesWest
+    ? box.x
+    : movesEast
+      ? box.x + box.width
+      : box.x + box.width / 2;
+  const top = movesNorth
+    ? box.y
+    : movesSouth
+      ? box.y + box.height
+      : box.y + box.height / 2;
+
+  return { left: `${left}%`, top: `${top}%` };
+}
+
+const CORNER_KEYS: CropHandle[] = ["nw", "ne", "se", "sw"];
+
+/** Corner brackets, straddling the frame line. */
+function cornerBracketStyle(handle: CropHandle) {
+  const movesWest = handle.includes("w");
+  const movesNorth = handle.includes("n");
+
+  return {
+    bottom: movesNorth ? undefined : "-1.5px",
+    left: movesWest ? "-1.5px" : undefined,
+    right: movesWest ? undefined : "-1.5px",
+    top: movesNorth ? "-1.5px" : undefined,
+  };
+}
 
 const boxStyle = (box: CropBox) => ({
   height: `${box.height}%`,
@@ -94,7 +101,7 @@ const boxStyle = (box: CropBox) => ({
   width: `${box.width}%`,
 });
 
-/** Visible mark for a handle: nothing on corners (brackets cover those). */
+/** Visible bar for an edge handle: the mark the finger aims for. */
 function edgeKnobStyle(handle: CropHandle) {
   return handle === "n" || handle === "s"
     ? { height: BRACKET_THICKNESS, width: 26 }
@@ -275,7 +282,7 @@ export const CropOverlay = memo(function InnerCropOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-20"
+      className="absolute inset-0 z-20 touch-none"
       onPointerCancel={endDrag}
       onPointerMove={handlePointerMove}
       onPointerUp={endDrag}
@@ -295,23 +302,29 @@ export const CropOverlay = memo(function InnerCropOverlay({
         </div>
 
         {/* Corner brackets, straddling the frame line. */}
-        {CORNER_BRACKETS.map((bracket) => (
-          <Fragment key={bracket.key}>
+        {CORNER_KEYS.map((key) => (
+          <Fragment key={key}>
             <span
               className={cn(
                 "pointer-events-none absolute rounded-full bg-white",
-                KNOB_SHADOW,
-                bracket.position
+                KNOB_SHADOW
               )}
-              style={{ height: BRACKET_THICKNESS, width: BRACKET_LENGTH }}
+              style={{
+                ...cornerBracketStyle(key),
+                height: BRACKET_THICKNESS,
+                width: BRACKET_LENGTH,
+              }}
             />
             <span
               className={cn(
                 "pointer-events-none absolute rounded-full bg-white",
-                KNOB_SHADOW,
-                bracket.position
+                KNOB_SHADOW
               )}
-              style={{ height: BRACKET_LENGTH, width: BRACKET_THICKNESS }}
+              style={{
+                ...cornerBracketStyle(key),
+                height: BRACKET_LENGTH,
+                width: BRACKET_THICKNESS,
+              }}
             />
           </Fragment>
         ))}
@@ -321,11 +334,13 @@ export const CropOverlay = memo(function InnerCropOverlay({
           <span
             className={cn(
               "pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white",
-              KNOB_SHADOW,
-              spec.position
+              KNOB_SHADOW
             )}
             key={spec.key}
-            style={edgeKnobStyle(spec.key)}
+            style={{
+              ...handleAnchor(box, spec.key),
+              ...edgeKnobStyle(spec.key),
+            }}
           />
         ))}
       </div>
@@ -343,6 +358,12 @@ export const CropOverlay = memo(function InnerCropOverlay({
         </div>
       ) : null}
 
+      {/*
+        One hit target per handle, anchored to the *crop box* — not to the image
+        frame. That is the whole point: the brackets the user sees are on the crop
+        frame, so a target parked on the image edge would leave the visible corner
+        inert and "resize" would land on the move handle underneath it instead.
+      */}
       {HANDLES.map((spec) => {
         const isCorner = spec.key.length === 2;
         const hit = (isCorner ? CORNER_HIT_PX : EDGE_HIT_PX) * hitScale;
@@ -354,15 +375,30 @@ export const CropOverlay = memo(function InnerCropOverlay({
             className={cn(
               "absolute z-30 flex touch-none items-center justify-center rounded-sm transition-colors",
               "-translate-x-1/2 -translate-y-1/2",
-              spec.position,
               spec.cursor,
               isActive && "bg-white/10"
             )}
             key={spec.key}
             onPointerDown={(event) => beginDrag(event, spec.key)}
-            style={{ height: `${hit}px`, width: `${hit}px` }}
+            style={{ ...handleAnchor(box, spec.key), height: hit, width: hit }}
             type="button"
-          />
+          >
+            {/* Solid knob so the grab point is obvious on a busy photo. */}
+            {isCorner ? (
+              <span
+                className={cn(
+                  "pointer-events-none rounded-full bg-white",
+                  KNOB_SHADOW,
+                  isActive && "scale-125"
+                )}
+                style={{
+                  height: CORNER_KNOB_PX,
+                  transition: "transform 120ms ease-out",
+                  width: CORNER_KNOB_PX,
+                }}
+              />
+            ) : null}
+          </button>
         );
       })}
     </div>

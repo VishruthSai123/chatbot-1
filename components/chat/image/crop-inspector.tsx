@@ -17,7 +17,10 @@ import {
   type CropBox,
   fullCropBox,
 } from "@/lib/image/crop-box";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
+import { useImageTransparency } from "./alpha-guard";
 
 interface CropInspectorProps {
   /** Parameters the model applied on the last image tool call; pre-fills the panel. */
@@ -58,6 +61,8 @@ export const CropInspector = memo(function InnerCropInspector({
   onRequireAuth,
   versionIndex,
 }: CropInspectorProps) {
+  const isTransparent = useImageTransparency(imageSrc);
+
   // Compute pixel dimensions
   const pixelLeft = Math.round((cropBox.x / 100) * naturalWidth);
   const pixelTop = Math.round((cropBox.y / 100) * naturalHeight);
@@ -153,24 +158,21 @@ export const CropInspector = memo(function InnerCropInspector({
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "crop",
-            documentId,
-            params: {
-              height: pixelHeight,
-              left: pixelLeft,
-              top: pixelTop,
-              width: pixelWidth,
-            },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "crop",
+          documentId,
+          params: {
+            height: pixelHeight,
+            left: pixelLeft,
+            top: pixelTop,
+            width: pixelWidth,
+          },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -226,10 +228,8 @@ export const CropInspector = memo(function InnerCropInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/jpeg;base64,${imageSrc}`;
-    link.download = `cropped-${Date.now()}.jpg`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName("cropped", imageSrc);
     link.click();
     toast.success("Download started");
   }, [imageSrc]);
@@ -267,9 +267,14 @@ export const CropInspector = memo(function InnerCropInspector({
           </div>
           {/* Touch guidance — the crop frame on the canvas is fully draggable */}
           <p className="text-[11px] leading-relaxed text-muted-foreground md:hidden">
-            Drag a corner or edge to resize, drag inside the box to move it, and
-            pinch outside the box to zoom.
+            Drag a corner or edge to resize, drag inside the box to move it. Use
+            the zoom control above to fine-tune.
           </p>
+          {isTransparent ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Transparent PNG detected — cropping keeps the alpha channel.
+            </p>
+          ) : null}
         </div>
 
         {/* Crop Boundary Telemetry */}

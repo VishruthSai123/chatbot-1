@@ -3,7 +3,10 @@
 import { Download, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
+import { useAlphaGuard, useImageTransparency } from "./alpha-guard";
 
 type OutputFormat = "jpeg" | "png" | "webp";
 
@@ -78,7 +81,18 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
   const [scale, setScale] = useState<2 | 4>(2);
   const [sharpen, setSharpen] = useState<boolean>(true);
   const [enhance, setEnhance] = useState<boolean>(false);
-  const [format, setFormat] = useState<OutputFormat>("jpeg");
+  const [format, setFormat] = useState<OutputFormat>("png");
+
+  const isTransparent = useImageTransparency(imageSrc);
+  const { alphaDialog, confirmAlphaLoss } = useAlphaGuard(imageSrc);
+
+  // Never default an upscale of a cutout to JPEG: that would fill the transparent
+  // area with white and throw the cutout away.
+  useEffect(() => {
+    if (isTransparent) {
+      setFormat("png");
+    }
+  }, [isTransparent]);
 
   // Pre-fill from the values the model applied via chat, when present.
   useEffect(() => {
@@ -111,22 +125,25 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
     if (isProcessing) {
       return;
     }
+
+    if (!(await confirmAlphaLoss(format))) {
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "upscale",
-            documentId,
-            params: { enhance, format, quality: 95, scale, sharpen },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "upscale",
+          documentId,
+          flattenAlpha: isTransparent && format === "jpeg",
+          params: { enhance, format, quality: 95, scale, sharpen },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -151,7 +168,9 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
       if (data.result?.base64) {
         onUpdateImage(data.result.base64, Boolean(data.persisted));
         toast.success(
-          `Upscaled ${scale}x to ${data.result.width}×${data.result.height} px`
+          data.transparencyPreserved
+            ? `Upscaled ${scale}x to ${data.result.width}×${data.result.height} px as a transparent PNG`
+            : `Upscaled ${scale}x to ${data.result.width}×${data.result.height} px`
         );
       }
     } catch (err: any) {
@@ -172,6 +191,8 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
     format,
     onUpdateImage,
     versionIndex,
+    confirmAlphaLoss,
+    isTransparent,
   ]);
 
   const handleDownload = useCallback(() => {
@@ -179,14 +200,11 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/${format};base64,${imageSrc}`;
-    const ext = format === "jpeg" ? "jpg" : format;
-    link.download = `upscaled-${Date.now()}.${ext}`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName("upscaled", imageSrc);
     link.click();
     toast.success("Download started");
-  }, [imageSrc, format]);
+  }, [imageSrc]);
 
   return (
     <div className="flex h-full flex-col justify-between p-3.5 space-y-3.5 text-xs select-none">
@@ -255,6 +273,12 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
               </button>
             ))}
           </div>
+          {isTransparent ? (
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              This image has a transparent background. PNG and WebP keep it;
+              JPEG would fill it with white.
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -287,6 +311,8 @@ export const UpscalerInspector = memo(function InnerUpscalerInspector({
           <span>Download Photo</span>
         </button>
       </div>
+
+      {alphaDialog}
     </div>
   );
 });

@@ -10,6 +10,7 @@ import {
 } from "@/lib/image/alpha";
 import { segmentImage } from "@/lib/image/background-removal";
 import { decodeBase64Image } from "@/lib/image/base64";
+import { formatSupportsAlpha, resolveAlphaFormat } from "@/lib/image/formats";
 import {
   compressImage,
   convertImage,
@@ -46,8 +47,52 @@ export type ImageFallbackContext = {
   userId?: string;
 };
 
+/**
+ * Caller-level overrides for a single operation. `flattenAlpha` is the only way a
+ * transparent image is ever flattened onto a solid colour, and the studio only
+ * sets it after the user answered its confirmation dialog.
+ */
+export type ImageExecutionOptions = {
+  flattenAlpha?: boolean;
+};
+
 /** Colour channels in the decoded base image a matte is joined onto. */
 const RGB_CHANNELS = 3;
+
+/** Whether a decoded image carries an alpha channel. Never throws. */
+async function imageHasAlpha(buffer: Buffer): Promise<boolean> {
+  try {
+    const meta = await getImageMetadata(buffer);
+    return meta.hasAlpha;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Picks the encoder an operation writes, protecting transparency.
+ *
+ * JPEG cannot store an alpha channel, and re-encoding a cutout to JPEG does not
+ * merely lose the transparency — the colour channels still hold the pixels the
+ * background remover cut away, so the removed background comes straight back.
+ * Transparency therefore wins over the requested format unless the caller
+ * explicitly confirmed flattening, which composites onto white first.
+ */
+async function resolveOutputFormat(
+  buffer: Buffer,
+  requested: ImageFormat,
+  options?: ImageExecutionOptions
+) {
+  if (requested !== "jpeg") {
+    return { format: requested };
+  }
+
+  return resolveAlphaFormat({
+    flattenAlpha: options?.flattenAlpha,
+    hasAlpha: await imageHasAlpha(buffer),
+    requested,
+  });
+}
 
 /**
  * Extracts a Supabase storage key from an artifact URL, path, or signed URL.
@@ -457,11 +502,18 @@ function formatResult(
 export async function executeResize(
   input: string | Buffer,
   params: ResizeInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "jpeg",
+    options
+  );
   const result = await resizeToSpec({
-    format: params.format ?? "jpeg",
+    flattenBackground,
+    format,
     inputBuffer: buffer,
     quality: params.quality ?? 95,
     spec: {
@@ -589,16 +641,22 @@ export async function executeRemoveBg(
 export async function executeCrop(
   input: string | Buffer,
   params: CropInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
-  const format = params.format ?? "jpeg";
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "jpeg",
+    options
+  );
   const quality = params.quality ?? 95;
 
   let result: Awaited<ReturnType<typeof cropImage>>;
   if (params.aspectRatio) {
     result = await cropToAspect({
       aspectRatio: params.aspectRatio,
+      flattenBackground,
       format,
       inputBuffer: buffer,
       mode: params.mode ?? "center",
@@ -607,6 +665,7 @@ export async function executeCrop(
   } else {
     const { height = 0, left = 0, top = 0, width = 0 } = params;
     result = await cropImage({
+      flattenBackground,
       format,
       height,
       inputBuffer: buffer,
@@ -631,16 +690,26 @@ export async function executeCrop(
 export async function executeRotate(
   input: string | Buffer,
   params: RotateInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "jpeg",
+    options
+  );
   const result = await rotateImage({
     background: params.background ?? "#ffffff",
     degrees: params.degrees ?? 0,
+    flattenBackground,
     flipHorizontal: params.flipHorizontal ?? false,
     flipVertical: params.flipVertical ?? false,
-    format: params.format ?? "jpeg",
+    format,
     inputBuffer: buffer,
+    // Only meaningful when the output can store alpha: a rotated cutout should
+    // show transparent corners, not four opaque wedges.
+    keepAlpha: formatSupportsAlpha(format) && (await imageHasAlpha(buffer)),
     quality: params.quality ?? 95,
   });
 
@@ -658,11 +727,18 @@ export async function executeRotate(
 export async function executeCompress(
   input: string | Buffer,
   params: CompressInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "jpeg",
+    options
+  );
   const result = await compressImage({
-    format: params.format ?? "jpeg",
+    flattenBackground,
+    format,
     inputBuffer: buffer,
     quality: params.quality ?? 80,
     targetSizeKb: params.targetSizeKb,
@@ -682,13 +758,20 @@ export async function executeCompress(
 export async function executeConvert(
   input: string | Buffer,
   params: ConvertInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.targetFormat,
+    options
+  );
   const result = await convertImage({
+    flattenBackground,
     inputBuffer: buffer,
     quality: params.quality,
-    targetFormat: params.targetFormat,
+    targetFormat: format,
   });
 
   return formatResult(
@@ -705,12 +788,19 @@ export async function executeConvert(
 export async function executeUpscaleEnhance(
   input: string | Buffer,
   params: UpscaleInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "jpeg",
+    options
+  );
   const result = await upscaleToTarget({
     enhance: params.enhance,
-    format: params.format,
+    flattenBackground,
+    format,
     inputBuffer: buffer,
     maxLongEdge: params.maxLongEdge,
     quality: params.quality,
@@ -734,12 +824,19 @@ export async function executeUpscaleEnhance(
 export async function executePixelate(
   input: string | Buffer,
   params: PixelateInput,
-  fallbackContext?: ImageFallbackContext
+  fallbackContext?: ImageFallbackContext,
+  options?: ImageExecutionOptions
 ): Promise<ImageOperationResult> {
   const { buffer } = await parseImageInput(input, fallbackContext);
+  const { flattenBackground, format } = await resolveOutputFormat(
+    buffer,
+    params.format ?? "png",
+    options
+  );
   const result = await pixelateImage({
     blockSize: params.blockSize,
-    format: params.format,
+    flattenBackground,
+    format,
     inputBuffer: buffer,
     mode: params.mode,
     quality: params.quality,

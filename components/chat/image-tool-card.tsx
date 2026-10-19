@@ -15,6 +15,7 @@ import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
 import type { Document } from "@/lib/db/schema";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { cn, fetcher } from "@/lib/utils";
 
 export type ImageToolType =
@@ -27,6 +28,7 @@ export type ImageToolType =
   | "tool-imageConvert"
   | "tool-imageUpscaleEnhance"
   | "tool-imagePixelate"
+  | "tool-imageRotate"
   | "tool-imageOcr";
 
 interface ImageToolCardProps {
@@ -100,6 +102,11 @@ const TOOL_CONFIG: Record<
     icon: "📐",
     label: "Resize Photo",
     mode: "resize",
+  },
+  "tool-imageRotate": {
+    icon: "🔄",
+    label: "Rotate & Flip",
+    mode: "rotate",
   },
   "tool-imageUpscaleEnhance": {
     icon: "🔬",
@@ -232,22 +239,13 @@ export function ImageToolCard({
         return;
       }
 
-      const fmt = (output?.format || "").toLowerCase();
-      const isPng =
-        fmt === "png" ||
-        config.mode === "remove_bg" ||
-        config.mode === "pixelate";
-      const mime = isPng ? "image/png" : fmt ? `image/${fmt}` : "image/jpeg";
-      const ext = isPng ? "png" : fmt || "jpg";
       const link = window.document.createElement("a");
-      link.href = imageBase64.startsWith("data:")
-        ? imageBase64
-        : `data:${mime};base64,${imageBase64}`;
-      link.download = `${config.mode}-${Date.now()}.${ext}`;
+      link.href = imageSrcToDataUrl(imageBase64);
+      link.download = imageDownloadName(config.mode, imageBase64);
       link.click();
       toast.success("Download started");
     },
-    [imageBase64, config.mode, output?.format]
+    [imageBase64, config.mode]
   );
 
   const handleCopyOcr = useCallback(async () => {
@@ -297,11 +295,7 @@ export function ImageToolCard({
             <img
               alt={config.label}
               className="size-full object-cover"
-              src={
-                imageBase64.startsWith("data:")
-                  ? imageBase64
-                  : `data:image/png;base64,${imageBase64}`
-              }
+              src={imageSrcToDataUrl(imageBase64)}
             />
           ) : (
             <div className="flex size-full items-center justify-center text-xs text-muted-foreground animate-pulse">

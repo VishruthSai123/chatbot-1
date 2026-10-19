@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
 
 interface BackgroundRemovalInspectorProps {
@@ -94,25 +96,22 @@ export const BackgroundRemovalInspector = memo(
       setIsProcessing(true);
 
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-          {
-            body: JSON.stringify({
-              action: "remove_bg",
-              documentId,
-              params: {
-                autoTrim,
-                color: bgColor,
-                edgeSmoothing,
-                mode: bgMode,
-                quality: 95,
-              },
-              versionIndex,
-            }),
-            headers: { "Content-Type": "application/json" },
-            method: "POST",
-          }
-        );
+        const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+          body: JSON.stringify({
+            action: "remove_bg",
+            documentId,
+            params: {
+              autoTrim,
+              color: bgColor,
+              edgeSmoothing,
+              mode: bgMode,
+              quality: 95,
+            },
+            versionIndex,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
 
         if (!response.ok) {
           if (response.status === 403) {
@@ -146,7 +145,7 @@ export const BackgroundRemovalInspector = memo(
           toast.success(
             bgMode === "solid_color"
               ? `Background replaced with ${bgColor}${framing}${dimensions}`
-              : `Background removed with transparent alpha cutout${framing}${dimensions}`
+              : `Background removed — saved as a transparent PNG${framing}${dimensions}`
           );
         }
       } catch (err: any) {
@@ -173,12 +172,12 @@ export const BackgroundRemovalInspector = memo(
       if (!imageSrc) {
         return;
       }
-      const isPng = bgMode === "transparent";
+      // The removal result is a PNG with an alpha channel, but this inspector also
+      // shows whatever version is on screen, so the extension follows the bytes
+      // rather than the currently selected mode.
       const link = document.createElement("a");
-      link.href = imageSrc.startsWith("data:")
-        ? imageSrc
-        : `data:image/${isPng ? "png" : "jpeg"};base64,${imageSrc}`;
-      link.download = `bg-${bgMode}-${Date.now()}.${isPng ? "png" : "jpg"}`;
+      link.href = imageSrcToDataUrl(imageSrc);
+      link.download = imageDownloadName(`bg-${bgMode}`, imageSrc);
       link.click();
       toast.success("Download started");
     }, [imageSrc, bgMode]);

@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
+import { useAlphaGuard, useImageTransparency } from "./alpha-guard";
 
 interface CompressionInspectorProps {
   /** Parameters the model applied on the last image tool call; pre-fills the panel. */
@@ -44,8 +47,20 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
 }: CompressionInspectorProps) {
   const [targetKb, setTargetKb] = useState<number | null>(50);
   const [quality, setQuality] = useState<number>(75);
-  const [format, setFormat] = useState<"jpeg" | "webp">("jpeg");
+  const [format, setFormat] = useState<"jpeg" | "webp">("webp");
   const [customKbInput, setCustomKbInput] = useState<string>("");
+
+  const isTransparent = useImageTransparency(imageSrc);
+  const { alphaDialog, confirmAlphaLoss } = useAlphaGuard(imageSrc);
+
+  // A cutout should never default to an encoder without an alpha channel: JPEG
+  // would not just lose the transparency, it would put the removed background back.
+  // An explicit JPEG choice from the user still goes through the confirmation.
+  useEffect(() => {
+    if (isTransparent) {
+      setFormat("webp");
+    }
+  }, [isTransparent]);
 
   // Pre-fill from the values the model applied via chat, when present.
   useEffect(() => {
@@ -90,26 +105,31 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     if (isProcessing) {
       return;
     }
+
+    // Asked before the spinner starts, so a cancelled confirmation does not flash
+    // "Compressing..." first.
+    if (!(await confirmAlphaLoss(format))) {
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "compress",
-            documentId,
-            params: {
-              format,
-              quality,
-              targetSizeKb: targetKb || undefined,
-            },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "compress",
+          documentId,
+          flattenAlpha: isTransparent && format === "jpeg",
+          params: {
+            format,
+            quality,
+            targetSizeKb: targetKb || undefined,
+          },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -135,7 +155,11 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
       if (data.result?.base64) {
         onUpdateImage(data.result.base64, Boolean(data.persisted));
         const finalKb = Math.round(data.result.sizeBytes / 1024);
-        toast.success(`Compressed photo to ${finalKb} KB`);
+        toast.success(
+          data.transparencyPreserved
+            ? `Compressed to ${finalKb} KB as a transparent PNG — JPEG cannot store transparency`
+            : `Compressed photo to ${finalKb} KB`
+        );
       }
     } catch (err: any) {
       console.error(err);
@@ -154,6 +178,8 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     format,
     onUpdateImage,
     versionIndex,
+    confirmAlphaLoss,
+    isTransparent,
   ]);
 
   const handleDownload = useCallback(() => {
@@ -161,13 +187,11 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/${format};base64,${imageSrc}`;
-    link.download = `compressed-${Date.now()}.${format === "webp" ? "webp" : "jpg"}`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName("compressed", imageSrc);
     link.click();
     toast.success("Download started");
-  }, [imageSrc, format]);
+  }, [imageSrc]);
 
   const savingsPct =
     approxOriginalKb > 0 && approxOriginalKb > approxCurrentKb
@@ -308,6 +332,12 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
               WebP
             </button>
           </div>
+          {isTransparent ? (
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              This image has a transparent background. WebP keeps it; JPEG would
+              fill it with white.
+            </p>
+          ) : null}
         </div>
 
         {/* Before / After Slider Toggle */}
@@ -360,6 +390,8 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
           <span>Download Photo</span>
         </button>
       </div>
+
+      {alphaDialog}
     </div>
   );
 });

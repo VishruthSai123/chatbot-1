@@ -3,7 +3,11 @@
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { formatSupportsAlpha } from "@/lib/image/formats";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
+import { useAlphaGuard, useImageTransparency } from "./alpha-guard";
 
 const FORMAT_OPTIONS = ["jpeg", "png", "webp", "avif", "tiff"] as const;
 type OutputFormat = (typeof FORMAT_OPTIONS)[number];
@@ -36,6 +40,9 @@ export const ConverterInspector = memo(function InnerConverterInspector({
   const [targetFormat, setTargetFormat] = useState<OutputFormat>("webp");
   const [quality, setQuality] = useState<number>(90);
 
+  const isTransparent = useImageTransparency(imageSrc);
+  const { alphaDialog, confirmAlphaLoss } = useAlphaGuard(imageSrc);
+
   // Pre-fill from the values the model applied via chat, when present.
   useEffect(() => {
     if (!appliedParams) {
@@ -67,22 +74,25 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     if (isProcessing) {
       return;
     }
+
+    if (!(await confirmAlphaLoss(targetFormat))) {
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "convert",
-            documentId,
-            params: { quality, targetFormat },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "convert",
+          documentId,
+          flattenAlpha: isTransparent && targetFormat === "jpeg",
+          params: { quality, targetFormat },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {
@@ -106,10 +116,13 @@ export const ConverterInspector = memo(function InnerConverterInspector({
       const data = await response.json();
       if (data.result?.base64) {
         onUpdateImage(data.result.base64, Boolean(data.persisted));
+        const finalFormat = (data.result.format ?? targetFormat).toUpperCase();
         toast.success(
-          `Converted to ${targetFormat.toUpperCase()} (${Math.round(
-            data.result.sizeBytes / 1024
-          )} KB)`
+          data.transparencyPreserved
+            ? `Converted to ${finalFormat} — kept transparent, since JPEG has no alpha channel`
+            : `Converted to ${finalFormat} (${Math.round(
+                data.result.sizeBytes / 1024
+              )} KB)`
         );
       }
     } catch (err: any) {
@@ -128,6 +141,8 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     targetFormat,
     onUpdateImage,
     versionIndex,
+    confirmAlphaLoss,
+    isTransparent,
   ]);
 
   const handleDownload = useCallback(() => {
@@ -135,14 +150,11 @@ export const ConverterInspector = memo(function InnerConverterInspector({
       return;
     }
     const link = document.createElement("a");
-    link.href = imageSrc.startsWith("data:")
-      ? imageSrc
-      : `data:image/${targetFormat};base64,${imageSrc}`;
-    const ext = targetFormat === "jpeg" ? "jpg" : targetFormat;
-    link.download = `converted-${Date.now()}.${ext}`;
+    link.href = imageSrcToDataUrl(imageSrc);
+    link.download = imageDownloadName("converted", imageSrc);
     link.click();
     toast.success("Download started");
-  }, [imageSrc, targetFormat]);
+  }, [imageSrc]);
 
   const lossy = targetFormat !== "png";
 
@@ -204,6 +216,14 @@ export const ConverterInspector = memo(function InnerConverterInspector({
             PNG is lossless — transparency is preserved automatically.
           </p>
         )}
+
+        {isTransparent ? (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {formatSupportsAlpha(targetFormat)
+              ? `This image has a transparent background, and ${targetFormat.toUpperCase()} keeps it.`
+              : "This image has a transparent background — JPEG would fill it with white."}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2 pt-2.5 border-t border-border/50">
@@ -235,6 +255,8 @@ export const ConverterInspector = memo(function InnerConverterInspector({
           <span>Download Photo</span>
         </button>
       </div>
+
+      {alphaDialog}
     </div>
   );
 });

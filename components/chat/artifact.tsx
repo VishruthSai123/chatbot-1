@@ -44,6 +44,7 @@ export type ImageToolMode =
   | "convert"
   | "upscale"
   | "pixelate"
+  | "rotate"
   | "ocr";
 
 export type UIArtifact = {
@@ -142,18 +143,45 @@ function PureArtifact({
     el.scrollTo({ top: el.scrollHeight });
   }, [artifact.status]);
 
+  // Which head the cursor has already been synced to. `documents` is re-fetched on
+  // focus/reconnect as well as after an edit, so this keeps the sync idempotent:
+  // only a head that actually changed moves the cursor. Without it, a background
+  // revalidation drags a user who stepped back with Undo to the newest version —
+  // the image appears to reload by itself, and the section they were editing is
+  // silently swapped out from under them.
+  const syncedHeadRef = useRef<{ content: string; count: number } | null>(null);
+
   useEffect(() => {
     if (documents && documents.length > 0) {
       const mostRecentDocument = documents.at(-1);
 
       if (mostRecentDocument) {
         setDocument(mostRecentDocument);
-        setCurrentVersionIndex(documents.length - 1);
+
+        const headContent = mostRecentDocument.content ?? "";
+        const previousHead = syncedHeadRef.current;
+        const headIsNew =
+          !previousHead ||
+          previousHead.count !== documents.length ||
+          previousHead.content !== headContent;
+
+        syncedHeadRef.current = {
+          content: headContent,
+          count: documents.length,
+        };
+
+        setCurrentVersionIndex((index) =>
+          headIsNew
+            ? documents.length - 1
+            : Math.min(Math.max(index, 0), documents.length - 1)
+        );
+
         if (artifact.status === "streaming" || !isContentDirty) {
-          setArtifact((currentArtifact) => ({
-            ...currentArtifact,
-            content: mostRecentDocument.content ?? "",
-          }));
+          setArtifact((currentArtifact) =>
+            currentArtifact.content === headContent
+              ? currentArtifact
+              : { ...currentArtifact, content: headContent }
+          );
         }
       }
     }
@@ -536,7 +564,7 @@ function PureArtifact({
           x: 0,
           y: 0,
         }}
-        className="fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-sidebar"
+        className="fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden overscroll-none bg-sidebar"
         data-testid="artifact"
         exit={{ opacity: 0, scale: 0.95 }}
         initial={{

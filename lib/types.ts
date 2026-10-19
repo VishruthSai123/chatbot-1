@@ -12,6 +12,7 @@ import type {
   imagePixelate,
   imageRemoveBg,
   imageResize,
+  imageRotate,
   imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
 import type { requestSuggestions } from "./ai/tools/request-suggestions";
@@ -39,6 +40,7 @@ type imageUpscaleEnhanceTool = InferUITool<
   ReturnType<typeof imageUpscaleEnhance>
 >;
 type imagePixelateTool = InferUITool<ReturnType<typeof imagePixelate>>;
+type imageRotateTool = InferUITool<ReturnType<typeof imageRotate>>;
 type imageOcrTool = InferUITool<ReturnType<typeof imageOcr>>;
 type imageListPresetsTool = InferUITool<ReturnType<typeof imageListPresets>>;
 
@@ -54,6 +56,7 @@ export type ChatTools = {
   imageConvert: imageConvertTool;
   imageUpscaleEnhance: imageUpscaleEnhanceTool;
   imagePixelate: imagePixelateTool;
+  imageRotate: imageRotateTool;
   imageOcr: imageOcrTool;
   imageListPresets: imageListPresetsTool;
 };

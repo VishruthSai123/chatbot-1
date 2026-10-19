@@ -358,6 +358,7 @@ const PurePreviewMessage = ({
       "tool-imageRemoveBg": "Remove Background",
       "tool-imageResize": "Resize Photo",
       "tool-imageResizePhysical": "Resize Photo",
+      "tool-imageRotate": "Rotate & Flip",
       "tool-imageUpscaleEnhance": "Upscale & Enhance",
     };
 

@@ -164,6 +164,18 @@
 }
 
 @layer base {
+  /*
+   * The app shell is a fixed-height, fully scrolled UI, so the document itself has
+   * nothing to scroll. Without this, a downward drag anywhere that is not already
+   * a scroll container — a pan across the image studio, a pinch, a swipe on the
+   * canvas — chains to the document and the browser reads it as pull-to-refresh,
+   * reloading the page and taking the open artifact with it.
+   */
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
   body {
     position: relative;
     overflow-x: hidden;

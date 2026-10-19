@@ -18,6 +18,7 @@ import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
 import { aspectRatioInPercent, type CropBox } from "@/lib/image/crop-box";
+import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
 import { cn } from "@/lib/utils";
 import { BeforeAfterSlider } from "../before-after-slider";
@@ -29,6 +30,7 @@ import { CropOverlay, CropShade } from "./crop-overlay";
 import { OcrInspector } from "./ocr-inspector";
 import { PixelatorInspector } from "./pixelator-inspector";
 import { ResizerInspector } from "./resizer-inspector";
+import { RotatorInspector } from "./rotator-inspector";
 import { UpscalerInspector } from "./upscaler-inspector";
 
 interface ImageWorkbenchProps {
@@ -58,6 +60,7 @@ const TOOL_MODES: {
   { icon: "🔁", key: "convert", label: "Convert" },
   { icon: "🔬", key: "upscale", label: "Upscale" },
   { icon: "🟦", key: "pixelate", label: "Pixelate" },
+  { icon: "🔄", key: "rotate", label: "Rotate" },
   { icon: "🔎", key: "ocr", label: "OCR" },
 ];
 
@@ -173,19 +176,15 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     }
   }, [content, originalBase64]);
 
-  const formatSrc = useCallback((str: string | null) => {
-    if (!str) {
-      return "";
-    }
-    if (
-      str.startsWith("http://") ||
-      str.startsWith("https://") ||
-      str.startsWith("data:")
-    ) {
-      return str;
-    }
-    return `data:image/png;base64,${str}`;
-  }, []);
+  /**
+   * Stored images are bare base64 with no declared type, so the data URL is built
+   * from the bytes. Assuming PNG here would show a JPEG cutout, a WebP compression
+   * result and an AVIF conversion all as the wrong type.
+   */
+  const formatSrc = useCallback(
+    (str: string | null) => imageSrcToDataUrl(str ?? ""),
+    []
+  );
 
   // Measure natural dimensions
   useEffect(() => {
@@ -220,8 +219,22 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const touchStartZoomRef = useRef<number>(1);
   const lastTapRef = useRef<number>(0);
 
+  const isCropping = activeToolMode === "crop";
+
+  /**
+   * While the crop frame is up, the canvas gestures stand down.
+   *
+   * A double tap would otherwise zoom to 200% on the second tap of an ordinary
+   * two-tap adjustment, and a pinch mid-drag changes the zoom the crop maths was
+   * measured against, which makes the frame jump under the finger. Cropping is a
+   * precision gesture; the zoom pill and Fit button still work.
+   */
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
+      if (isCropping) {
+        return;
+      }
+
       if (e.touches.length === 2) {
         const dist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
@@ -238,23 +251,30 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         lastTapRef.current = now;
       }
     },
-    [zoom]
+    [isCropping, zoom]
   );
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && touchStartDistRef.current !== null) {
-      const currentDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const ratio = currentDist / touchStartDistRef.current;
-      const nextZoom = Math.max(
-        0.5,
-        Math.min(3, touchStartZoomRef.current * ratio)
-      );
-      setZoom(Number(nextZoom.toFixed(2)));
-    }
-  }, []);
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (isCropping) {
+        return;
+      }
+
+      if (e.touches.length === 2 && touchStartDistRef.current !== null) {
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const ratio = currentDist / touchStartDistRef.current;
+        const nextZoom = Math.max(
+          0.5,
+          Math.min(3, touchStartZoomRef.current * ratio)
+        );
+        setZoom(Number(nextZoom.toFixed(2)));
+      }
+    },
+    [isCropping]
+  );
 
   const handleTouchEnd = useCallback(() => {
     touchStartDistRef.current = null;
@@ -269,8 +289,6 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   });
   const [selectedAspect, setSelectedAspect] = useState<string>("free");
   const imageContainerRef = useRef<HTMLDivElement>(null);
-
-  const isCropping = activeToolMode === "crop";
 
   /**
    * Locked aspect translated into percentage space, so dragging a handle keeps
@@ -322,7 +340,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     }
     const link = document.createElement("a");
     link.href = formatSrc(currentBase64);
-    link.download = `superiorai-image-${Date.now()}.png`;
+    link.download = imageDownloadName("superiorai-image", currentBase64);
     link.click();
     toast.success("Download started!");
   }, [currentBase64, formatSrc]);
@@ -346,7 +364,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const activeToolObj = TOOL_MODES.find((m) => m.key === activeToolMode);
 
   return (
-    <div className="flex h-full w-full flex-col bg-background text-foreground overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden overscroll-none bg-background text-foreground">
       {/* ─── Unified Studio Header: identity + actions (tools live in row 2) ─── */}
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/20 px-3 backdrop-blur-sm">
         {/* Left: Close Button + Title + Version + Dimensions */}
@@ -513,7 +531,11 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
         {/* Left: Focused Image Canvas Area */}
         <div
           className={cn(
-            "relative flex min-h-[220px] flex-1 items-center justify-center overflow-auto bg-zinc-950/40 p-4",
+            // `overscroll-contain` keeps a pan or pinch that reaches the edge of
+            // this box from chaining to the document, where the browser would read
+            // it as pull-to-refresh and reload the whole studio out from under the
+            // user mid-edit.
+            "relative flex min-h-[220px] flex-1 items-center justify-center overflow-auto overscroll-contain bg-zinc-950/40 p-4",
             // Reserve the space the mobile bottom sheet covers so the whole crop
             // area stays visible and draggable while cropping.
             isCropping && isInspectorOpen && "pb-[56vh] md:pb-4"
@@ -811,6 +833,20 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
 
             {activeToolMode === "pixelate" && (
               <PixelatorInspector
+                appliedParams={artifact.toolParams}
+                documentId={documentId || artifact.documentId}
+                imageSrc={currentBase64}
+                isGuest={isGuest}
+                isProcessing={isProcessing}
+                onRequireAuth={() => setShowAuthModal(true)}
+                onUpdateImage={handleUpdateImage}
+                setIsProcessing={setIsProcessing}
+                versionIndex={currentVersionIndex}
+              />
+            )}
+
+            {activeToolMode === "rotate" && (
+              <RotatorInspector
                 appliedParams={artifact.toolParams}
                 documentId={documentId || artifact.documentId}
                 imageSrc={currentBase64}

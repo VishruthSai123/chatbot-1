@@ -3,6 +3,7 @@
 import { Copy, FileText, Loader2, ScanText } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 
 interface OcrInspectorProps {
   /** Parameters the model applied on the last image tool call; pre-fills the panel. */
@@ -47,19 +48,16 @@ export const OcrInspector = memo(function InnerOcrInspector({
     setIsProcessing(true);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/tools/image`,
-        {
-          body: JSON.stringify({
-            action: "ocr",
-            documentId,
-            params: { format: "markdown" },
-            versionIndex,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        }
-      );
+      const response = await fetch(IMAGE_TOOL_ENDPOINT, {
+        body: JSON.stringify({
+          action: "ocr",
+          documentId,
+          params: { format: "markdown" },
+          versionIndex,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
 
       if (!response.ok) {
         if (response.status === 403) {

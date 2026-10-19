@@ -23,6 +23,7 @@ import {
   executePixelate,
   executeRemoveBg,
   executeResize,
+  executeRotate,
   executeUpscaleEnhance,
 } from "@/lib/tools/image";
 import type { ChatMessage } from "@/lib/types";
@@ -773,7 +774,7 @@ export const imageRemoveBg = ({
 }: ImageToolsProps) =>
   tool({
     description:
-      "Remove the background of an image using native on-device neural segmentation. Returns a transparent alpha PNG, or composites onto a solid passport-compliant colour after edge colour decontamination. Can auto-crop to the subject.",
+      "Remove the background of an image using native on-device neural segmentation. Returns a transparent alpha PNG, or composites onto a solid passport-compliant colour after edge colour decontamination. Can auto-crop to the subject. The transparent result is always written as a PNG, and later edits keep the alpha channel: if a requested format cannot store transparency (JPEG), the output falls back to PNG.",
     execute: async ({
       id,
       imageUrl,
@@ -929,7 +930,7 @@ export const imageCrop = ({
 }: ImageToolsProps) =>
   tool({
     description:
-      "Crop an image. Either crop to an aspect ratio (e.g. '1:1', '16:9', '7:9') anchored by mode ('center', 'top', 'bottom', or 'attention' for smart framing), or to explicit pixel coordinates (left, top, width, height).",
+      "Crop an image. Either crop to an aspect ratio (e.g. '1:1', '16:9', '7:9') anchored by mode ('center', 'top', 'bottom', or 'attention' for smart framing), or to explicit pixel coordinates (left, top, width, height). A transparent image keeps its alpha channel.",
     execute: async ({
       id,
       imageUrl,
@@ -1091,6 +1092,147 @@ export const imageCrop = ({
     }),
   });
 
+export const imageRotate = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+  activeImage,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Rotate and/or flip an image. Accepts any angle in degrees (90/180/270 are exact; arbitrary angles expose corners, filled with 'background' unless the source is transparent). Also flips horizontally or vertically. A transparent image keeps its alpha channel, including transparent corners.",
+    execute: async ({
+      id,
+      imageUrl,
+      degrees = 0,
+      flipHorizontal = false,
+      flipVertical = false,
+      background = "#ffffff",
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Image rotation is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        let resolved: { source: string; documentId: string; title: string };
+        try {
+          resolved = await resolveImageSource(
+            session,
+            id ?? activeImage?.documentId,
+            imageUrl,
+            chatId,
+            messages,
+            activeImage?.versionIndex
+          );
+        } catch (err: any) {
+          return { error: err.message };
+        }
+
+        const validDocId = isValidUUID(resolved.documentId)
+          ? resolved.documentId
+          : generateUUID();
+
+        const result = await executeRotate(
+          resolved.source,
+          { background, degrees, flipHorizontal, flipVertical },
+          {
+            chatId,
+            documentId: validDocId,
+            userId: session.user?.id as string,
+          }
+        );
+
+        activeImageRegistry.setActiveImage({
+          base64: result.base64,
+          chatId,
+          documentId: validDocId,
+          title: resolved.title,
+          userId: session.user?.id as string,
+        });
+
+        try {
+          await saveDocument({
+            content: result.base64,
+            id: validDocId,
+            kind: "image",
+            title: resolved.title,
+            userId: session.user?.id as string,
+          });
+        } catch (dbErr) {
+          console.warn("Non-fatal: Failed to persist rotate document:", dbErr);
+        }
+
+        emitImageArtifact(dataStream, {
+          base64: result.base64,
+          id: validDocId,
+          mode: "rotate",
+          params: { background, degrees, flipHorizontal, flipVertical },
+          title: resolved.title,
+        });
+
+        const flips = [
+          flipHorizontal ? "flipped horizontally" : null,
+          flipVertical ? "flipped vertically" : null,
+        ].filter(Boolean);
+        const turns = degrees === 0 ? null : `rotated ${degrees}°`;
+        const action = [turns, ...flips].filter(Boolean).join(" and ");
+
+        return {
+          id: validDocId,
+          message: `Image ${action || "re-oriented"} — now ${result.width}×${result.height} px.`,
+          toolMode: "rotate",
+        };
+      } catch (err: any) {
+        console.error("Rotate tool execution error:", err);
+        return { error: err.message || "Failed to rotate photo" };
+      }
+    },
+    inputSchema: z.object({
+      background: z
+        .string()
+        .optional()
+        .default("#ffffff")
+        .describe(
+          "Hex fill colour for corners exposed by a non-right-angle rotation. Ignored for transparent images, which stay transparent."
+        ),
+      degrees: z
+        .number()
+        .min(-360)
+        .max(360)
+        .optional()
+        .describe(
+          "Rotation angle in degrees. Positive is clockwise. Use 90/180/270 for exact quarter turns, or any value for a free rotation. Omit for a flip-only edit."
+        ),
+      flipHorizontal: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Mirror the image left-to-right."),
+      flipVertical: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Mirror the image top-to-bottom."),
+      id: z
+        .string()
+        .optional()
+        .describe(
+          "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      imageUrl: z
+        .string()
+        .optional()
+        .describe(
+          "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
+        ),
+    }),
+  });
+
 export const imageCompress = ({
   session,
   dataStream,
@@ -1100,7 +1242,7 @@ export const imageCompress = ({
 }: ImageToolsProps) =>
   tool({
     description:
-      "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality.",
+      "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality. A transparent image stays transparent: request PNG or WebP for it, since JPEG cannot store an alpha channel.",
     execute: async ({ id, imageUrl, targetSizeKb, quality = 80 }) => {
       try {
         if (checkIsGuest(session)) {
@@ -1320,7 +1462,7 @@ export const imageUpscaleEnhance = ({
 }: ImageToolsProps) =>
   tool({
     description:
-      "Upscale or enlarge an image with Lanczos super-sampling, optionally enhancing edge clarity, brightness and saturation. Specify either a multiplier (scale, 1-8), an exact target size (targetWidth/targetHeight in px), or a maxLongEdge clamp.",
+      "Upscale or enlarge an image with Lanczos super-sampling, optionally enhancing edge clarity, brightness and saturation. Specify either a multiplier (scale, 1-8), an exact target size (targetWidth/targetHeight in px), or a maxLongEdge clamp. A transparent image should be written as PNG or WebP; a JPEG request falls back to PNG so the alpha channel survives.",
     execute: async ({
       id,
       imageUrl,

@@ -61,12 +61,16 @@ const nextConfig: NextConfig = {
   // visible to static tracing, so the deployed function would crash with
   // "libonnxruntime.so.1.17.0: cannot open shared object file". These globs copy
   // them into the two functions that can run image models.
+  //
+  // The tool key is a glob rather than the literal `/api/tools/[family]`: square
+  // brackets are a character class in the matcher, so the literal path would match
+  // nothing and the function would deploy without the shared library.
   outputFileTracingIncludes: {
     "/api/chat": [
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
     ],
-    "/api/tools/image": [
+    "/api/tools/**": [
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
     ],

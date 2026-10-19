@@ -111,6 +111,24 @@ test.describe("rotateSchema", () => {
     expect(rotateSchema.parse({ degrees: 45 }).degrees).toBe(45);
     expect(rotateSchema.safeParse({ degrees: 400 }).success).toBe(false);
   });
+
+  test("defaults to no flip and a white corner fill", () => {
+    const parsed = rotateSchema.parse({ degrees: 90 });
+
+    expect(parsed.flipHorizontal).toBe(false);
+    expect(parsed.flipVertical).toBe(false);
+    expect(parsed.background).toBe("#ffffff");
+  });
+
+  test("accepts a mirror without any rotation", () => {
+    const parsed = rotateSchema.parse({
+      degrees: 0,
+      flipHorizontal: true,
+    });
+
+    expect(parsed.degrees).toBe(0);
+    expect(parsed.flipHorizontal).toBe(true);
+  });
 });
 
 test.describe("compressSchema", () => {
