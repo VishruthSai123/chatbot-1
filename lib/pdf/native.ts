@@ -30,8 +30,6 @@ export type PdfOperationResult = {
   wasEncrypted?: boolean;
 };
 
-export type { PageRotation };
-
 /**
  * Loads a document, tolerating the common "encrypted but no password" case.
  *
