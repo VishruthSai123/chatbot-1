@@ -25,3 +25,6 @@ yarn-error.log*
 /playwright/*
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# pdf.js runtime assets, copied from node_modules by scripts/sync-pdfjs-assets.mjs
+/public/pdfjs

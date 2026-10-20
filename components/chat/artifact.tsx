@@ -15,6 +15,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { useWindowSize } from "usehooks-ts";
 import { codeArtifact } from "@/artifacts/code/client";
 import { imageArtifact } from "@/artifacts/image/client";
+import { pdfArtifact } from "@/artifacts/pdf/client";
 import { sheetArtifact } from "@/artifacts/sheet/client";
 import { textArtifact } from "@/artifacts/text/client";
 import { useArtifact } from "@/hooks/use-artifact";
@@ -34,6 +35,7 @@ export const artifactDefinitions = [
   codeArtifact,
   imageArtifact,
   sheetArtifact,
+  pdfArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
 export type ImageToolMode =
@@ -198,18 +200,18 @@ function PureArtifact({
   }, [currentVersionIndex, setArtifact]);
 
   // A streamed tool result (or a workbench edit) appends a version on the server.
-  // Re-read the list whenever the image changes so the cursor lands on that new
-  // version — otherwise a cursor parked on an older version by Undo would keep
-  // showing the old image even though the edit was applied to it.
-  const lastImageContentRef = useRef<string>("");
+  // Re-read the list whenever the image or PDF changes so the cursor lands on that
+  // new version — otherwise a cursor parked on an older version by Undo would keep
+  // showing the old file even though the edit was applied to it.
+  const lastBinaryContentRef = useRef<string>("");
   useEffect(() => {
-    if (artifact.kind !== "image") {
+    if (artifact.kind !== "image" && artifact.kind !== "pdf") {
       return;
     }
-    if (artifact.content === lastImageContentRef.current) {
+    if (artifact.content === lastBinaryContentRef.current) {
       return;
     }
-    lastImageContentRef.current = artifact.content;
+    lastBinaryContentRef.current = artifact.content;
     mutateDocuments();
   }, [artifact.content, artifact.kind, mutateDocuments]);
 
@@ -230,11 +232,12 @@ function PureArtifact({
         return;
       }
 
-      // Every applied image edit is a discrete, undoable step, so it is persisted
-      // as a NEW version. The text/code behaviour of overwriting the newest version
-      // would silently rewrite the version the user had stepped away from with Undo
-      // while they were looking at an older one.
-      const isImage = artifact.kind === "image";
+      // Every applied image or PDF edit is a discrete, undoable step, so it is
+      // persisted as a NEW version. The text/code behaviour of overwriting the
+      // newest version would silently rewrite the version the user had stepped
+      // away from with Undo while they were looking at an older one.
+      const isBinaryVersion =
+        artifact.kind === "image" || artifact.kind === "pdf";
 
       mutate<Document[]>(
         `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
@@ -255,17 +258,18 @@ function PureArtifact({
             return currentDocuments;
           }
 
-          // The image pipeline persists its own output, so posting the bytes back
-          // here would be both redundant and fatal for a full-resolution photo: a
-          // request body over 4.5 MB is rejected by the platform before it reaches
-          // us. Only advance the local version list.
+          // The image and PDF pipelines persist their own output, so posting the
+          // bytes back here would be both redundant and fatal for a full-resolution
+          // photo or a multi-megabyte scan: a request body over 4.5 MB is rejected
+          // by the platform before it reaches us. Only advance the local version
+          // list.
           if (!options?.persisted) {
             await fetch(
               `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${artifact.documentId}`,
               {
                 body: JSON.stringify({
                   content: updatedContent,
-                  isManualEdit: !isImage,
+                  isManualEdit: !isBinaryVersion,
                   kind: artifact.kind,
                   title: artifact.title,
                 }),
@@ -276,7 +280,7 @@ function PureArtifact({
 
           setIsContentDirty(false);
 
-          if (!isImage) {
+          if (!isBinaryVersion) {
             return currentDocuments.map((doc, i) =>
               i === currentDocuments.length - 1
                 ? { ...doc, content: updatedContent }
@@ -284,11 +288,11 @@ function PureArtifact({
             );
           }
 
-          // Images: append the edit as a new version. The cursor then snaps to it
-          // via the documents effect, the result becomes what the user sees, and
-          // Undo can step back to the previous state. Appending optimistically —
-          // rather than waiting for a refetch — is also what keeps the *next* edit
-          // aimed at this new version.
+          // Images and PDFs: append the edit as a new version. The cursor then
+          // snaps to it via the documents effect, the result becomes what the user
+          // sees, and Undo can step back to the previous state. Appending
+          // optimistically — rather than waiting for a refetch — is also what keeps
+          // the *next* edit aimed at this new version.
           return [
             ...currentDocuments,
             {
@@ -438,51 +442,53 @@ function PureArtifact({
 
   const artifactPanel = (
     <>
-      {sidebarState !== "collapsed" && artifact.kind !== "image" && (
-        <div className="flex h-[calc(3.5rem+1px)] shrink-0 items-center justify-between border-b border-border/50 px-4">
-          <div className="flex items-center gap-3">
-            <ArtifactCloseButton />
-            <div className="flex flex-col gap-0.5">
-              <div className="text-sm font-semibold leading-tight tracking-tight">
-                {artifact.title}
-              </div>
-              <div className="flex items-center gap-2">
-                {isContentDirty ? (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <div className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                    Saving...
-                  </div>
-                ) : document ? (
-                  <div
-                    className="text-xs text-muted-foreground"
-                    suppressHydrationWarning
-                  >
-                    {`Updated ${formatDistance(new Date(document.createdAt), new Date(), { addSuffix: true })}`}
-                  </div>
-                ) : artifact.status === "streaming" ? (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <div className="animate-spin">
-                      <LoaderIcon size={12} />
+      {sidebarState !== "collapsed" &&
+        artifact.kind !== "image" &&
+        artifact.kind !== "pdf" && (
+          <div className="flex h-[calc(3.5rem+1px)] shrink-0 items-center justify-between border-b border-border/50 px-4">
+            <div className="flex items-center gap-3">
+              <ArtifactCloseButton />
+              <div className="flex flex-col gap-0.5">
+                <div className="text-sm font-semibold leading-tight tracking-tight">
+                  {artifact.title}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isContentDirty ? (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                      Saving...
                     </div>
-                    Generating...
-                  </div>
-                ) : (
-                  <div className="h-3 w-24 animate-pulse rounded bg-muted-foreground/10" />
-                )}
-                {documents && documents.length > 1 && (
-                  <div className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                    v{currentVersionIndex + 1}/{documents.length}
-                  </div>
-                )}
+                  ) : document ? (
+                    <div
+                      className="text-xs text-muted-foreground"
+                      suppressHydrationWarning
+                    >
+                      {`Updated ${formatDistance(new Date(document.createdAt), new Date(), { addSuffix: true })}`}
+                    </div>
+                  ) : artifact.status === "streaming" ? (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="animate-spin">
+                        <LoaderIcon size={12} />
+                      </div>
+                      Generating...
+                    </div>
+                  ) : (
+                    <div className="h-3 w-24 animate-pulse rounded bg-muted-foreground/10" />
+                  )}
+                  {documents && documents.length > 1 && (
+                    <div className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                      v{currentVersionIndex + 1}/{documents.length}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       <div
         className={cn(
           "relative flex-1 bg-background",
-          artifact.kind === "image"
+          artifact.kind === "image" || artifact.kind === "pdf"
             ? "overflow-hidden flex flex-col"
             : "overflow-y-auto"
         )}
@@ -512,7 +518,9 @@ function PureArtifact({
           totalVersions={documents?.length ?? 1}
         />
         <AnimatePresence>
-          {isCurrentVersion && artifact.kind !== "image" ? (
+          {isCurrentVersion &&
+          artifact.kind !== "image" &&
+          artifact.kind !== "pdf" ? (
             <Toolbar
               artifactActions={
                 <ArtifactActions
@@ -540,15 +548,17 @@ function PureArtifact({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {!isCurrentVersion && artifact.kind !== "image" && (
-          <VersionFooter
-            currentVersionIndex={currentVersionIndex}
-            documents={documents}
-            handleVersionChange={handleVersionChange}
-            mode={mode}
-            setMode={setMode}
-          />
-        )}
+        {!isCurrentVersion &&
+          artifact.kind !== "image" &&
+          artifact.kind !== "pdf" && (
+            <VersionFooter
+              currentVersionIndex={currentVersionIndex}
+              documents={documents}
+              handleVersionChange={handleVersionChange}
+              mode={mode}
+              setMode={setMode}
+            />
+          )}
       </AnimatePresence>
     </>
   );

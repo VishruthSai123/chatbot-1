@@ -43,4 +43,18 @@ test.describe("postRequestBodySchema activeImage", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  test("accepts activePdf with documentId and versionIndex", () => {
+    const parsed = postRequestBodySchema.parse({
+      ...baseBody,
+      activePdf: {
+        documentId: "22222222-2222-4222-8222-222222222222",
+        versionIndex: 2,
+      },
+    });
+    expect(parsed.activePdf?.documentId).toBe(
+      "22222222-2222-4222-8222-222222222222"
+    );
+    expect(parsed.activePdf?.versionIndex).toBe(2);
+  });
 });

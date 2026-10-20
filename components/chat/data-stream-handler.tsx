@@ -61,7 +61,9 @@ export function DataStreamHandler() {
             return {
               ...draftArtifact,
               isVisible:
-                delta.data === "image" ? true : draftArtifact.isVisible,
+                delta.data === "image" || delta.data === "pdf"
+                  ? true
+                  : draftArtifact.isVisible,
               kind: delta.data,
               status: "streaming",
             };

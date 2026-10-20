@@ -37,6 +37,14 @@ import {
   imageRotate,
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
+import {
+  pdfArrange,
+  pdfExtractText,
+  pdfGetInfo,
+  pdfMerge,
+  pdfRotatePages,
+  pdfSplit,
+} from "@/lib/ai/tools/pdf-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
@@ -96,6 +104,7 @@ export async function POST(request: Request) {
   try {
     const {
       activeImage,
+      activePdf,
       id,
       message,
       messages,
@@ -341,6 +350,12 @@ export async function POST(request: Request) {
                   "imageRotate",
                   "imageOcr",
                   "imageListPresets",
+                  "pdfGetInfo",
+                  "pdfMerge",
+                  "pdfSplit",
+                  "pdfArrange",
+                  "pdfRotatePages",
+                  "pdfExtractText",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -458,6 +473,40 @@ export async function POST(request: Request) {
               chatId: id,
               dataStream,
               messages: uiMessages,
+              session,
+            }),
+            pdfArrange: pdfArrange({
+              activePdf,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            pdfExtractText: pdfExtractText({
+              activePdf,
+              dataStream,
+              session,
+            }),
+            pdfGetInfo: pdfGetInfo({
+              activePdf,
+              dataStream,
+              session,
+            }),
+            pdfMerge: pdfMerge({
+              activePdf,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            pdfRotatePages: pdfRotatePages({
+              activePdf,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            pdfSplit: pdfSplit({
+              activePdf,
+              chatId: id,
+              dataStream,
               session,
             }),
             requestSuggestions: requestSuggestions({

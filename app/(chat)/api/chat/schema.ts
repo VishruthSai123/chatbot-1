@@ -40,6 +40,14 @@ export const postRequestBodySchema = z.object({
       versionIndex: z.number().int().min(0).optional(),
     })
     .optional(),
+  // The PDF currently open in the right-pane studio. Lets PDF tools operate
+  // on exactly that Document instead of hunting for attachments.
+  activePdf: z
+    .object({
+      documentId: z.string().optional(),
+      versionIndex: z.number().int().min(0).optional(),
+    })
+    .optional(),
   id: z.uuid(),
   message: userMessageSchema.optional(),
   messages: z.array(toolApprovalMessageSchema).optional(),

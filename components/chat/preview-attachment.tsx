@@ -1,7 +1,9 @@
 "use client";
 
+import { FileText } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useState } from "react";
+
 import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
@@ -24,8 +26,11 @@ export const PreviewAttachment = ({
   const { isGuest } = useIsGuest();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
+  const isImage = contentType?.startsWith("image");
+  const isPdf = contentType === "application/pdf";
+
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !contentType?.startsWith("image")) {
+    if (isUploading || !(isImage || isPdf)) {
       return;
     }
     if (isGuest) {
@@ -37,13 +42,20 @@ export const PreviewAttachment = ({
       content: url,
       documentId: documentId || generateUUID(),
       isVisible: true,
-      kind: "image",
+      kind: isPdf ? "pdf" : "image",
       status: "idle",
-      title: name || "Image Studio",
+      title: name || (isPdf ? "PDF Studio" : "Image Studio"),
     });
-  }, [isUploading, contentType, isGuest, setArtifact, url, name, documentId]);
-
-  const isImage = contentType?.startsWith("image");
+  }, [
+    isUploading,
+    isImage,
+    isPdf,
+    isGuest,
+    setArtifact,
+    url,
+    name,
+    documentId,
+  ]);
 
   return (
     <div
@@ -70,6 +82,23 @@ export const PreviewAttachment = ({
               Studio
             </span>
           </div>
+        </button>
+      ) : isPdf ? (
+        <button
+          className="flex size-full cursor-pointer flex-col items-center justify-center gap-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+          onClick={handleOpenStudio}
+          title="Click to open in PDF Studio"
+          type="button"
+        >
+          <FileText className="size-6" />
+          <span className="px-1 text-center text-[9px] leading-tight">
+            {name ?? "PDF"}
+          </span>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
+            <span className="rounded bg-sky-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow">
+              Studio
+            </span>
+          </span>
         </button>
       ) : (
         <div className="flex size-full items-center justify-center text-muted-foreground text-xs">

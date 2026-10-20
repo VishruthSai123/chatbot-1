@@ -98,12 +98,16 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     ? "private"
     : (chatData?.visibility ?? "private");
 
-  // The image currently open in the workbench, tracked through the shared artifact store.
-  // Sending it lets image tools edit exactly what the user sees, even without a URL.
+  // The image or PDF currently open in the workbench/studio, tracked through the shared artifact store.
+  // Sending it lets tools edit exactly what the user sees, even without a URL.
   const { data: activeArtifact } = useSWR<UIArtifact>("artifact", null);
   const activeImageRef = useRef<{
     documentId: string;
     toolMode?: string;
+    versionIndex?: number;
+  } | null>(null);
+  const activePdfRef = useRef<{
+    documentId: string;
     versionIndex?: number;
   } | null>(null);
   useEffect(() => {
@@ -114,6 +118,15 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         ? {
             documentId,
             toolMode: activeArtifact.toolMode,
+            ...(typeof versionIndex === "number" && versionIndex >= 0
+              ? { versionIndex }
+              : {}),
+          }
+        : null;
+    activePdfRef.current =
+      activeArtifact?.kind === "pdf" && documentId && documentId !== "init"
+        ? {
+            documentId,
             ...(typeof versionIndex === "number" && versionIndex >= 0
               ? { versionIndex }
               : {}),
@@ -191,6 +204,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
               ? { messages: request.messages }
               : { message: lastMessage }),
             activeImage: activeImageRef.current ?? undefined,
+            activePdf: activePdfRef.current ?? undefined,
             selectedChatModel: currentModelIdRef.current,
             selectedVisibilityType: visibility,
             ...request.body,

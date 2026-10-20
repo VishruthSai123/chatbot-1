@@ -22,6 +22,7 @@ import { SparklesIcon } from "./icons";
 import { ImageToolCard, type ImageToolType } from "./image-tool-card";
 import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
+import { PdfToolCard, type PdfToolType } from "./pdf-tool-card";
 import { PreviewAttachment } from "./preview-attachment";
 import { Weather } from "./weather";
 
@@ -418,6 +419,76 @@ const PurePreviewMessage = ({
             duration={1.2}
           >
             {`Processing photo (${toolLabel})...`}
+          </Shimmer>
+        </div>
+      );
+    }
+
+    const PDF_TOOL_LABELS: Record<string, string> = {
+      "tool-pdfArrange": "Arrange Pages",
+      "tool-pdfExtractText": "Extract Text",
+      "tool-pdfGetInfo": "Inspect PDF",
+      "tool-pdfMerge": "Merge PDFs",
+      "tool-pdfRotatePages": "Rotate Pages",
+      "tool-pdfSplit": "Split / Extract Pages",
+    };
+
+    if (type && type in PDF_TOOL_LABELS) {
+      const { toolCallId, output } = part as {
+        toolCallId: string;
+        output?: any;
+      };
+      const toolLabel = PDF_TOOL_LABELS[type] || "PDF Operation";
+
+      const { state, errorText } = part as {
+        state?: string;
+        errorText?: string;
+      };
+
+      if (
+        state === "output-error" ||
+        errorText ||
+        (output && "error" in output)
+      ) {
+        const errorMsg =
+          errorText ||
+          (output && "error" in output
+            ? String(output.error)
+            : "An error occurred during PDF processing.");
+        return (
+          <div
+            className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            key={toolCallId}
+          >
+            Failed to process PDF: {errorMsg}
+          </div>
+        );
+      }
+
+      if (output) {
+        return (
+          <PdfToolCard
+            isReadonly={isReadonly}
+            key={toolCallId}
+            output={output}
+            toolCallId={toolCallId}
+            toolType={type as PdfToolType}
+          />
+        );
+      }
+
+      return (
+        <div
+          className="w-[min(100%,450px)] flex items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
+          key={toolCallId}
+        >
+          <Loader2 className="size-3.5 animate-spin text-rose-500 shrink-0" />
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            {`Processing PDF (${toolLabel})...`}
           </Shimmer>
         </div>
       );

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
 import { saveDocument } from "@/lib/db/queries";
 import { activeImageRegistry } from "@/lib/image/session-registry";
+import { encodePdfRef } from "@/lib/pdf/ref";
 import {
   artifactExists,
   createSignedUpload,
@@ -117,6 +118,53 @@ async function persistImageArtifact({
   }
 
   return documentId;
+}
+
+type PersistPdfArgs = {
+  chatId?: string;
+  filename: string;
+  pageCount?: number;
+  size: number;
+  storageKey: string;
+  userId: string;
+};
+
+/**
+ * Turns an uploaded PDF into an editable artifact.
+ *
+ * Unlike images, the bytes stay in storage and `Document.content` holds only a
+ * `pdf-ref:` envelope. A scanned document is routinely 10–30 MB; inlining it would
+ * put a base64 copy in Postgres for every version and would exceed the request-body
+ * ceiling on the first edit.
+ */
+async function persistPdfArtifact({
+  chatId: _chatId,
+  filename,
+  pageCount,
+  size,
+  storageKey,
+  userId,
+}: PersistPdfArgs): Promise<string | undefined> {
+  try {
+    const saved = await saveDocument({
+      content: encodePdfRef({
+        bytes: size,
+        filename,
+        pages: pageCount,
+        storageKey,
+      }),
+      id: generateUUID(),
+      kind: "pdf",
+      title: filename,
+      userId,
+    });
+
+    return saved?.[0]?.id;
+  } catch (error) {
+    // The file is already in storage and downloadable; failing to index it must
+    // not turn a successful upload into an error.
+    console.warn("Non-fatal: failed to persist uploaded PDF document:", error);
+  }
 }
 
 export async function POST(request: Request) {
@@ -271,6 +319,14 @@ async function handleMetadataUpload(request: Request, userId: string) {
       // them must not turn a successful upload into an error.
       console.warn("Non-fatal: could not inline uploaded image:", error);
     }
+  } else if (body.contentType === "application/pdf") {
+    documentId = await persistPdfArtifact({
+      chatId: body.chatId,
+      filename: pathname,
+      size: body.size,
+      storageKey,
+      userId,
+    });
   }
 
   return NextResponse.json({ ...data, documentId });
@@ -348,6 +404,14 @@ async function handleProxiedUpload(request: Request, userId: string) {
         filename,
         mimeType,
         sourceUrl: data.url,
+        storageKey: data.storageKey,
+        userId,
+      });
+    } else if (mimeType === "application/pdf") {
+      documentId = await persistPdfArtifact({
+        chatId,
+        filename,
+        size: fileBuffer.byteLength,
         storageKey: data.storageKey,
         userId,
       });
