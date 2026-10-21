@@ -352,15 +352,18 @@ const PurePreviewMessage = ({
     }
 
     const IMAGE_TOOL_LABELS: Record<string, string> = {
+      "tool-imageCollage": "Build Collage",
       "tool-imageCompress": "Compress Photo",
       "tool-imageConvert": "Convert Format",
       "tool-imageCrop": "Crop Photo",
       "tool-imageOcr": "Extract Text (OCR)",
+      "tool-imageOverlay": "Overlay Image",
       "tool-imagePixelate": "Pixelate / Redact",
       "tool-imageRemoveBg": "Remove Background",
       "tool-imageResize": "Resize Photo",
       "tool-imageResizePhysical": "Resize Photo",
       "tool-imageRotate": "Rotate & Flip",
+      "tool-imageStitch": "Stitch Images",
       "tool-imageUpscaleEnhance": "Upscale & Enhance",
     };
 

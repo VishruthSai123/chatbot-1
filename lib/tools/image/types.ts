@@ -14,6 +14,110 @@ export const imageFormatSchema = z.enum([
   "avif",
   "tiff",
 ]);
+
+/**
+ * Document ids of several images.
+ *
+ * Every multi-image operation takes the same shape: a list of image documents
+ * to act on. The list is what makes a request "batch" rather than "single" —
+ * one id means edit that image, several means do this to all of them.
+ */
+export const imageDocumentIdsSchema = z
+  .array(z.string().min(1))
+  .min(1)
+  .max(60)
+  .describe(
+    "Document ids of the images to act on. More than one means the operation applies to all of them."
+  );
+
+export const stitchSchema = z.object({
+  background: z
+    .string()
+    .optional()
+    .describe(
+      "Canvas colour as a hex value, e.g. '#ffffff'. Defaults to transparent."
+    ),
+  direction: z
+    .enum(["vertical", "horizontal"])
+    .optional()
+    .default("vertical")
+    .describe(
+      "Vertical stacks the images top to bottom; horizontal puts them side by side."
+    ),
+  documentIds: imageDocumentIdsSchema,
+  gap: z
+    .number()
+    .int()
+    .min(0)
+    .max(500)
+    .optional()
+    .default(0)
+    .describe("Gap between the images, in pixels."),
+  title: z.string().max(120).optional(),
+});
+
+export const overlaySchema = z.object({
+  baseDocumentId: z.string().describe("The image the overlay is placed on."),
+  opacity: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .default(1)
+    .describe("How strongly the overlay shows through, 0 to 1."),
+  overlayDocumentId: z
+    .string()
+    .describe("The image placed on top, typically a logo or a cutout."),
+  position: z
+    .enum(["top-left", "top-right", "bottom-left", "bottom-right", "center"])
+    .optional()
+    .default("bottom-right"),
+  scale: z
+    .number()
+    .min(0.05)
+    .max(1)
+    .optional()
+    .default(0.4)
+    .describe("Overlay size relative to the base image's width."),
+  title: z.string().max(120).optional(),
+});
+
+export const collageSchema = z.object({
+  background: z
+    .string()
+    .optional()
+    .describe("Canvas colour as a hex value. Defaults to white."),
+  cellHeight: z
+    .number()
+    .int()
+    .min(40)
+    .max(2000)
+    .optional()
+    .default(400)
+    .describe("Height of each cell in the grid, in pixels."),
+  columns: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe("Number of columns. Defaults to a near-square grid."),
+  documentIds: imageDocumentIdsSchema,
+  gap: z
+    .number()
+    .int()
+    .min(0)
+    .max(200)
+    .optional()
+    .default(12)
+    .describe("Gap between the cells, in pixels."),
+  title: z.string().max(120).optional(),
+});
+
+export const collectionSchema = z.object({
+  documentIds: imageDocumentIdsSchema,
+  title: z.string().max(120).optional(),
+});
 export const resizeFitSchema = z.enum([
   "cover",
   "contain",

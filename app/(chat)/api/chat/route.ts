@@ -26,15 +26,18 @@ import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
 import {
+  imageCollage,
   imageCompress,
   imageConvert,
   imageCrop,
   imageListPresets,
   imageOcr,
+  imageOverlay,
   imagePixelate,
   imageRemoveBg,
   imageResize,
   imageRotate,
+  imageStitch,
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import {
@@ -359,6 +362,9 @@ export async function POST(request: Request) {
                   "imageRotate",
                   "imageOcr",
                   "imageListPresets",
+                  "imageStitch",
+                  "imageOverlay",
+                  "imageCollage",
                   "pdfGetInfo",
                   "pdfMerge",
                   "pdfSplit",
@@ -424,6 +430,13 @@ export async function POST(request: Request) {
             }),
             editDocument: editDocument({ dataStream, session }),
             getWeather,
+            imageCollage: imageCollage({
+              activeImage,
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
             imageCompress: imageCompress({
               activeImage,
               chatId: id,
@@ -454,6 +467,13 @@ export async function POST(request: Request) {
               messages: uiMessages,
               session,
             }),
+            imageOverlay: imageOverlay({
+              activeImage,
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
             imagePixelate: imagePixelate({
               activeImage,
               chatId: id,
@@ -477,6 +497,13 @@ export async function POST(request: Request) {
               session,
             }),
             imageRotate: imageRotate({
+              activeImage,
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            imageStitch: imageStitch({
               activeImage,
               chatId: id,
               dataStream,

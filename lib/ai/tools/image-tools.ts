@@ -26,8 +26,14 @@ import {
   executeRotate,
   executeUpscaleEnhance,
 } from "@/lib/tools/image";
+import {
+  executeCollage,
+  executeOverlay,
+  executeStitch,
+} from "@/lib/tools/image/composite";
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
+import { describeBatchOutcome, runImageBatch } from "./image-batch";
 
 type ImageToolsProps = {
   session: Session;
@@ -509,6 +515,7 @@ export const imageResize = ({
       "Resize/re-scale an image to EXACTLY the size the user asked for, with no clarifying questions. Supports: exact pixel width/height (one or both — the missing edge keeps aspect ratio), physical units (mm/cm/in) with DPI injection, an aspect ratio (e.g. '16:9', 'square'), a relative scale percent (e.g. 50 = half, 200 = double), max/min bounds (e.g. 'max 2000px'), cover/contain/pad fit, and an optional file-size cap (targetSizeKb). Also fulfills official passport/visa/ID presets by key.",
     execute: async ({
       id,
+      documentIds,
       imageUrl,
       preset,
       width,
@@ -580,6 +587,26 @@ export const imageResize = ({
           }
           // Drop the bogus preset, keep the explicit geometry.
           sizing.preset = undefined;
+        }
+
+        // Batch: the same operation, applied to every listed image. The sizing
+        // is already validated above, so both paths agree on what was asked for.
+        if (documentIds && documentIds.length > 1) {
+          const outcome = await runImageBatch({
+            chatId,
+            dataStream,
+            documentIds,
+            operation: ({ source }) =>
+              executeResize(source, { ...sizing, format: "jpeg", quality: 95 }),
+            session,
+            title: "Resized images",
+          });
+
+          return {
+            errors: outcome.errors,
+            message: describeBatchOutcome(outcome, "resized"),
+            processed: outcome.processed,
+          };
         }
 
         let resolved: { source: string; documentId: string; title: string };
@@ -692,6 +719,14 @@ export const imageResize = ({
         .optional()
         .describe(
           'Target aspect ratio, e.g. "16:9", "4:5", "1:1", "square". Combined with a single width/height it derives the other edge.'
+        ),
+      documentIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
         ),
       dpi: z
         .union([z.literal(72), z.literal(150), z.literal(300), z.literal(600)])
@@ -939,6 +974,7 @@ export const imageCrop = ({
       "Crop an image. Either crop to an aspect ratio (e.g. '1:1', '16:9', '7:9') anchored by mode ('center', 'top', 'bottom', or 'attention' for smart framing), or to explicit pixel coordinates (left, top, width, height). A transparent image keeps its alpha channel.",
     execute: async ({
       id,
+      documentIds,
       imageUrl,
       left,
       top,
@@ -966,6 +1002,32 @@ export const imageCrop = ({
           height !== undefined;
         const effectiveAspect =
           aspectRatio ?? (hasPixelBox ? undefined : requirement?.aspectRatio);
+
+        // Batch: the same crop, applied to every listed image.
+        if (documentIds && documentIds.length > 1) {
+          const outcome = await runImageBatch({
+            chatId,
+            dataStream,
+            documentIds,
+            operation: ({ source }) =>
+              executeCrop(source, {
+                aspectRatio: effectiveAspect,
+                height,
+                left,
+                mode,
+                top,
+                width,
+              }),
+            session,
+            title: "Cropped images",
+          });
+
+          return {
+            errors: outcome.errors,
+            message: describeBatchOutcome(outcome, "cropped"),
+            processed: outcome.processed,
+          };
+        }
 
         let resolved: { source: string; documentId: string; title: string };
         try {
@@ -1059,6 +1121,14 @@ export const imageCrop = ({
         .describe(
           'Crop to an aspect ratio, e.g. "1:1", "16:9", "7:9", "square". Omit when using pixel coordinates.'
         ),
+      documentIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
+        ),
       height: z
         .number()
         .positive()
@@ -1113,6 +1183,7 @@ export const imageRotate = ({
       "Rotate and/or flip an image. Accepts any angle in degrees (90/180/270 are exact; arbitrary angles expose corners, filled with 'background' unless the source is transparent). Also flips horizontally or vertically. A transparent image keeps its alpha channel, including transparent corners.",
     execute: async ({
       id,
+      documentIds,
       imageUrl,
       degrees = 0,
       flipHorizontal = false,
@@ -1125,6 +1196,30 @@ export const imageRotate = ({
             error:
               "Account required: Image rotation is reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
+          };
+        }
+
+        // Batch: the same rotation, applied to every listed image.
+        if (documentIds && documentIds.length > 1) {
+          const outcome = await runImageBatch({
+            chatId,
+            dataStream,
+            documentIds,
+            operation: ({ source }) =>
+              executeRotate(source, {
+                background,
+                degrees,
+                flipHorizontal,
+                flipVertical,
+              }),
+            session,
+            title: "Rotated images",
+          });
+
+          return {
+            errors: outcome.errors,
+            message: describeBatchOutcome(outcome, "rotated"),
+            processed: outcome.processed,
           };
         }
 
@@ -1220,6 +1315,14 @@ export const imageRotate = ({
         .describe(
           "Rotation angle in degrees. Positive is clockwise. Use 90/180/270 for exact quarter turns, or any value for a free rotation. Omit for a flip-only edit."
         ),
+      documentIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
+        ),
       flipHorizontal: z
         .boolean()
         .optional()
@@ -1255,13 +1358,38 @@ export const imageCompress = ({
   tool({
     description:
       "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality. A transparent image stays transparent: request PNG or WebP for it, since JPEG cannot store an alpha channel.",
-    execute: async ({ id, imageUrl, targetSizeKb, quality = 80 }) => {
+    execute: async ({
+      id,
+      documentIds,
+      imageUrl,
+      targetSizeKb,
+      quality = 80,
+    }) => {
       try {
         if (checkIsGuest(session)) {
           return {
             error:
               "Account required: Image compression features are reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
+          };
+        }
+
+        // Batch: the same compression, applied to every listed image.
+        if (documentIds && documentIds.length > 1) {
+          const outcome = await runImageBatch({
+            chatId,
+            dataStream,
+            documentIds,
+            operation: ({ source }) =>
+              executeCompress(source, { quality, targetSizeKb }),
+            session,
+            title: "Compressed images",
+          });
+
+          return {
+            errors: outcome.errors,
+            message: describeBatchOutcome(outcome, "compressed"),
+            processed: outcome.processed,
           };
         }
 
@@ -1344,6 +1472,14 @@ export const imageCompress = ({
       }
     },
     inputSchema: z.object({
+      documentIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
+        ),
       id: z
         .string()
         .optional()
@@ -1375,13 +1511,38 @@ export const imageConvert = ({
   tool({
     description:
       "Convert an image to a different file format (JPEG, PNG, WebP, AVIF, TIFF), preserving transparency where the target format supports it.",
-    execute: async ({ id, imageUrl, targetFormat, quality = 95 }) => {
+    execute: async ({
+      id,
+      documentIds,
+      imageUrl,
+      targetFormat,
+      quality = 95,
+    }) => {
       try {
         if (checkIsGuest(session)) {
           return {
             error:
               "Account required: Image format conversion is reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
+          };
+        }
+
+        // Batch: the same conversion, applied to every listed image.
+        if (documentIds && documentIds.length > 1) {
+          const outcome = await runImageBatch({
+            chatId,
+            dataStream,
+            documentIds,
+            operation: ({ source }) =>
+              executeConvert(source, { quality, targetFormat }),
+            session,
+            title: "Converted images",
+          });
+
+          return {
+            errors: outcome.errors,
+            message: describeBatchOutcome(outcome, "converted"),
+            processed: outcome.processed,
           };
         }
 
@@ -1454,6 +1615,14 @@ export const imageConvert = ({
       }
     },
     inputSchema: z.object({
+      documentIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
+        ),
       id: z
         .string()
         .optional()
@@ -1866,6 +2035,265 @@ export const imageOcr = ({
         .describe(
           "Public HTTP/HTTPS URL of an external web image. DO NOT supply for uploaded photos or internal model references."
         ),
+    }),
+  });
+
+/**
+ * Combines several images into one.
+ *
+ * The three composite tools are deliberately separate rather than one tool with
+ * a mode enum: the model picks the wrong mode far more often than it picks the
+ * wrong tool, and a stitch is genuinely a different request from an overlay.
+ */
+export const imageStitch = ({ session, dataStream, chatId }: ImageToolsProps) =>
+  tool({
+    description:
+      "Stitch several images into one long image, top to bottom or side by side. Use it for long screenshots, before/after comparisons, or combining scanned pages into one strip. The result is a new PNG image.",
+    execute: async ({
+      background,
+      direction = "vertical",
+      documentIds,
+      gap = 0,
+      title,
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Stitching images is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        const outcome = await executeStitch({
+          background,
+          chatId,
+          direction,
+          documentIds,
+          gap,
+          title: title ?? "Stitched image",
+          userId: session.user?.id as string,
+        });
+
+        emitImageArtifact(dataStream, {
+          base64: outcome.result.base64,
+          id: outcome.documentId,
+          mode: "convert",
+          title: title ?? "Stitched image",
+        });
+
+        return {
+          documentId: outcome.documentId,
+          message: `Stitched ${outcome.used} images into one ${outcome.result.width}×${outcome.result.height} image.`,
+          pages: outcome.result.width,
+        };
+      } catch (err: any) {
+        console.error("Stitch tool execution error:", err);
+        return { error: err.message || "Failed to stitch the images" };
+      }
+    },
+    inputSchema: z.object({
+      background: z
+        .string()
+        .optional()
+        .describe("Canvas colour as a hex value, e.g. '#ffffff'."),
+      direction: z
+        .enum(["vertical", "horizontal"])
+        .optional()
+        .default("vertical")
+        .describe(
+          "Vertical stacks the images top to bottom; horizontal puts them side by side."
+        ),
+      documentIds: z
+        .array(z.string().min(1))
+        .min(2)
+        .max(60)
+        .describe("Document UUIDs of the images to stitch, in order."),
+      gap: z
+        .number()
+        .int()
+        .min(0)
+        .max(500)
+        .optional()
+        .default(0)
+        .describe("Gap between the images, in pixels."),
+      title: z.string().max(120).optional(),
+    }),
+  });
+
+export const imageOverlay = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Place one image on top of another — a logo, a watermark, a cutout over a background. The overlay keeps its transparency and is scaled relative to the base image.",
+    execute: async ({
+      baseDocumentId,
+      opacity = 1,
+      overlayDocumentId,
+      position = "bottom-right",
+      scale = 0.4,
+      title,
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Overlaying images is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        const outcome = await executeOverlay({
+          baseDocumentId,
+          chatId,
+          opacity,
+          overlayDocumentId,
+          position,
+          scale,
+          title: title ?? "Overlaid image",
+          userId: session.user?.id as string,
+        });
+
+        emitImageArtifact(dataStream, {
+          base64: outcome.result.base64,
+          id: outcome.documentId,
+          mode: "convert",
+          title: title ?? "Overlaid image",
+        });
+
+        return {
+          documentId: outcome.documentId,
+          message: `Placed the overlay at the ${position} of the base image — now ${outcome.result.width}×${outcome.result.height} px.`,
+        };
+      } catch (err: any) {
+        console.error("Overlay tool execution error:", err);
+        return { error: err.message || "Failed to overlay the images" };
+      }
+    },
+    inputSchema: z.object({
+      baseDocumentId: z
+        .string()
+        .describe("Document UUID of the image to place the overlay on."),
+      opacity: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .default(1)
+        .describe("How strongly the overlay shows through, 0 to 1."),
+      overlayDocumentId: z
+        .string()
+        .describe("Document UUID of the image placed on top."),
+      position: z
+        .enum([
+          "top-left",
+          "top-right",
+          "bottom-left",
+          "bottom-right",
+          "center",
+        ])
+        .optional()
+        .default("bottom-right"),
+      scale: z
+        .number()
+        .min(0.05)
+        .max(1)
+        .optional()
+        .default(0.4)
+        .describe("Overlay size relative to the base image's width."),
+      title: z.string().max(120).optional(),
+    }),
+  });
+
+export const imageCollage = ({
+  session,
+  dataStream,
+  chatId,
+}: ImageToolsProps) =>
+  tool({
+    description:
+      "Arrange several images into a single grid collage, with every cell the same size. Use it for a contact sheet, a photo grid, or a comparison board.",
+    execute: async ({
+      background,
+      cellHeight = 400,
+      columns,
+      documentIds,
+      gap = 12,
+      title,
+    }) => {
+      try {
+        if (checkIsGuest(session)) {
+          return {
+            error:
+              "Account required: Building collages is reserved for registered accounts. Please sign in or create a free account to use this feature.",
+            requiresAuth: true,
+          };
+        }
+
+        const outcome = await executeCollage({
+          background,
+          cellHeight,
+          chatId,
+          columns,
+          documentIds,
+          gap,
+          title: title ?? "Collage",
+          userId: session.user?.id as string,
+        });
+
+        emitImageArtifact(dataStream, {
+          base64: outcome.result.base64,
+          id: outcome.documentId,
+          mode: "convert",
+          title: title ?? "Collage",
+        });
+
+        return {
+          documentId: outcome.documentId,
+          message: `Built a collage of ${outcome.used} images — ${outcome.result.width}×${outcome.result.height} px.`,
+        };
+      } catch (err: any) {
+        console.error("Collage tool execution error:", err);
+        return { error: err.message || "Failed to build the collage" };
+      }
+    },
+    inputSchema: z.object({
+      background: z
+        .string()
+        .optional()
+        .describe("Canvas colour as a hex value. Defaults to white."),
+      cellHeight: z
+        .number()
+        .int()
+        .min(40)
+        .max(2000)
+        .optional()
+        .default(400)
+        .describe("Height of each cell in the grid, in pixels."),
+      columns: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .optional()
+        .describe("Number of columns. Defaults to a near-square grid."),
+      documentIds: z
+        .array(z.string().min(1))
+        .min(2)
+        .max(60)
+        .describe("Document UUIDs of the images to place in the collage."),
+      gap: z
+        .number()
+        .int()
+        .min(0)
+        .max(200)
+        .optional()
+        .default(12)
+        .describe("Gap between the cells, in pixels."),
+      title: z.string().max(120).optional(),
     }),
   });
 

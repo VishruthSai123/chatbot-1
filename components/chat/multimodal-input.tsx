@@ -59,6 +59,7 @@ import {
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { PaperclipIcon, StopIcon } from "./icons";
+import { ImageCollectionLauncher } from "./image/image-collection-launcher";
 import { PreviewAttachment } from "./preview-attachment";
 import {
   type SlashCommand,
@@ -608,6 +609,8 @@ function PureMultimodalInput({
                 setAttachments={setAttachments}
               />
             ))}
+
+            <ImageCollectionLauncher attachments={attachments} />
 
             {uploadQueue.map((filename) => (
               <PreviewAttachment

@@ -3,6 +3,7 @@ import type { Session } from "next-auth";
 
 import { guestRegex } from "@/lib/constants";
 import { getLatestDocumentByKind, saveDocument } from "@/lib/db/queries";
+import { createCollectionDocument } from "@/lib/image/collection";
 import { persistImageBytes } from "@/lib/image/persist";
 import { encodeImageRef } from "@/lib/image/ref";
 import { resolveDocumentImage } from "@/lib/image/resolve-source";
@@ -21,14 +22,23 @@ import {
   executeUpscaleEnhance,
 } from "@/lib/tools/image";
 import {
+  executeCollage,
+  executeOverlay,
+  executeStitch,
+} from "@/lib/tools/image/composite";
+import {
+  collageSchema,
+  collectionSchema,
   compressSchema,
   convertSchema,
   cropSchema,
   ocrSchema,
+  overlaySchema,
   pixelateSchema,
   removeBgSchema,
   resizeSchema,
   rotateSchema,
+  stitchSchema,
   upscaleSchema,
 } from "@/lib/tools/image/types";
 
@@ -293,6 +303,112 @@ export async function runImageAction({
       result = await executeGetMetadata(imageSource, fallbackContext);
       return NextResponse.json({ metadata: result, success: true });
     }
+
+    /**
+     * Builds a multi-image collection.
+     *
+     * The collection is a document in its own right, so the gallery view has
+     * something durable to open. This is the action that makes the studio's
+     * grid reachable at all — without it, several uploaded photos would remain
+     * separate documents that could never be seen together.
+     */
+    case "create_collection": {
+      const validated = collectionSchema.parse(params ?? {});
+      const created = await createCollectionDocument({
+        chatId,
+        documentIds: validated.documentIds,
+        title: validated.title,
+        userId: session.user.id,
+      });
+
+      if (!created) {
+        return NextResponse.json(
+          { error: "None of those images could be opened." },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        documentId: created.documentId,
+        items: created.items,
+        result: { content: created.content },
+        success: true,
+      });
+    }
+
+    case "stitch":
+    case "collage":
+    case "overlay": {
+      const userId = session.user.id;
+
+      try {
+        if (action === "stitch") {
+          const validated = stitchSchema.parse(params ?? {});
+          const stitched = await executeStitch({
+            chatId,
+            direction: validated.direction,
+            documentIds: validated.documentIds,
+            gap: validated.gap,
+            title: validated.title,
+            userId,
+            versionIndex,
+          });
+
+          return NextResponse.json({
+            documentId: stitched.documentId,
+            result: stitched.result,
+            success: true,
+            used: stitched.used,
+          });
+        }
+
+        if (action === "collage") {
+          const validated = collageSchema.parse(params ?? {});
+          const collage = await executeCollage({
+            cellHeight: validated.cellHeight,
+            chatId,
+            columns: validated.columns,
+            documentIds: validated.documentIds,
+            gap: validated.gap,
+            title: validated.title,
+            userId,
+            versionIndex,
+          });
+
+          return NextResponse.json({
+            documentId: collage.documentId,
+            result: collage.result,
+            success: true,
+            used: collage.used,
+          });
+        }
+
+        const validated = overlaySchema.parse(params ?? {});
+        const overlaid = await executeOverlay({
+          baseDocumentId: validated.baseDocumentId,
+          chatId,
+          opacity: validated.opacity,
+          overlayDocumentId: validated.overlayDocumentId,
+          position: validated.position,
+          scale: validated.scale,
+          title: validated.title,
+          userId,
+          versionIndex,
+        });
+
+        return NextResponse.json({
+          documentId: overlaid.documentId,
+          result: overlaid.result,
+          success: true,
+        });
+      } catch (error: any) {
+        return NextResponse.json(
+          { error: error.message ?? "The images could not be combined." },
+          { status: 400 }
+        );
+      }
+    }
+
     default:
       return NextResponse.json(
         { error: `Unknown image action: ${action}` },

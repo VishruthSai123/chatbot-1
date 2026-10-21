@@ -4,15 +4,18 @@ import type { ArtifactKind, ImageToolMode } from "@/components/chat/artifact";
 import type { createDocument } from "./ai/tools/create-document";
 import type { getWeather } from "./ai/tools/get-weather";
 import type {
+  imageCollage,
   imageCompress,
   imageConvert,
   imageCrop,
   imageListPresets,
   imageOcr,
+  imageOverlay,
   imagePixelate,
   imageRemoveBg,
   imageResize,
   imageRotate,
+  imageStitch,
   imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
 import type {
@@ -59,6 +62,9 @@ type imagePixelateTool = InferUITool<ReturnType<typeof imagePixelate>>;
 type imageRotateTool = InferUITool<ReturnType<typeof imageRotate>>;
 type imageOcrTool = InferUITool<ReturnType<typeof imageOcr>>;
 type imageListPresetsTool = InferUITool<ReturnType<typeof imageListPresets>>;
+type imageStitchTool = InferUITool<ReturnType<typeof imageStitch>>;
+type imageOverlayTool = InferUITool<ReturnType<typeof imageOverlay>>;
+type imageCollageTool = InferUITool<ReturnType<typeof imageCollage>>;
 type sheetGetInfoTool = InferUITool<ReturnType<typeof sheetGetInfo>>;
 type sheetFilterSortTool = InferUITool<ReturnType<typeof sheetFilterSort>>;
 type sheetRemoveDuplicatesTool = InferUITool<
@@ -91,6 +97,9 @@ export type ChatTools = {
   imageRotate: imageRotateTool;
   imageOcr: imageOcrTool;
   imageListPresets: imageListPresetsTool;
+  imageStitch: imageStitchTool;
+  imageOverlay: imageOverlayTool;
+  imageCollage: imageCollageTool;
   pdfGetInfo: pdfGetInfoTool;
   pdfMerge: pdfMergeTool;
   pdfSplit: pdfSplitTool;

@@ -29,7 +29,10 @@ export type ImageToolType =
   | "tool-imageUpscaleEnhance"
   | "tool-imagePixelate"
   | "tool-imageRotate"
-  | "tool-imageOcr";
+  | "tool-imageOcr"
+  | "tool-imageStitch"
+  | "tool-imageOverlay"
+  | "tool-imageCollage";
 
 interface ImageToolCardProps {
   isReadonly?: boolean;
@@ -63,6 +66,11 @@ const TOOL_CONFIG: Record<
     icon: string;
   }
 > = {
+  "tool-imageCollage": {
+    icon: "🟦",
+    label: "Build Collage",
+    mode: "convert",
+  },
   "tool-imageCompress": {
     icon: "🗜️",
     label: "Compress Photo",
@@ -82,6 +90,11 @@ const TOOL_CONFIG: Record<
     icon: "🔎",
     label: "Extract Text (OCR)",
     mode: "ocr",
+  },
+  "tool-imageOverlay": {
+    icon: "🎯",
+    label: "Overlay Image",
+    mode: "convert",
   },
   "tool-imagePixelate": {
     icon: "🟦",
@@ -107,6 +120,11 @@ const TOOL_CONFIG: Record<
     icon: "🔄",
     label: "Rotate & Flip",
     mode: "rotate",
+  },
+  "tool-imageStitch": {
+    icon: "🧵",
+    label: "Stitch Images",
+    mode: "convert",
   },
   "tool-imageUpscaleEnhance": {
     icon: "🔬",
