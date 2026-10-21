@@ -9,6 +9,7 @@ import type { ImageCollectionItem } from "@/lib/image/ref";
 import { resolveDocumentImage } from "@/lib/image/resolve-source";
 import type { ImageOperationResult } from "@/lib/tools/image/types";
 import type { ChatMessage } from "@/lib/types";
+import { resolveImageReferences } from "./image-references";
 
 /**
  * Applying one image operation to many images.
@@ -21,6 +22,10 @@ import type { ChatMessage } from "@/lib/types";
  * Each image is edited in place: it becomes a new version of its own document.
  * The results are then gathered into a collection so the studio opens on a grid
  * of the edited images rather than on one arbitrary member.
+ *
+ * The references the model supplies are *filenames*, not document ids: the AI
+ * SDK drops the document id when it converts a message for the provider. They
+ * are resolved back to ids here, on the server, where the ids still exist.
  */
 
 export type BatchOperation = (args: {
@@ -78,14 +83,17 @@ export function emitImageCollection(
 export async function runImageBatch({
   chatId,
   dataStream,
-  documentIds,
+  messages,
   operation,
+  references,
   session,
   title,
 }: {
   chatId?: string;
   dataStream: UIMessageStreamWriter<ChatMessage>;
-  documentIds: string[];
+  messages?: ChatMessage[];
+  /** Filenames or document ids of the images to act on. */
+  references: string[];
   operation: BatchOperation;
   session: Session;
   title: string;
@@ -94,7 +102,7 @@ export async function runImageBatch({
     return {
       errors: ["Sign in to edit multiple images."],
       processed: 0,
-      requested: documentIds.length,
+      requested: references.length,
     };
   }
 
@@ -102,7 +110,26 @@ export async function runImageBatch({
   const items: ImageCollectionItem[] = [];
   const errors: string[] = [];
 
-  for (const documentId of documentIds) {
+  const { missing, resolved: targets } = await resolveImageReferences({
+    chatId,
+    messages,
+    references,
+  });
+
+  for (const name of missing) {
+    errors.push(`Could not find the image "${name}".`);
+  }
+
+  for (const target of targets) {
+    if (!target.documentId) {
+      // The attachment exists but carries no document, so it cannot be edited
+      // in place and cannot become a version.
+      errors.push(`"${target.name}" is not an editable image.`);
+      continue;
+    }
+
+    const { documentId } = target;
+
     try {
       // biome-ignore lint/performance/noAwaitInLoops: one image at a time keeps peak memory flat; a batch of full-resolution photos would otherwise be decoded all at once
       const resolved = await resolveDocumentImage({
@@ -175,7 +202,7 @@ export async function runImageBatch({
     collectionId,
     errors,
     processed: items.length,
-    requested: documentIds.length,
+    requested: references.length,
   };
 }
 

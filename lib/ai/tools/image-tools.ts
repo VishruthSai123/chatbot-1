@@ -34,6 +34,7 @@ import {
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
 import { describeBatchOutcome, runImageBatch } from "./image-batch";
+import { resolveImageReferences } from "./image-references";
 
 type ImageToolsProps = {
   session: Session;
@@ -515,7 +516,7 @@ export const imageResize = ({
       "Resize/re-scale an image to EXACTLY the size the user asked for, with no clarifying questions. Supports: exact pixel width/height (one or both — the missing edge keeps aspect ratio), physical units (mm/cm/in) with DPI injection, an aspect ratio (e.g. '16:9', 'square'), a relative scale percent (e.g. 50 = half, 200 = double), max/min bounds (e.g. 'max 2000px'), cover/contain/pad fit, and an optional file-size cap (targetSizeKb). Also fulfills official passport/visa/ID presets by key.",
     execute: async ({
       id,
-      documentIds,
+      images,
       imageUrl,
       preset,
       width,
@@ -591,13 +592,14 @@ export const imageResize = ({
 
         // Batch: the same operation, applied to every listed image. The sizing
         // is already validated above, so both paths agree on what was asked for.
-        if (documentIds && documentIds.length > 1) {
+        if (images && images.length > 1) {
           const outcome = await runImageBatch({
             chatId,
             dataStream,
-            documentIds,
+            messages,
             operation: ({ source }) =>
               executeResize(source, { ...sizing, format: "jpeg", quality: 95 }),
+            references: images,
             session,
             title: "Resized images",
           });
@@ -720,14 +722,6 @@ export const imageResize = ({
         .describe(
           'Target aspect ratio, e.g. "16:9", "4:5", "1:1", "square". Combined with a single width/height it derives the other edge.'
         ),
-      documentIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(60)
-        .optional()
-        .describe(
-          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
-        ),
       dpi: z
         .union([z.literal(72), z.literal(150), z.literal(300), z.literal(600)])
         .optional()
@@ -752,6 +746,14 @@ export const imageResize = ({
         .optional()
         .describe(
           "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      images: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "The images to act on, named by their attachment filename (e.g. 'photo1.jpg') or document UUID. Give several to apply the operation to all of them."
         ),
       imageUrl: z
         .string()
@@ -974,7 +976,7 @@ export const imageCrop = ({
       "Crop an image. Either crop to an aspect ratio (e.g. '1:1', '16:9', '7:9') anchored by mode ('center', 'top', 'bottom', or 'attention' for smart framing), or to explicit pixel coordinates (left, top, width, height). A transparent image keeps its alpha channel.",
     execute: async ({
       id,
-      documentIds,
+      images,
       imageUrl,
       left,
       top,
@@ -1004,11 +1006,11 @@ export const imageCrop = ({
           aspectRatio ?? (hasPixelBox ? undefined : requirement?.aspectRatio);
 
         // Batch: the same crop, applied to every listed image.
-        if (documentIds && documentIds.length > 1) {
+        if (images && images.length > 1) {
           const outcome = await runImageBatch({
             chatId,
             dataStream,
-            documentIds,
+            messages,
             operation: ({ source }) =>
               executeCrop(source, {
                 aspectRatio: effectiveAspect,
@@ -1018,6 +1020,7 @@ export const imageCrop = ({
                 top,
                 width,
               }),
+            references: images,
             session,
             title: "Cropped images",
           });
@@ -1121,14 +1124,6 @@ export const imageCrop = ({
         .describe(
           'Crop to an aspect ratio, e.g. "1:1", "16:9", "7:9", "square". Omit when using pixel coordinates.'
         ),
-      documentIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(60)
-        .optional()
-        .describe(
-          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
-        ),
       height: z
         .number()
         .positive()
@@ -1139,6 +1134,14 @@ export const imageCrop = ({
         .optional()
         .describe(
           "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      images: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "The images to act on, named by their attachment filename (e.g. 'photo1.jpg') or document UUID. Give several to apply the operation to all of them."
         ),
       imageUrl: z
         .string()
@@ -1183,7 +1186,7 @@ export const imageRotate = ({
       "Rotate and/or flip an image. Accepts any angle in degrees (90/180/270 are exact; arbitrary angles expose corners, filled with 'background' unless the source is transparent). Also flips horizontally or vertically. A transparent image keeps its alpha channel, including transparent corners.",
     execute: async ({
       id,
-      documentIds,
+      images,
       imageUrl,
       degrees = 0,
       flipHorizontal = false,
@@ -1200,11 +1203,11 @@ export const imageRotate = ({
         }
 
         // Batch: the same rotation, applied to every listed image.
-        if (documentIds && documentIds.length > 1) {
+        if (images && images.length > 1) {
           const outcome = await runImageBatch({
             chatId,
             dataStream,
-            documentIds,
+            messages,
             operation: ({ source }) =>
               executeRotate(source, {
                 background,
@@ -1212,6 +1215,7 @@ export const imageRotate = ({
                 flipHorizontal,
                 flipVertical,
               }),
+            references: images,
             session,
             title: "Rotated images",
           });
@@ -1315,14 +1319,6 @@ export const imageRotate = ({
         .describe(
           "Rotation angle in degrees. Positive is clockwise. Use 90/180/270 for exact quarter turns, or any value for a free rotation. Omit for a flip-only edit."
         ),
-      documentIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(60)
-        .optional()
-        .describe(
-          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
-        ),
       flipHorizontal: z
         .boolean()
         .optional()
@@ -1338,6 +1334,14 @@ export const imageRotate = ({
         .optional()
         .describe(
           "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      images: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "The images to act on, named by their attachment filename (e.g. 'photo1.jpg') or document UUID. Give several to apply the operation to all of them."
         ),
       imageUrl: z
         .string()
@@ -1358,13 +1362,7 @@ export const imageCompress = ({
   tool({
     description:
       "Compress an image to fit under a specific file size threshold in KB (e.g. 50 KB for government portals) or reduce quality. A transparent image stays transparent: request PNG or WebP for it, since JPEG cannot store an alpha channel.",
-    execute: async ({
-      id,
-      documentIds,
-      imageUrl,
-      targetSizeKb,
-      quality = 80,
-    }) => {
+    execute: async ({ id, images, imageUrl, targetSizeKb, quality = 80 }) => {
       try {
         if (checkIsGuest(session)) {
           return {
@@ -1375,13 +1373,14 @@ export const imageCompress = ({
         }
 
         // Batch: the same compression, applied to every listed image.
-        if (documentIds && documentIds.length > 1) {
+        if (images && images.length > 1) {
           const outcome = await runImageBatch({
             chatId,
             dataStream,
-            documentIds,
+            messages,
             operation: ({ source }) =>
               executeCompress(source, { quality, targetSizeKb }),
+            references: images,
             session,
             title: "Compressed images",
           });
@@ -1472,19 +1471,19 @@ export const imageCompress = ({
       }
     },
     inputSchema: z.object({
-      documentIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(60)
-        .optional()
-        .describe(
-          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
-        ),
       id: z
         .string()
         .optional()
         .describe(
           "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      images: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "The images to act on, named by their attachment filename (e.g. 'photo1.jpg') or document UUID. Give several to apply the operation to all of them."
         ),
       imageUrl: z
         .string()
@@ -1511,13 +1510,7 @@ export const imageConvert = ({
   tool({
     description:
       "Convert an image to a different file format (JPEG, PNG, WebP, AVIF, TIFF), preserving transparency where the target format supports it.",
-    execute: async ({
-      id,
-      documentIds,
-      imageUrl,
-      targetFormat,
-      quality = 95,
-    }) => {
+    execute: async ({ id, images, imageUrl, targetFormat, quality = 95 }) => {
       try {
         if (checkIsGuest(session)) {
           return {
@@ -1528,13 +1521,14 @@ export const imageConvert = ({
         }
 
         // Batch: the same conversion, applied to every listed image.
-        if (documentIds && documentIds.length > 1) {
+        if (images && images.length > 1) {
           const outcome = await runImageBatch({
             chatId,
             dataStream,
-            documentIds,
+            messages,
             operation: ({ source }) =>
               executeConvert(source, { quality, targetFormat }),
+            references: images,
             session,
             title: "Converted images",
           });
@@ -1615,19 +1609,19 @@ export const imageConvert = ({
       }
     },
     inputSchema: z.object({
-      documentIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(60)
-        .optional()
-        .describe(
-          "Document UUIDs of several images to act on. When more than one is given, the operation applies to every one of them."
-        ),
       id: z
         .string()
         .optional()
         .describe(
           "Document UUID of an existing image to modify. Omit when processing newly uploaded photos."
+        ),
+      images: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(60)
+        .optional()
+        .describe(
+          "The images to act on, named by their attachment filename (e.g. 'photo1.jpg') or document UUID. Give several to apply the operation to all of them."
         ),
       imageUrl: z
         .string()
@@ -2039,21 +2033,57 @@ export const imageOcr = ({
   });
 
 /**
+ * Resolves the images a composite tool should use.
+ *
+ * The model names images by their attachment filename, because that is all it
+ * can see. The server still knows the document ids, so the reference is
+ * resolved here rather than in the tool.
+ */
+async function resolveCompositeTargets({
+  chatId,
+  images,
+  messages,
+}: {
+  chatId?: string;
+  images?: string[];
+  messages?: ChatMessage[];
+}): Promise<string[]> {
+  if (!images || images.length === 0) {
+    return [];
+  }
+
+  const { resolved } = await resolveImageReferences({
+    chatId,
+    messages,
+    references: images,
+  });
+
+  return resolved
+    .map((target) => target.documentId)
+    .filter((id): id is string => Boolean(id));
+}
+
+/**
  * Combines several images into one.
  *
  * The three composite tools are deliberately separate rather than one tool with
  * a mode enum: the model picks the wrong mode far more often than it picks the
  * wrong tool, and a stitch is genuinely a different request from an overlay.
  */
-export const imageStitch = ({ session, dataStream, chatId }: ImageToolsProps) =>
+export const imageStitch = ({
+  session,
+  dataStream,
+  chatId,
+  messages,
+}: ImageToolsProps) =>
   tool({
     description:
       "Stitch several images into one long image, top to bottom or side by side. Use it for long screenshots, before/after comparisons, or combining scanned pages into one strip. The result is a new PNG image.",
     execute: async ({
       background,
       direction = "vertical",
-      documentIds,
       gap = 0,
+      images,
       title,
     }) => {
       try {
@@ -2062,6 +2092,19 @@ export const imageStitch = ({ session, dataStream, chatId }: ImageToolsProps) =>
             error:
               "Account required: Stitching images is reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
+          };
+        }
+
+        const documentIds = await resolveCompositeTargets({
+          chatId,
+          images,
+          messages,
+        });
+
+        if (documentIds.length < 2) {
+          return {
+            error:
+              "Stitching needs at least two images. Name them by their attachment filename.",
           };
         }
 
@@ -2104,11 +2147,6 @@ export const imageStitch = ({ session, dataStream, chatId }: ImageToolsProps) =>
         .describe(
           "Vertical stacks the images top to bottom; horizontal puts them side by side."
         ),
-      documentIds: z
-        .array(z.string().min(1))
-        .min(2)
-        .max(60)
-        .describe("Document UUIDs of the images to stitch, in order."),
       gap: z
         .number()
         .int()
@@ -2117,6 +2155,13 @@ export const imageStitch = ({ session, dataStream, chatId }: ImageToolsProps) =>
         .optional()
         .default(0)
         .describe("Gap between the images, in pixels."),
+      images: z
+        .array(z.string().min(1))
+        .min(2)
+        .max(60)
+        .describe(
+          "The images to stitch, named by their attachment filename (e.g. 'shot1.jpg'), in the order they should appear."
+        ),
       title: z.string().max(120).optional(),
     }),
   });
@@ -2125,14 +2170,15 @@ export const imageOverlay = ({
   session,
   dataStream,
   chatId,
+  messages,
 }: ImageToolsProps) =>
   tool({
     description:
       "Place one image on top of another — a logo, a watermark, a cutout over a background. The overlay keeps its transparency and is scaled relative to the base image.",
     execute: async ({
-      baseDocumentId,
+      baseImage,
       opacity = 1,
-      overlayDocumentId,
+      overlayImage,
       position = "bottom-right",
       scale = 0.4,
       title,
@@ -2146,11 +2192,26 @@ export const imageOverlay = ({
           };
         }
 
+        const targets = await resolveCompositeTargets({
+          chatId,
+          images: [baseImage, overlayImage].filter((value): value is string =>
+            Boolean(value)
+          ),
+          messages,
+        });
+
+        if (targets.length < 2) {
+          return {
+            error:
+              "Overlaying needs two images. Name them by their attachment filename.",
+          };
+        }
+
         const outcome = await executeOverlay({
-          baseDocumentId,
+          baseDocumentId: targets[0],
           chatId,
           opacity,
-          overlayDocumentId,
+          overlayDocumentId: targets[1],
           position,
           scale,
           title: title ?? "Overlaid image",
@@ -2174,9 +2235,11 @@ export const imageOverlay = ({
       }
     },
     inputSchema: z.object({
-      baseDocumentId: z
+      baseImage: z
         .string()
-        .describe("Document UUID of the image to place the overlay on."),
+        .describe(
+          "The image to place the overlay on, named by its attachment filename (e.g. 'background.jpg')."
+        ),
       opacity: z
         .number()
         .min(0)
@@ -2184,9 +2247,11 @@ export const imageOverlay = ({
         .optional()
         .default(1)
         .describe("How strongly the overlay shows through, 0 to 1."),
-      overlayDocumentId: z
+      overlayImage: z
         .string()
-        .describe("Document UUID of the image placed on top."),
+        .describe(
+          "The image placed on top, named by its attachment filename (e.g. 'logo.png')."
+        ),
       position: z
         .enum([
           "top-left",
@@ -2212,6 +2277,7 @@ export const imageCollage = ({
   session,
   dataStream,
   chatId,
+  messages,
 }: ImageToolsProps) =>
   tool({
     description:
@@ -2220,8 +2286,8 @@ export const imageCollage = ({
       background,
       cellHeight = 400,
       columns,
-      documentIds,
       gap = 12,
+      images,
       title,
     }) => {
       try {
@@ -2230,6 +2296,19 @@ export const imageCollage = ({
             error:
               "Account required: Building collages is reserved for registered accounts. Please sign in or create a free account to use this feature.",
             requiresAuth: true,
+          };
+        }
+
+        const documentIds = await resolveCompositeTargets({
+          chatId,
+          images,
+          messages,
+        });
+
+        if (documentIds.length < 2) {
+          return {
+            error:
+              "A collage needs at least two images. Name them by their attachment filename.",
           };
         }
 
@@ -2280,11 +2359,6 @@ export const imageCollage = ({
         .max(10)
         .optional()
         .describe("Number of columns. Defaults to a near-square grid."),
-      documentIds: z
-        .array(z.string().min(1))
-        .min(2)
-        .max(60)
-        .describe("Document UUIDs of the images to place in the collage."),
       gap: z
         .number()
         .int()
@@ -2293,6 +2367,13 @@ export const imageCollage = ({
         .optional()
         .default(12)
         .describe("Gap between the cells, in pixels."),
+      images: z
+        .array(z.string().min(1))
+        .min(2)
+        .max(60)
+        .describe(
+          "The images to place in the collage, named by their attachment filename (e.g. 'photo1.jpg')."
+        ),
       title: z.string().max(120).optional(),
     }),
   });
