@@ -25,6 +25,7 @@ import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
 import { normaliseDegrees } from "@/lib/pdf/pages";
+import { canvasSizeFor, fitScale, renderDpr } from "@/lib/pdf/viewport";
 import { formatBytes } from "@/lib/storage/limits";
 import { toolEndpoint } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
@@ -95,6 +96,47 @@ function signature(pages: PageItem[]): string {
   return pages.map((page) => `${page.sourcePage}:${page.rotation}`).join(",");
 }
 
+/**
+ * The page's natural size, in PDF units.
+ *
+ * pdf.js v6 removed the `scale = 1` default from `getViewport`. Calling it
+ * without a scale therefore returns a viewport whose width and height are
+ * `NaN` — and a canvas sized to `NaN` is silently set to **0×0** by the
+ * browser, so the page renders as an empty white rectangle. Every viewport in
+ * this file must therefore carry an explicit scale, and the "natural size"
+ * viewport is scale 1.
+ */
+function naturalViewport(
+  page: any,
+  rotation: number
+): { height: number; width: number } {
+  return page.getViewport({ rotation, scale: 1 });
+}
+
+/**
+ * Sizes a canvas for a viewport, refusing a size that would render nothing.
+ *
+ * The refusal is the point. A canvas assigned `NaN` or a non-positive number
+ * becomes 0×0 and the page looks blank with no error anywhere — that is
+ * exactly the failure this guards against, so a bad viewport is reported
+ * instead of being drawn.
+ */
+function sizeCanvas(
+  canvas: HTMLCanvasElement,
+  viewport: { height: number; width: number }
+): boolean {
+  const size = canvasSizeFor(viewport);
+
+  if (!size) {
+    return false;
+  }
+
+  canvas.width = size.width;
+  canvas.height = size.height;
+
+  return true;
+}
+
 function getEffectiveAspect(
   intrinsicAspect = Math.SQRT1_2,
   rotation = 0
@@ -131,6 +173,7 @@ const PageThumb = memo(function InnerPageThumb({
   // Default first 18 pages to visible so initial viewport renders immediately without waiting on IntersectionObserver
   const [visible, setVisible] = useState(() => sourcePage <= 18);
   const [isRendered, setIsRendered] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
   const [aspect, setAspect] = useState<number>(() =>
     getEffectiveAspect(intrinsicAspect, rotation)
   );
@@ -203,17 +246,13 @@ const PageThumb = memo(function InnerPageThumb({
       }
 
       const angle = normaliseDegrees(page.rotate + rotation);
-      const base = page.getViewport({ rotation: angle });
+      const base = naturalViewport(page, angle);
       const currentAspect = base.width / base.height;
       setAspect(currentAspect);
 
-      const dpr =
-        typeof window === "undefined"
-          ? 2
-          : Math.min(window.devicePixelRatio || 2, 3);
       const containerWidth = boxRef.current?.clientWidth || THUMB_WIDTH;
       const targetWidth = Math.max(containerWidth, THUMB_WIDTH);
-      const scale = (targetWidth / base.width) * dpr;
+      const scale = fitScale(base.width, targetWidth, renderDpr());
 
       const viewport = page.getViewport({
         rotation: angle,
@@ -226,8 +265,19 @@ const PageThumb = memo(function InnerPageThumb({
         return;
       }
 
-      canvasEl.width = Math.max(1, Math.floor(viewport.width));
-      canvasEl.height = Math.max(1, Math.floor(viewport.height));
+      if (!sizeCanvas(canvasEl, viewport)) {
+        // A canvas that cannot be sized renders nothing, so say so instead of
+        // leaving a blank page behind.
+        console.error(
+          `Page ${sourcePage} produced an invalid viewport:`,
+          viewport
+        );
+        if (!cancelled) {
+          setIsRendered(true);
+          setHasFailed(true);
+        }
+        return;
+      }
 
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvasEl.width, canvasEl.height);
@@ -283,6 +333,13 @@ const PageThumb = memo(function InnerPageThumb({
           <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
         </div>
       )}
+      {hasFailed ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/90">
+          <span className="px-2 text-center text-[10px] leading-tight text-muted-foreground">
+            This page could not be drawn.
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 });
@@ -307,6 +364,7 @@ const PageReader = memo(function InnerPageReader({
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [aspect, setAspect] = useState<number>(Math.SQRT1_2);
   const [isRendering, setIsRendering] = useState(true);
+  const [hasFailed, setHasFailed] = useState(false);
   const activeTaskRef = useRef<any>(null);
 
   useEffect(() => {
@@ -338,17 +396,13 @@ const PageReader = memo(function InnerPageReader({
       }
 
       const angle = normaliseDegrees(page.rotate + rotation);
-      const base = page.getViewport({ rotation: angle });
+      const base = naturalViewport(page, angle);
       const pageAspect = base.width / base.height;
       setAspect(pageAspect);
 
-      const dpr =
-        typeof window === "undefined"
-          ? 2
-          : Math.min(window.devicePixelRatio || 2, 3);
       const baseWidth = 680;
       const scaledWidth = baseWidth * (zoom / 100);
-      const scale = (scaledWidth / base.width) * dpr;
+      const scale = fitScale(base.width, scaledWidth, renderDpr());
 
       const viewport = page.getViewport({ rotation: angle, scale });
       const context = canvasEl.getContext("2d");
@@ -357,8 +411,17 @@ const PageReader = memo(function InnerPageReader({
         return;
       }
 
-      canvasEl.width = Math.max(1, Math.floor(viewport.width));
-      canvasEl.height = Math.max(1, Math.floor(viewport.height));
+      if (!sizeCanvas(canvasEl, viewport)) {
+        console.error(
+          `Page ${pageNumber} produced an invalid viewport:`,
+          viewport
+        );
+        if (!cancelled) {
+          setIsRendering(false);
+          setHasFailed(true);
+        }
+        return;
+      }
 
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvasEl.width, canvasEl.height);
@@ -418,6 +481,13 @@ const PageReader = memo(function InnerPageReader({
         {isRendering ? (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/30 backdrop-blur-xs">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : null}
+        {hasFailed ? (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-white/90">
+            <span className="px-3 text-center text-xs leading-tight text-muted-foreground">
+              This page could not be drawn.
+            </span>
           </div>
         ) : null}
       </div>
@@ -689,11 +759,13 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
       );
 
       const items: PageItem[] = loadedPages.map((page, index) => {
-        const vp = page.getViewport({
-          rotation: normaliseDegrees(page.rotate),
-        });
+        const vp = naturalViewport(page, normaliseDegrees(page.rotate));
+
         return {
-          aspectRatio: vp.width / vp.height,
+          aspectRatio:
+            Number.isFinite(vp.width) && vp.height > 0
+              ? vp.width / vp.height
+              : undefined,
           id: `page-${index + 1}`,
           intrinsic: normaliseDegrees(page.rotate),
           rotation: 0,
