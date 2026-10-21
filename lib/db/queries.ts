@@ -455,6 +455,28 @@ export async function getLatestDocumentByKind({
   }
 }
 
+export async function getRecentDocumentsByKind({
+  userId,
+  kind,
+  limit = 10,
+}: {
+  userId: string;
+  kind: ArtifactKind;
+  limit?: number;
+}) {
+  try {
+    return await db
+      .select()
+      .from(document)
+      .where(and(eq(document.userId, userId), eq(document.kind, kind)))
+      .orderBy(desc(document.createdAt))
+      .limit(limit);
+  } catch (error) {
+    console.warn("Failed to query recent documents by kind:", error);
+    return [];
+  }
+}
+
 export async function deleteDocumentsByIdAfterTimestamp({
   id,
   timestamp,

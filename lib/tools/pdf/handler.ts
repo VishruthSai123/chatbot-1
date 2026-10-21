@@ -57,6 +57,7 @@ export async function runPdfAction({
   const {
     action,
     chatId,
+    content,
     documentId,
     params,
     sourceDocumentIds,
@@ -66,6 +67,7 @@ export async function runPdfAction({
 
   const context = {
     chatId: chatId as string | undefined,
+    content: content as string | undefined,
     documentId: documentId as string | undefined,
     userId: session.user.id,
   };

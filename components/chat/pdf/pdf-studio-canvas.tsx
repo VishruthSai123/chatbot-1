@@ -222,10 +222,13 @@ async function downloadFile(url: string, filename: string) {
   }
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
-  content: _content,
+  content,
   currentVersionIndex = 0,
-  documentId,
+  documentId: propDocumentId,
   title,
   totalVersions = 1,
   handleVersionChange,
@@ -234,6 +237,19 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
   const { artifact, setArtifact } = useArtifact();
   const { isGuest } = useIsGuest();
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  const documentId = useMemo(() => {
+    if (propDocumentId && UUID_REGEX.test(propDocumentId)) {
+      return propDocumentId;
+    }
+    if (
+      artifact.documentId &&
+      artifact.documentId !== "init" &&
+      UUID_REGEX.test(artifact.documentId)
+    ) {
+      return artifact.documentId;
+    }
+  }, [propDocumentId, artifact.documentId]);
 
   const [source, setSource] = useState<ResolvedFile | null>(null);
   const [doc, setDoc] = useState<any>(null);
@@ -251,6 +267,7 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
       const response = await fetch(toolEndpoint("pdf"), {
         body: JSON.stringify({
           action,
+          content,
           documentId,
           params,
           versionIndex: currentVersionIndex,
@@ -272,7 +289,7 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
 
       return payload;
     },
-    [documentId, currentVersionIndex]
+    [content, currentVersionIndex, documentId]
   );
 
   /** Resolves the current version to a signed URL the browser can read. */
@@ -280,6 +297,11 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
     let cancelled = false;
 
     if (isGuest) {
+      setIsLoading(false);
+      return;
+    }
+
+    if (!documentId && !content) {
       setIsLoading(false);
       return;
     }
@@ -316,7 +338,7 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
     return () => {
       cancelled = true;
     };
-  }, [isGuest, request]);
+  }, [content, documentId, isGuest, request]);
 
   /** Loads the document into pdf.js and derives the editable page list. */
   useEffect(() => {

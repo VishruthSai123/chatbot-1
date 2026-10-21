@@ -58,75 +58,94 @@ export type ResolvedPdfSource = {
  * callers never have to know which one they got.
  */
 export async function resolvePdfSource({
+  content,
   documentId,
   userId,
   versionIndex,
 }: {
+  content?: string;
   documentId?: string;
   userId: string;
   versionIndex?: number;
 }): Promise<ResolvedPdfSource | null> {
-  if (!(documentId && isValidUUID(documentId))) {
-    return null;
-  }
-
   const fromContent = async (
-    content: string | null,
+    rawContent: string | null | undefined,
     id: string,
     title: string
   ): Promise<ResolvedPdfSource | null> => {
-    if (!content) {
+    if (!rawContent) {
       return null;
     }
 
-    const ref = decodePdfRef(content);
-    const storageKey = ref?.storageKey ?? content.trim();
+    const ref = decodePdfRef(rawContent);
+    const storageKey = ref?.storageKey ?? rawContent.trim();
 
-    // Content that is neither an envelope nor a plausible key (legacy prose, an
-    // empty stub from `onCreateDocument`) is not a PDF version. Refuse rather than
-    // attempt to download a sentence as a file.
+    // Content that is neither an envelope nor a plausible key is not a PDF version.
     if (!storageKey?.includes("/")) {
       return null;
     }
 
-    return {
-      buffer: await downloadArtifact(storageKey),
-      documentId: id,
-      filename: ref?.filename ?? safeStorageFilename(title || "document.pdf"),
-      storageKey,
-      title: title || "Document",
-    };
+    try {
+      const buffer = await downloadArtifact(storageKey);
+      return {
+        buffer,
+        documentId: id,
+        filename: ref?.filename ?? safeStorageFilename(title || "document.pdf"),
+        storageKey,
+        title: title || "Document",
+      };
+    } catch (error) {
+      console.warn("Non-fatal: failed to download PDF artifact:", error);
+      return null;
+    }
   };
 
-  if (typeof versionIndex === "number" && versionIndex >= 0) {
+  if (documentId && isValidUUID(documentId)) {
+    if (typeof versionIndex === "number" && versionIndex >= 0) {
+      try {
+        const versions = await getDocumentsById({ id: documentId });
+        const requested = versions[versionIndex];
+
+        if (requested?.userId === userId) {
+          const resolved = await fromContent(
+            requested.content,
+            requested.id,
+            requested.title
+          );
+
+          if (resolved) {
+            return resolved;
+          }
+        }
+      } catch (error) {
+        console.warn("Non-fatal: failed to resolve PDF version:", error);
+      }
+    }
+
     try {
-      const versions = await getDocumentsById({ id: documentId });
-      const requested = versions[versionIndex];
+      const doc = await getDocumentById({ id: documentId });
 
-      if (requested?.userId === userId) {
-        const resolved = await fromContent(
-          requested.content,
-          requested.id,
-          requested.title
-        );
-
+      if (doc?.userId === userId) {
+        const resolved = await fromContent(doc.content, doc.id, doc.title);
         if (resolved) {
           return resolved;
         }
       }
     } catch (error) {
-      console.warn("Non-fatal: failed to resolve PDF version:", error);
+      console.warn("Non-fatal: PDF document lookup failed:", error);
     }
   }
 
-  try {
-    const doc = await getDocumentById({ id: documentId });
-
-    if (doc?.userId === userId) {
-      return await fromContent(doc.content, doc.id, doc.title);
+  // Fallback: If content was provided directly by the client (e.g. current canvas version)
+  if (content) {
+    const direct = await fromContent(
+      content,
+      documentId && isValidUUID(documentId) ? documentId : crypto.randomUUID(),
+      "Document"
+    );
+    if (direct) {
+      return direct;
     }
-  } catch (error) {
-    console.warn("Non-fatal: PDF document lookup failed:", error);
   }
 
   return null;

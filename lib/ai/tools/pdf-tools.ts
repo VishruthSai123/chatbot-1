@@ -5,6 +5,7 @@ import { z } from "zod";
 import { guestRegex } from "@/lib/constants";
 import {
   getLatestDocumentByKind,
+  getRecentDocumentsByKind,
   isValidUUID,
   saveDocument,
 } from "@/lib/db/queries";
@@ -30,6 +31,7 @@ type PdfToolsProps = {
   session: Session;
   dataStream?: UIMessageStreamWriter<ChatMessage>;
   chatId?: string;
+  messages?: ChatMessage[];
   /**
    * PDF currently open in the right-pane studio. Lets a tool act on exactly what
    * the user is looking at when the model does not name a document.
@@ -67,21 +69,174 @@ function emitPdfArtifact(
   dataStream.write({ data: null, transient: true, type: "data-finish" });
 }
 
+/** Extracts PDF attachments from conversation messages. */
+function extractPdfAttachmentsFromMessages(messages?: ChatMessage[]): {
+  documentId?: string;
+  name?: string;
+  url?: string;
+}[] {
+  if (!messages || messages.length === 0) {
+    return [];
+  }
+
+  const results: { documentId?: string; name?: string; url?: string }[] = [];
+  const userMessages = messages.filter((m) => m.role === "user");
+  const lastUserMsg = userMessages.at(-1);
+
+  if (lastUserMsg?.parts) {
+    for (const part of lastUserMsg.parts) {
+      if (part.type === "file") {
+        const filePart = part as {
+          documentId?: string;
+          mediaType?: string;
+          name?: string;
+          url?: string;
+        };
+        const isPdf =
+          filePart.mediaType === "application/pdf" ||
+          filePart.name?.toLowerCase().endsWith(".pdf") ||
+          filePart.url?.toLowerCase().includes(".pdf");
+        if (isPdf) {
+          results.push({
+            documentId: filePart.documentId,
+            name: filePart.name,
+            url: filePart.url,
+          });
+        }
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    for (let i = userMessages.length - 1; i >= 0; i -= 1) {
+      const msg = userMessages[i];
+      if (msg.parts) {
+        for (const part of msg.parts) {
+          if (part.type === "file") {
+            const filePart = part as {
+              documentId?: string;
+              mediaType?: string;
+              name?: string;
+              url?: string;
+            };
+            const isPdf =
+              filePart.mediaType === "application/pdf" ||
+              filePart.name?.toLowerCase().endsWith(".pdf") ||
+              filePart.url?.toLowerCase().includes(".pdf");
+            if (isPdf) {
+              results.push({
+                documentId: filePart.documentId,
+                name: filePart.name,
+                url: filePart.url,
+              });
+            }
+          }
+        }
+      }
+      if (results.length > 0) {
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Resolves an explicit string (UUID or filename) to a valid Document UUID. */
+async function resolveSinglePdfId({
+  candidate,
+  messages,
+  userId,
+}: {
+  candidate?: string;
+  messages?: ChatMessage[];
+  userId: string;
+}): Promise<string | undefined> {
+  if (candidate && isValidUUID(candidate)) {
+    return candidate;
+  }
+
+  const searchName = candidate?.trim().toLowerCase();
+
+  // 1. Search attachments in messages
+  if (searchName && messages) {
+    const attachments = extractPdfAttachmentsFromMessages(messages);
+    const match = attachments.find((att) => {
+      const n = (att.name || "").toLowerCase();
+      return (
+        n === searchName || n.includes(searchName) || searchName.includes(n)
+      );
+    });
+    if (match?.documentId && isValidUUID(match.documentId)) {
+      return match.documentId;
+    }
+  }
+
+  // 2. Query user's recent PDF documents from database
+  try {
+    const recentDocs = await getRecentDocumentsByKind({
+      kind: "pdf",
+      limit: 20,
+      userId,
+    });
+
+    if (searchName) {
+      const match = recentDocs.find((d) => {
+        const title = (d.title || "").toLowerCase();
+        return (
+          title === searchName ||
+          title.includes(searchName) ||
+          searchName.includes(title)
+        );
+      });
+      if (match) {
+        return match.id;
+      }
+    } else if (recentDocs.length > 0) {
+      return recentDocs[0].id;
+    }
+  } catch (err) {
+    console.warn("Non-fatal: failed to resolve PDF document by title:", err);
+  }
+}
+
 /**
- * Finds the PDF a tool should act on: an explicit id, then the open studio, then
+ * Finds the PDF a tool should act on: an explicit id or filename, then
+ * an attached PDF from the user's latest message, then the open studio, then
  * the newest PDF the user owns.
  */
 async function resolveDocumentId({
   activePdf,
   documentId,
+  messages,
   userId,
 }: {
   activePdf?: { documentId?: string };
   documentId?: string;
+  messages?: ChatMessage[];
   userId: string;
 }): Promise<string | undefined> {
-  if (documentId && isValidUUID(documentId)) {
-    return documentId;
+  if (documentId) {
+    const resolved = await resolveSinglePdfId({
+      candidate: documentId,
+      messages,
+      userId,
+    });
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  // Check if user attached a PDF in the latest message
+  if (messages) {
+    const attached = extractPdfAttachmentsFromMessages(messages);
+    if (
+      attached.length > 0 &&
+      attached[0].documentId &&
+      isValidUUID(attached[0].documentId)
+    ) {
+      return attached[0].documentId;
+    }
   }
 
   if (activePdf?.documentId && isValidUUID(activePdf.documentId)) {
@@ -97,13 +252,20 @@ async function resolveDocumentId({
 async function openPdf({
   activePdf,
   documentId,
+  messages,
   userId,
 }: {
   activePdf?: { documentId?: string; versionIndex?: number };
   documentId?: string;
+  messages?: ChatMessage[];
   userId: string;
 }) {
-  const id = await resolveDocumentId({ activePdf, documentId, userId });
+  const id = await resolveDocumentId({
+    activePdf,
+    documentId,
+    messages,
+    userId,
+  });
 
   if (!id) {
     return null;
@@ -146,7 +308,7 @@ async function saveVersion({
   }
 }
 
-export const pdfGetInfo = ({ activePdf, session }: PdfToolsProps) =>
+export const pdfGetInfo = ({ activePdf, messages, session }: PdfToolsProps) =>
   tool({
     description:
       "Report a PDF's page count, file size, title and author, and whether it was encrypted. Use this before answering questions about how many pages a document has.",
@@ -158,6 +320,7 @@ export const pdfGetInfo = ({ activePdf, session }: PdfToolsProps) =>
       const source = await openPdf({
         activePdf,
         documentId,
+        messages,
         userId: session.user.id,
       });
 
@@ -174,7 +337,7 @@ export const pdfGetInfo = ({ activePdf, session }: PdfToolsProps) =>
         .string()
         .optional()
         .describe(
-          "Document id from an attachment. Omit to use the PDF open in the studio."
+          "Document id or filename from an attachment. Omit to use the PDF attached or open in the studio."
         ),
     }),
   });
@@ -183,30 +346,93 @@ export const pdfMerge = ({
   activePdf,
   chatId,
   dataStream,
+  messages,
   session,
 }: PdfToolsProps) =>
   tool({
     description:
-      "Merge PDFs into one document, in the order given. The document open in the studio is included automatically unless its id is already listed.",
+      "Merge multiple PDFs into one document, in the order given. If multiple PDFs are attached in the conversation, they are automatically detected and merged in attachment order.",
     execute: async ({ documentIds, title }) => {
       if (checkIsGuest(session)) {
         return { error: "Sign in to merge PDFs." };
       }
 
       const userId = session.user.id;
-      const activeId = await resolveDocumentId({ activePdf, userId });
-      const ids = Array.from(
-        new Set(
-          [...(activeId ? [activeId] : []), ...(documentIds ?? [])].filter(
-            (id) => isValidUUID(id)
+      const resolvedIds: string[] = [];
+
+      // 1. Explicit documentIds/filenames passed by the model
+      if (documentIds && documentIds.length > 0) {
+        const resolved = await Promise.all(
+          documentIds.map((candidate) =>
+            resolveSinglePdfId({ candidate, messages, userId })
           )
-        )
-      );
+        );
+        for (const id of resolved) {
+          if (id && !resolvedIds.includes(id)) {
+            resolvedIds.push(id);
+          }
+        }
+      }
+
+      // 2. Attachments from the current conversation turn
+      if (resolvedIds.length < 2 && messages) {
+        const attached = extractPdfAttachmentsFromMessages(messages);
+        const resolvedAttached = await Promise.all(
+          attached.map(async (att) => {
+            if (att.documentId && isValidUUID(att.documentId)) {
+              return att.documentId;
+            }
+            if (att.name) {
+              const res = await resolveSinglePdfId({
+                candidate: att.name,
+                messages,
+                userId,
+              });
+              return res ?? null;
+            }
+            return null;
+          })
+        );
+        for (const id of resolvedAttached) {
+          if (id && isValidUUID(id) && !resolvedIds.includes(id)) {
+            resolvedIds.push(id);
+          }
+        }
+      }
+
+      // 3. Active document open in studio
+      if (
+        resolvedIds.length < 2 &&
+        activePdf?.documentId &&
+        isValidUUID(activePdf.documentId) &&
+        !resolvedIds.includes(activePdf.documentId)
+      ) {
+        resolvedIds.unshift(activePdf.documentId);
+      }
+
+      // 4. Recent PDF documents from database
+      if (resolvedIds.length < 2) {
+        const recent = await getRecentDocumentsByKind({
+          kind: "pdf",
+          limit: 5,
+          userId,
+        });
+        for (const doc of recent) {
+          if (!resolvedIds.includes(doc.id)) {
+            resolvedIds.push(doc.id);
+            if (resolvedIds.length >= 2) {
+              break;
+            }
+          }
+        }
+      }
+
+      const ids = resolvedIds.filter((id) => isValidUUID(id));
 
       if (ids.length < 2) {
         return {
           error:
-            "Merging needs at least two PDFs. Attach the others, or name their document ids.",
+            "Merging needs at least two PDFs. Please attach the PDFs you want to merge.",
         };
       }
 
@@ -275,6 +501,7 @@ export const pdfSplit = ({
   activePdf,
   chatId,
   dataStream,
+  messages,
   session,
 }: PdfToolsProps) =>
   tool({
@@ -286,7 +513,7 @@ export const pdfSplit = ({
       }
 
       const userId = session.user.id;
-      const source = await openPdf({ activePdf, documentId, userId });
+      const source = await openPdf({ activePdf, documentId, messages, userId });
 
       if (!source) {
         return { error: "I could not find that PDF in this chat." };
@@ -349,6 +576,7 @@ export const pdfArrange = ({
   activePdf,
   chatId,
   dataStream,
+  messages,
   session,
 }: PdfToolsProps) =>
   tool({
@@ -360,7 +588,7 @@ export const pdfArrange = ({
       }
 
       const userId = session.user.id;
-      const source = await openPdf({ activePdf, documentId, userId });
+      const source = await openPdf({ activePdf, documentId, messages, userId });
 
       if (!source) {
         return { error: "I could not find that PDF in this chat." };
@@ -419,6 +647,7 @@ export const pdfRotatePages = ({
   activePdf,
   chatId,
   dataStream,
+  messages,
   session,
 }: PdfToolsProps) =>
   tool({
@@ -430,7 +659,7 @@ export const pdfRotatePages = ({
       }
 
       const userId = session.user.id;
-      const source = await openPdf({ activePdf, documentId, userId });
+      const source = await openPdf({ activePdf, documentId, messages, userId });
 
       if (!source) {
         return { error: "I could not find that PDF in this chat." };
@@ -482,7 +711,11 @@ export const pdfRotatePages = ({
     }),
   });
 
-export const pdfExtractText = ({ activePdf, session }: PdfToolsProps) =>
+export const pdfExtractText = ({
+  activePdf,
+  messages,
+  session,
+}: PdfToolsProps) =>
   tool({
     description:
       "Extract the text layer of a PDF, page by page. Use this to read, summarise or quote a document. Scans without a text layer return little or nothing.",
@@ -494,6 +727,7 @@ export const pdfExtractText = ({ activePdf, session }: PdfToolsProps) =>
       const source = await openPdf({
         activePdf,
         documentId,
+        messages,
         userId: session.user.id,
       });
 
