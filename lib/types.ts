@@ -19,6 +19,14 @@ import type {
   imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
 import type {
+  notebookAddSource,
+  notebookAsk,
+  notebookCreate,
+  notebookGenerate,
+  notebookGrade,
+  notebookQuiz,
+} from "./ai/tools/notebook-tools";
+import type {
   imageToPdf,
   pdfArrange,
   pdfExtractText,
@@ -79,6 +87,12 @@ type sheetConvertFormatTool = InferUITool<
 type webSearchTool = InferUITool<ReturnType<typeof webSearch>>;
 type readUrlTool = InferUITool<ReturnType<typeof readUrl>>;
 type researchTool = InferUITool<ReturnType<typeof research>>;
+type notebookCreateTool = InferUITool<ReturnType<typeof notebookCreate>>;
+type notebookAskTool = InferUITool<ReturnType<typeof notebookAsk>>;
+type notebookGenerateTool = InferUITool<ReturnType<typeof notebookGenerate>>;
+type notebookQuizTool = InferUITool<ReturnType<typeof notebookQuiz>>;
+type notebookGradeTool = InferUITool<ReturnType<typeof notebookGrade>>;
+type notebookAddSourceTool = InferUITool<ReturnType<typeof notebookAddSource>>;
 type pdfGetInfoTool = InferUITool<ReturnType<typeof pdfGetInfo>>;
 type pdfMergeTool = InferUITool<ReturnType<typeof pdfMerge>>;
 type pdfSplitTool = InferUITool<ReturnType<typeof pdfSplit>>;
@@ -120,6 +134,12 @@ export type ChatTools = {
   webSearch: webSearchTool;
   readUrl: readUrlTool;
   research: researchTool;
+  notebookCreate: notebookCreateTool;
+  notebookAsk: notebookAskTool;
+  notebookGenerate: notebookGenerateTool;
+  notebookQuiz: notebookQuizTool;
+  notebookGrade: notebookGradeTool;
+  notebookAddSource: notebookAddSourceTool;
 };
 
 export type WaitingStatusData = {
@@ -154,6 +174,7 @@ export type CustomUIDataTypes = {
   imageToolParams: Record<string, unknown>;
   imageOcrText: string;
   pdfDelta: string;
+  notebookDelta: string;
 };
 
 export type ChatMessage = UIMessage<

@@ -41,6 +41,14 @@ import {
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import {
+  notebookAddSource,
+  notebookAsk,
+  notebookCreate,
+  notebookGenerate,
+  notebookGrade,
+  notebookQuiz,
+} from "@/lib/ai/tools/notebook-tools";
+import {
   imageToPdf,
   pdfArrange,
   pdfExtractText,
@@ -382,6 +390,12 @@ export async function POST(request: Request) {
                   "webSearch",
                   "readUrl",
                   "research",
+                  "notebookCreate",
+                  "notebookAsk",
+                  "notebookGenerate",
+                  "notebookQuiz",
+                  "notebookGrade",
+                  "notebookAddSource",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -529,6 +543,20 @@ export async function POST(request: Request) {
               messages: uiMessages,
               session,
             }),
+            notebookAddSource: notebookAddSource({
+              messages: uiMessages,
+              session,
+            }),
+            notebookAsk: notebookAsk({ session }),
+            notebookCreate: notebookCreate({
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            notebookGenerate: notebookGenerate({ session }),
+            notebookGrade: notebookGrade({ session }),
+            notebookQuiz: notebookQuiz({ session }),
             pdfArrange: pdfArrange({
               activePdf,
               chatId: id,
