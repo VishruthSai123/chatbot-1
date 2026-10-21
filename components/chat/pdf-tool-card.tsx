@@ -154,20 +154,36 @@ export function PdfToolCard({
       return;
     }
 
-    if (!documentId) {
+    if (!documentId && !output?.url) {
       return;
     }
 
+    const fallbackContent = output?.pages
+      ? `pdf-ref:${JSON.stringify({
+          pages: output.pages,
+          storageKey: output.url || "",
+        })}`
+      : output?.url || "";
+
     setArtifact((current) => ({
       ...current,
-      content: docRecord?.content || current.content,
-      documentId,
+      content: docRecord?.content || fallbackContent || current.content,
+      documentId: documentId || current.documentId,
       isVisible: true,
       kind: "pdf",
       status: "idle",
       title,
     }));
-  }, [isReadonly, isGuest, documentId, setArtifact, docRecord?.content, title]);
+  }, [
+    isReadonly,
+    isGuest,
+    documentId,
+    output?.pages,
+    output?.url,
+    setArtifact,
+    docRecord?.content,
+    title,
+  ]);
 
   const triggerDownloadUrl = useCallback((url: string, filename?: string) => {
     const link = window.document.createElement("a");

@@ -75,3 +75,30 @@ test.describe("isOwnedStorageKey", () => {
     expect(isOwnedStorageKey(`${USER}/general/a.jpg`, "")).toBe(false);
   });
 });
+
+test.describe("extractStorageKey", () => {
+  const { extractStorageKey } = require("../../lib/storage/keys");
+
+  test("extracts key from a Supabase signed URL", () => {
+    const url =
+      "https://xyz.supabase.co/storage/v1/object/sign/chat-attachments/user-123/chat-456/doc.pdf?token=abc";
+    expect(extractStorageKey(url)).toBe("user-123/chat-456/doc.pdf");
+  });
+
+  test("extracts key from a Supabase public URL", () => {
+    const url =
+      "https://xyz.supabase.co/storage/v1/object/public/chat-attachments/user-123/general/image.png";
+    expect(extractStorageKey(url)).toBe("user-123/general/image.png");
+  });
+
+  test("extracts key from a relative storage key", () => {
+    expect(extractStorageKey("user-123/chat-456/doc.pdf")).toBe(
+      "user-123/chat-456/doc.pdf"
+    );
+  });
+
+  test("returns null for non-storage URLs", () => {
+    expect(extractStorageKey("https://example.com/foo/bar.pdf")).toBeNull();
+    expect(extractStorageKey("")).toBeNull();
+  });
+});

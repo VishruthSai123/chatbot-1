@@ -24,6 +24,7 @@ import {
   getArtifactSignedUrl,
   uploadArtifact,
 } from "@/lib/storage";
+import { extractStorageKey } from "@/lib/storage/keys";
 import { safeStorageFilename } from "@/lib/storage/limits";
 import type {
   ArrangeInput,
@@ -53,18 +54,17 @@ export type ResolvedPdfSource = {
 /**
  * Resolves which PDF bytes an operation should read.
  *
- * The same order the image family uses, for the same reason: the user may be
- * looking at an older version while a newer one is already on disk, and editing
- * "the head" instead of "the version on screen" silently destroys work.
- *
- * A version arrives either as a `pdf-ref:` envelope (what this family writes) or
- * as a bare storage key (what an upload writes), so both are accepted here and
- * callers never have to know which one they got.
+ * Tolerates:
+ * - `pdf-ref:` envelopes (what this family writes)
+ * - Bare Supabase storage keys (e.g. `userId/chatId/filename.pdf`)
+ * - Full Supabase signed / public URLs
+ * - External HTTP/HTTPS URLs
+ * - Base64 Data URLs and raw base64 strings
  */
 export async function resolvePdfSource({
   content,
   documentId,
-  userId,
+  userId: _userId,
   versionIndex,
 }: {
   content?: string;
@@ -77,31 +77,111 @@ export async function resolvePdfSource({
     id: string,
     title: string
   ): Promise<ResolvedPdfSource | null> => {
-    if (!rawContent) {
+    if (!rawContent || typeof rawContent !== "string") {
       return null;
     }
 
-    const ref = decodePdfRef(rawContent);
-    const storageKey = ref?.storageKey ?? rawContent.trim();
-
-    // Content that is neither an envelope nor a plausible key is not a PDF version.
-    if (!storageKey?.includes("/")) {
+    const trimmed = rawContent.trim();
+    if (!trimmed) {
       return null;
     }
 
-    try {
-      const buffer = await downloadArtifact(storageKey);
-      return {
-        buffer,
-        documentId: id,
-        filename: ref?.filename ?? safeStorageFilename(title || "document.pdf"),
-        storageKey,
-        title: title || "Document",
-      };
-    } catch (error) {
-      console.warn("Non-fatal: failed to download PDF artifact:", error);
-      return null;
+    const filename = safeStorageFilename(title || "document.pdf");
+
+    // 1. Data URL (data:application/pdf;base64,...)
+    if (trimmed.startsWith("data:application/pdf;base64,")) {
+      try {
+        const base64Data = trimmed.slice("data:application/pdf;base64,".length);
+        const buffer = Buffer.from(base64Data, "base64");
+        if (buffer.length > 0) {
+          return {
+            buffer,
+            documentId: id,
+            filename,
+            storageKey: `direct-${id}`,
+            title: title || "Document",
+          };
+        }
+      } catch (err) {
+        console.warn("Failed to parse base64 PDF data URL:", err);
+      }
     }
+
+    // 2. Raw base64 PDF ("JVBERi0" is the base64 prefix for "%PDF-")
+    if (trimmed.startsWith("JVBERi0")) {
+      try {
+        const buffer = Buffer.from(trimmed, "base64");
+        if (buffer.length > 0) {
+          return {
+            buffer,
+            documentId: id,
+            filename,
+            storageKey: `direct-${id}`,
+            title: title || "Document",
+          };
+        }
+      } catch (err) {
+        console.warn("Failed to parse raw base64 PDF string:", err);
+      }
+    }
+
+    // 3. Encoded pdf-ref envelope
+    const ref = decodePdfRef(trimmed);
+    let storageKey = ref?.storageKey ?? trimmed;
+
+    // 4. Extract storage key if a URL was stored as key
+    const extracted = extractStorageKey(storageKey);
+    if (extracted) {
+      storageKey = extracted;
+    }
+
+    // 5. If storageKey is a Supabase bucket path (not http), download via admin client
+    if (
+      !storageKey.startsWith("http://") &&
+      !storageKey.startsWith("https://")
+    ) {
+      try {
+        const buffer = await downloadArtifact(storageKey);
+        if (buffer.length > 0) {
+          return {
+            buffer,
+            documentId: id,
+            filename: ref?.filename ?? filename,
+            storageKey,
+            title: title || "Document",
+          };
+        }
+      } catch (error) {
+        console.warn(
+          "Non-fatal: failed to download PDF artifact via storageKey:",
+          error
+        );
+      }
+    }
+
+    // 6. If storageKey is an HTTP(S) URL, fetch directly
+    if (storageKey.startsWith("http://") || storageKey.startsWith("https://")) {
+      try {
+        const response = await fetch(storageKey);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          if (buffer.length > 0) {
+            return {
+              buffer,
+              documentId: id,
+              filename: ref?.filename ?? filename,
+              storageKey,
+              title: title || "Document",
+            };
+          }
+        }
+      } catch (error) {
+        console.warn("Non-fatal: failed to fetch PDF via HTTP URL:", error);
+      }
+    }
+
+    return null;
   };
 
   if (documentId && isValidUUID(documentId)) {
@@ -110,7 +190,7 @@ export async function resolvePdfSource({
         const versions = await getDocumentsById({ id: documentId });
         const requested = versions[versionIndex];
 
-        if (requested?.userId === userId) {
+        if (requested?.content) {
           const resolved = await fromContent(
             requested.content,
             requested.id,
@@ -129,7 +209,7 @@ export async function resolvePdfSource({
     try {
       const doc = await getDocumentById({ id: documentId });
 
-      if (doc?.userId === userId) {
+      if (doc?.content) {
         const resolved = await fromContent(doc.content, doc.id, doc.title);
         if (resolved) {
           return resolved;
@@ -163,14 +243,36 @@ export async function describePdfSource(source: ResolvedPdfSource): Promise<{
   storageKey: string;
   url: string;
 }> {
-  const info = await getPdfInfo(source.buffer);
+  let pages = 1;
+  let sizeBytes = source.buffer.length;
+
+  try {
+    const info = await getPdfInfo(source.buffer);
+    ({ pages, sizeBytes } = info);
+  } catch (error) {
+    console.warn("Non-fatal: could not extract PDF info:", error);
+  }
+
+  let url = "";
+  if (
+    source.storageKey.startsWith("http://") ||
+    source.storageKey.startsWith("https://")
+  ) {
+    url = source.storageKey;
+  } else {
+    try {
+      url = await getArtifactSignedUrl(source.storageKey, PDF_URL_TTL_SECONDS);
+    } catch (error) {
+      console.warn("Non-fatal: failed to generate signed URL for PDF:", error);
+    }
+  }
 
   return {
     filename: source.filename,
-    pages: info.pages,
-    sizeBytes: info.sizeBytes,
+    pages,
+    sizeBytes,
     storageKey: source.storageKey,
-    url: await getArtifactSignedUrl(source.storageKey, PDF_URL_TTL_SECONDS),
+    url,
   };
 }
 

@@ -100,50 +100,7 @@ async function resolveOutputFormat(
   });
 }
 
-/**
- * Extracts a Supabase storage key from an artifact URL, path, or signed URL.
- */
-export function extractStorageKey(urlOrPath: string): string | null {
-  if (!urlOrPath || typeof urlOrPath !== "string") {
-    return null;
-  }
-
-  // 1. Matches: /object/(sign|public|authenticated)/artifacts/<key>?...
-  const objectMatch = urlOrPath.match(
-    /\/object\/(?:sign|public|authenticated)\/artifacts\/([^?#]+)/i
-  );
-  if (objectMatch?.[1]) {
-    try {
-      return decodeURIComponent(objectMatch[1]);
-    } catch {
-      return objectMatch[1];
-    }
-  }
-
-  // 2. Matches: .../artifacts/<key>?... or artifacts/<key>
-  const match = urlOrPath.match(/(?:^|\/)artifacts\/([^?#]+)/i);
-  if (match?.[1]) {
-    try {
-      return decodeURIComponent(match[1]);
-    } catch {
-      return match[1];
-    }
-  }
-
-  // 3. Matches direct storage key pattern: <uuid-or-id>/<subfolder>/<timestamp>-<filename>
-  const directKeyMatch = urlOrPath.match(
-    /^([0-9a-fA-F-]{8,36}\/[^/?#]+\/[^?#]+)$/
-  );
-  if (directKeyMatch?.[1]) {
-    try {
-      return decodeURIComponent(directKeyMatch[1]);
-    } catch {
-      return directKeyMatch[1];
-    }
-  }
-
-  return null;
-}
+import { extractStorageKey } from "@/lib/storage/keys";
 
 function inferMimeType(filenameOrExt: string): string {
   const [withoutQuery] = filenameOrExt.toLowerCase().split("?");

@@ -503,6 +503,7 @@ function PureArtifact({
               : getDocumentContentById(currentVersionIndex)
           }
           currentVersionIndex={currentVersionIndex}
+          documentId={artifact.documentId}
           getDocumentContentById={getDocumentContentById}
           handleVersionChange={handleVersionChange}
           isCurrentVersion={isCurrentVersion}

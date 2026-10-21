@@ -3,7 +3,9 @@ import type { Session } from "next-auth";
 
 import { guestRegex } from "@/lib/constants";
 import { saveDocument } from "@/lib/db/queries";
+import { decodeImageCollection, isImageCollection } from "@/lib/image/ref";
 import { encodePdfRef } from "@/lib/pdf/ref";
+import { downloadArtifact } from "@/lib/storage";
 import { parseImageInput } from "@/lib/tools/image";
 import {
   describePdfSource,
@@ -68,6 +70,8 @@ export async function runPdfAction({
     versionIndex,
   } = body;
 
+  const normalizedAction = (action ?? "").toLowerCase().replace(/[-_]+/g, "_");
+
   const context = {
     chatId: chatId as string | undefined,
     content: content as string | undefined,
@@ -75,290 +79,336 @@ export async function runPdfAction({
     userId: session.user.id,
   };
 
-  const requireSource = async () => {
-    const source = await resolvePdfSource({ ...context, versionIndex });
-    return source;
-  };
+  const requireSource = async () =>
+    await resolvePdfSource({ ...context, versionIndex });
 
-  switch (action) {
-    /**
-     * Turns a version reference into something the canvas can draw.
-     *
-     * The studio cannot read storage directly: the bucket is private and a signed
-     * URL is the only way in. Signing here rather than in a dedicated route keeps
-     * the family inside the one shared function.
-     */
-    case "resolve": {
-      const source = await requireSource();
+  try {
+    switch (normalizedAction) {
+      /**
+       * Turns a version reference into something the canvas can draw.
+       *
+       * The studio cannot read storage directly: the bucket is private and a signed
+       * URL is the only way in. Signing here rather than in a dedicated route keeps
+       * the family inside the one shared function.
+       */
+      case "resolve": {
+        const source = await requireSource();
 
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
+
+        const result = await describePdfSource(source);
+
+        return NextResponse.json({
+          result,
+          success: true,
+        });
       }
 
-      return NextResponse.json({
-        result: await describePdfSource(source),
-        success: true,
-      });
-    }
+      case "get_metadata":
+      case "metadata": {
+        const source = await requireSource();
 
-    case "get_metadata": {
-      const source = await requireSource();
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
 
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
+        const metadata = await executePdfMetadata({ buffer: source.buffer });
+
+        return NextResponse.json({ metadata, success: true });
       }
 
-      const metadata = await executePdfMetadata({ buffer: source.buffer });
+      case "extract_text":
+      case "extract":
+      case "text": {
+        const source = await requireSource();
 
-      return NextResponse.json({ metadata, success: true });
-    }
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
 
-    case "extract_text": {
-      const source = await requireSource();
+        const validated = extractTextSchema.parse(params ?? {});
+        const text = await executeExtractText({
+          buffer: source.buffer,
+          params: validated,
+        });
 
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: true, text });
       }
 
-      const validated = extractTextSchema.parse(params ?? {});
-      const text = await executeExtractText({
-        buffer: source.buffer,
-        params: validated,
-      });
+      case "merge": {
+        const ids: string[] = Array.isArray(sourceDocumentIds)
+          ? sourceDocumentIds
+          : [];
 
-      return NextResponse.json({ success: true, text });
-    }
+        if (ids.length === 0) {
+          return NextResponse.json(
+            { error: "Choose at least one document to merge." },
+            { status: 400 }
+          );
+        }
 
-    case "merge": {
-      const ids: string[] = Array.isArray(sourceDocumentIds)
-        ? sourceDocumentIds
-        : [];
-
-      if (ids.length === 0) {
-        return NextResponse.json(
-          { error: "Choose at least one document to merge." },
-          { status: 400 }
+        const sources = await Promise.all(
+          ids.map((id) => resolvePdfSource({ ...context, documentId: id }))
         );
+
+        if (sources.some((source) => !source)) {
+          return NextResponse.json(
+            { error: "One of the selected documents could not be opened." },
+            { status: 404 }
+          );
+        }
+
+        const buffers: Buffer[] = sources.map(
+          (source) => (source as NonNullable<typeof source>).buffer
+        );
+
+        mergeSchema.parse(params ?? {});
+        const { result } = await executeMerge({ context, inputs: buffers });
+
+        const mergedDocumentId = await persistVersion({
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: title || "Merged document",
+          userId: session.user.id,
+        });
+
+        return NextResponse.json({
+          documentId: mergedDocumentId,
+          persisted: Boolean(mergedDocumentId),
+          result,
+          success: true,
+        });
       }
 
-      const sources = await Promise.all(
-        ids.map((id) => resolvePdfSource({ ...context, documentId: id }))
-      );
+      case "split": {
+        const source = await requireSource();
 
-      if (sources.some((source) => !source)) {
-        return NextResponse.json(
-          { error: "One of the selected documents could not be opened." },
-          { status: 404 }
-        );
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
+
+        const validated = splitSchema.parse(params ?? {});
+        const { results } = await executeSplit({
+          buffer: source.buffer,
+          context,
+          params: validated,
+        });
+
+        // The first part becomes the next version of this document; the rest are
+        // separate files. Promoting part one keeps undo and version history working
+        // for the common single-range case.
+        const [first, ...rest] = results;
+        const nextId = await persistVersion({
+          documentId: source.documentId,
+          pages: first.pages,
+          storageKey: first.storageKey,
+          title: title || source.title,
+          userId: session.user.id,
+        });
+
+        return NextResponse.json({
+          documentId: nextId,
+          persisted: Boolean(nextId),
+          result: first,
+          results: rest,
+          success: true,
+        });
       }
 
-      const buffers: Buffer[] = sources.map(
-        (source) => (source as NonNullable<typeof source>).buffer
-      );
+      case "arrange": {
+        const source = await requireSource();
 
-      mergeSchema.parse(params ?? {});
-      const { result } = await executeMerge({ context, inputs: buffers });
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
 
-      const mergedDocumentId = await persistVersion({
-        pages: result.pages,
-        storageKey: result.storageKey,
-        title: title || "Merged document",
-        userId: session.user.id,
-      });
+        const validated = arrangeSchema.parse(params ?? {});
+        const { result } = await executeArrange({
+          buffer: source.buffer,
+          context,
+          params: validated,
+        });
 
-      return NextResponse.json({
-        documentId: mergedDocumentId,
-        persisted: Boolean(mergedDocumentId),
-        result,
-        success: true,
-      });
-    }
+        const nextId = await persistVersion({
+          documentId: source.documentId,
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: title || source.title,
+          userId: session.user.id,
+        });
 
-    case "split": {
-      const source = await requireSource();
-
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
+        return NextResponse.json({
+          documentId: nextId,
+          persisted: Boolean(nextId),
+          result,
+          success: true,
+        });
       }
 
-      const validated = splitSchema.parse(params ?? {});
-      const { results } = await executeSplit({
-        buffer: source.buffer,
-        context,
-        params: validated,
-      });
+      case "rotate":
+      case "rotate_pages": {
+        const source = await requireSource();
 
-      // The first part becomes the next version of this document; the rest are
-      // separate files. Promoting part one keeps undo and version history working
-      // for the common single-range case.
-      const [first, ...rest] = results;
-      const nextId = await persistVersion({
-        documentId: source.documentId,
-        pages: first.pages,
-        storageKey: first.storageKey,
-        title: title || source.title,
-        userId: session.user.id,
-      });
+        if (!source) {
+          return NextResponse.json(
+            { error: "Could not open that document." },
+            { status: 404 }
+          );
+        }
 
-      return NextResponse.json({
-        documentId: nextId,
-        persisted: Boolean(nextId),
-        result: first,
-        results: rest,
-        success: true,
-      });
-    }
+        const validated = rotateSchema.parse(params ?? {});
+        const { result } = await executeRotatePdf({
+          buffer: source.buffer,
+          context,
+          params: validated,
+        });
 
-    case "arrange": {
-      const source = await requireSource();
+        const nextId = await persistVersion({
+          documentId: source.documentId,
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: title || source.title,
+          userId: session.user.id,
+        });
 
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
+        return NextResponse.json({
+          documentId: nextId,
+          persisted: Boolean(nextId),
+          result,
+          success: true,
+        });
       }
 
-      const validated = arrangeSchema.parse(params ?? {});
-      const { result } = await executeArrange({
-        buffer: source.buffer,
-        context,
-        params: validated,
-      });
+      case "images_to_pdf":
+      case "image_to_pdf": {
+        const ids: string[] = Array.isArray(sourceDocumentIds)
+          ? sourceDocumentIds
+          : [];
 
-      const nextId = await persistVersion({
-        documentId: source.documentId,
-        pages: result.pages,
-        storageKey: result.storageKey,
-        title: title || source.title,
-        userId: session.user.id,
-      });
+        if (ids.length === 0) {
+          return NextResponse.json(
+            { error: "Choose at least one image to convert to PDF." },
+            { status: 400 }
+          );
+        }
 
-      return NextResponse.json({
-        documentId: nextId,
-        persisted: Boolean(nextId),
-        result,
-        success: true,
-      });
-    }
+        const validated = imagesToPdfSchema.parse(params ?? {});
 
-    case "rotate": {
-      const source = await requireSource();
+        // Extract collection items if content has an image collection
+        const collectionItems =
+          content && isImageCollection(content)
+            ? (decodeImageCollection(content)?.items ?? [])
+            : [];
 
-      if (!source) {
-        return NextResponse.json(
-          { error: "Could not open that document." },
-          { status: 404 }
-        );
-      }
-
-      const validated = rotateSchema.parse(params ?? {});
-      const { result } = await executeRotatePdf({
-        buffer: source.buffer,
-        context,
-        params: validated,
-      });
-
-      const nextId = await persistVersion({
-        documentId: source.documentId,
-        pages: result.pages,
-        storageKey: result.storageKey,
-        title: title || source.title,
-        userId: session.user.id,
-      });
-
-      return NextResponse.json({
-        documentId: nextId,
-        persisted: Boolean(nextId),
-        result,
-        success: true,
-      });
-    }
-
-    case "images_to_pdf": {
-      const ids: string[] = Array.isArray(sourceDocumentIds)
-        ? sourceDocumentIds
-        : [];
-
-      if (ids.length === 0) {
-        return NextResponse.json(
-          { error: "Choose at least one image to convert to PDF." },
-          { status: 400 }
-        );
-      }
-
-      const validated = imagesToPdfSchema.parse(params ?? {});
-      const resolvedList = await Promise.all(
-        ids.map(async (id) => {
-          try {
-            const parsed = await parseImageInput(id, {
-              chatId: context.chatId,
-              userId: session.user.id,
-            });
-            if (parsed?.buffer?.length > 0) {
-              return parsed;
+        const resolvedList = await Promise.all(
+          ids.map(async (id) => {
+            // 1. Check if id matches an item in the passed collection
+            const matchedItem = collectionItems.find(
+              (item) => item.documentId === id || item.storageKey === id
+            );
+            if (matchedItem?.storageKey) {
+              try {
+                const buffer = await downloadArtifact(matchedItem.storageKey);
+                if (buffer?.length > 0) {
+                  return {
+                    buffer,
+                    filename: matchedItem.filename || matchedItem.title,
+                    mimeType: matchedItem.format || "image/png",
+                  };
+                }
+              } catch (storageErr) {
+                console.warn(
+                  "Could not download collection item image:",
+                  storageErr
+                );
+              }
             }
-          } catch {
-            // ignore unresolvable image
-          }
-          return null;
-        })
-      );
 
-      const imageInputs = resolvedList.filter(
-        (img): img is NonNullable<typeof img> => Boolean(img)
-      );
-
-      if (imageInputs.length === 0) {
-        return NextResponse.json(
-          { error: "Could not read any of the specified images." },
-          { status: 404 }
+            // 2. Fall back to standard parseImageInput
+            try {
+              const parsed = await parseImageInput(id, {
+                chatId: context.chatId,
+                userId: session.user.id,
+              });
+              if (parsed?.buffer?.length > 0) {
+                return parsed;
+              }
+            } catch {
+              // ignore unresolvable image
+            }
+            return null;
+          })
         );
+
+        const imageInputs = resolvedList.filter(
+          (img): img is NonNullable<typeof img> => Boolean(img)
+        );
+
+        if (imageInputs.length === 0) {
+          return NextResponse.json(
+            { error: "Could not read any of the specified images." },
+            { status: 404 }
+          );
+        }
+
+        const pdfTitle = title || validated.title || "Images Document";
+        const { result } = await executeImagesToPdf({
+          context,
+          images: imageInputs,
+          options: {
+            layout: validated.layout,
+            margin: validated.margin,
+            title: pdfTitle,
+          },
+        });
+
+        const nextId = await persistVersion({
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: pdfTitle,
+          userId: session.user.id,
+        });
+
+        return NextResponse.json({
+          documentId: nextId,
+          persisted: Boolean(nextId),
+          result,
+          success: true,
+        });
       }
 
-      const pdfTitle = title || validated.title || "Images Document";
-      const { result } = await executeImagesToPdf({
-        context,
-        images: imageInputs,
-        options: {
-          layout: validated.layout,
-          margin: validated.margin,
-          title: pdfTitle,
-        },
-      });
-
-      const nextId = await persistVersion({
-        pages: result.pages,
-        storageKey: result.storageKey,
-        title: pdfTitle,
-        userId: session.user.id,
-      });
-
-      return NextResponse.json({
-        documentId: nextId,
-        persisted: Boolean(nextId),
-        result,
-        success: true,
-      });
+      default:
+        return NextResponse.json(
+          { error: `Unknown PDF action: ${action}` },
+          { status: 400 }
+        );
     }
-
-    default:
-      return NextResponse.json(
-        { error: `Unknown PDF action: ${action}` },
-        { status: 400 }
-      );
+  } catch (error: any) {
+    console.error("PDF action execution error:", error);
+    return NextResponse.json(
+      {
+        error: error?.message || "Failed to process PDF action",
+        success: false,
+      },
+      { status: 500 }
+    );
   }
 }
 

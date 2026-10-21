@@ -125,9 +125,10 @@ const PageThumb = memo(function InnerPageThumb({
   rotation: number;
   sourcePage: number;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
+  const [isRendered, setIsRendered] = useState(false);
   const [aspect, setAspect] = useState<number>(() =>
     getEffectiveAspect(intrinsicAspect, rotation)
   );
@@ -159,7 +160,7 @@ const PageThumb = memo(function InnerPageThumb({
   }, []);
 
   useEffect(() => {
-    if (!(visible && doc)) {
+    if (!(visible && doc && canvasEl)) {
       return;
     }
 
@@ -190,21 +191,25 @@ const PageThumb = memo(function InnerPageThumb({
         rotation: angle,
         scale,
       });
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext("2d", { alpha: false });
 
-      if (!(canvas && context) || cancelled) {
+      const context = canvasEl.getContext("2d", { alpha: false });
+
+      if (!context || cancelled) {
         return;
       }
 
-      canvas.width = Math.max(1, Math.floor(viewport.width));
-      canvas.height = Math.max(1, Math.floor(viewport.height));
+      canvasEl.width = Math.max(1, Math.floor(viewport.width));
+      canvasEl.height = Math.max(1, Math.floor(viewport.height));
 
       context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      task = page.render({ canvas, canvasContext: context, viewport });
+      task = page.render({ canvasContext: context, viewport });
       await (task as any).promise;
+
+      if (!cancelled) {
+        setIsRendered(true);
+      }
     };
 
     render().catch((error) => {
@@ -217,7 +222,7 @@ const PageThumb = memo(function InnerPageThumb({
       cancelled = true;
       task?.cancel();
     };
-  }, [doc, rotation, sourcePage, visible]);
+  }, [canvasEl, doc, rotation, sourcePage, visible]);
 
   return (
     <div
@@ -226,10 +231,20 @@ const PageThumb = memo(function InnerPageThumb({
       style={{ aspectRatio: `${aspect}` }}
     >
       {visible ? (
-        <canvas
-          className="h-full w-full object-contain select-none"
-          ref={canvasRef}
-        />
+        <>
+          <canvas
+            className={cn(
+              "h-full w-full object-contain select-none transition-opacity duration-200",
+              isRendered ? "opacity-100" : "opacity-0"
+            )}
+            ref={setCanvasEl}
+          />
+          {isRendered ? null : (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted/20 animate-pulse">
+              <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
+            </div>
+          )}
+        </>
       ) : (
         <div className="size-full animate-pulse bg-muted/30" />
       )}
@@ -254,12 +269,12 @@ const PageReader = memo(function InnerPageReader({
   rotation: number;
   zoom: number;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [aspect, setAspect] = useState<number>(Math.SQRT1_2);
   const [isRendering, setIsRendering] = useState(true);
 
   useEffect(() => {
-    if (!doc) {
+    if (!doc || !canvasEl) {
       return;
     }
 
@@ -287,20 +302,19 @@ const PageReader = memo(function InnerPageReader({
       const scale = (scaledWidth / base.width) * dpr;
 
       const viewport = page.getViewport({ rotation: angle, scale });
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext("2d", { alpha: false });
+      const context = canvasEl.getContext("2d", { alpha: false });
 
-      if (!(canvas && context) || cancelled) {
+      if (!context || cancelled) {
         return;
       }
 
-      canvas.width = Math.max(1, Math.floor(viewport.width));
-      canvas.height = Math.max(1, Math.floor(viewport.height));
+      canvasEl.width = Math.max(1, Math.floor(viewport.width));
+      canvasEl.height = Math.max(1, Math.floor(viewport.height));
 
       context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      task = page.render({ canvas, canvasContext: context, viewport });
+      task = page.render({ canvasContext: context, viewport });
       await (task as any).promise;
 
       if (!cancelled) {
@@ -319,7 +333,7 @@ const PageReader = memo(function InnerPageReader({
       cancelled = true;
       task?.cancel();
     };
-  }, [doc, pageNumber, rotation, zoom]);
+  }, [canvasEl, doc, pageNumber, rotation, zoom]);
 
   const targetWidthPx = Math.round(680 * (zoom / 100));
 
@@ -335,7 +349,7 @@ const PageReader = memo(function InnerPageReader({
       >
         <canvas
           className="h-full w-full rounded-lg object-contain select-none"
-          ref={canvasRef}
+          ref={setCanvasEl}
         />
         {isRendering ? (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/30 backdrop-blur-xs">
@@ -499,7 +513,20 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
           return;
         }
 
-        if (!payload?.result) {
+        if (!payload?.result?.url) {
+          if (
+            content?.startsWith("http://") ||
+            content?.startsWith("https://")
+          ) {
+            setSource({
+              filename: title || "document.pdf",
+              pages: 1,
+              sizeBytes: 0,
+              storageKey: content,
+              url: content,
+            });
+            return;
+          }
           setError("This version has no file attached yet.");
           setIsLoading(false);
           return;
@@ -509,15 +536,28 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
       })
       .catch((cause: Error) => {
         if (!cancelled) {
-          setError(cause.message);
-          setIsLoading(false);
+          if (
+            content?.startsWith("http://") ||
+            content?.startsWith("https://")
+          ) {
+            setSource({
+              filename: title || "document.pdf",
+              pages: 1,
+              sizeBytes: 0,
+              storageKey: content,
+              url: content,
+            });
+          } else {
+            setError(cause.message);
+            setIsLoading(false);
+          }
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [content, documentId, isGuest, request]);
+  }, [content, documentId, isGuest, request, title]);
 
   /** Loads the document into pdf.js and derives the editable page list. */
   useEffect(() => {
@@ -533,16 +573,44 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
 
       pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`;
 
-      loadingTask = pdfjs.getDocument({
-        cMapPacked: true,
-        cMapUrl: `${PDFJS_BASE}/cmaps/`,
-        standardFontDataUrl: `${PDFJS_BASE}/standard_fonts/`,
-        url: source.url,
-        verbosity: 0,
-        wasmUrl: `${PDFJS_BASE}/wasm/`,
-      });
+      let loaded: any;
+      try {
+        loadingTask = pdfjs.getDocument({
+          cMapPacked: true,
+          cMapUrl: `${PDFJS_BASE}/cmaps/`,
+          standardFontDataUrl: `${PDFJS_BASE}/standard_fonts/`,
+          url: source.url,
+          verbosity: 0,
+          wasmUrl: `${PDFJS_BASE}/wasm/`,
+        });
 
-      const loaded = await loadingTask.promise;
+        loaded = await loadingTask.promise;
+      } catch (err: any) {
+        // Fallback: If range request or worker stream fails (e.g. CORS on Range header), fetch buffer directly
+        try {
+          const res = await fetch(source.url);
+          if (!res.ok) {
+            throw err;
+          }
+          const buf = await res.arrayBuffer();
+          loadingTask = pdfjs.getDocument({
+            cMapPacked: true,
+            cMapUrl: `${PDFJS_BASE}/cmaps/`,
+            data: new Uint8Array(buf),
+            standardFontDataUrl: `${PDFJS_BASE}/standard_fonts/`,
+            verbosity: 0,
+            wasmUrl: `${PDFJS_BASE}/wasm/`,
+          });
+          loaded = await loadingTask.promise;
+        } catch (fallbackErr) {
+          throw new Error(
+            fallbackErr instanceof Error
+              ? fallbackErr.message
+              : String(fallbackErr),
+            { cause: fallbackErr }
+          );
+        }
+      }
 
       if (cancelled) {
         return;

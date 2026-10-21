@@ -59,6 +59,7 @@ type ArtifactContent<M = any> = {
   setMetadata: Dispatch<SetStateAction<M>>;
   handleVersionChange?: (type: "next" | "prev" | "toggle" | "latest") => void;
   totalVersions?: number;
+  documentId?: string;
 };
 
 type InitializeParameters<M = any> = {

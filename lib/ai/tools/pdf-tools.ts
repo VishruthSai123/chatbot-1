@@ -54,7 +54,7 @@ function checkIsGuest(session: Session): boolean {
 /** Reveals the studio, pointed at the version a tool just wrote. */
 function emitPdfArtifact(
   dataStream: UIMessageStreamWriter<ChatMessage> | undefined,
-  payload: { id: string; title: string }
+  payload: { id: string; title: string; pages?: number; storageKey?: string }
 ) {
   if (!dataStream) {
     return;
@@ -66,9 +66,13 @@ function emitPdfArtifact(
     transient: true,
     type: "data-title",
   });
-  // The envelope is not written here: the panel resolves the document itself so it
-  // always reads the newest version rather than a stale key in the stream.
-  dataStream.write({ data: "", transient: true, type: "data-pdfDelta" });
+  const ref = payload.storageKey
+    ? encodePdfRef({
+        pages: payload.pages,
+        storageKey: payload.storageKey,
+      })
+    : "";
+  dataStream.write({ data: ref, transient: true, type: "data-pdfDelta" });
   dataStream.write({ data: null, transient: true, type: "data-finish" });
 }
 
@@ -536,7 +540,12 @@ export const pdfMerge = ({
       }
 
       if (mergedId) {
-        emitPdfArtifact(dataStream, { id: mergedId, title: mergedTitle });
+        emitPdfArtifact(dataStream, {
+          id: mergedId,
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: mergedTitle,
+        });
       }
 
       return {
@@ -604,6 +613,8 @@ export const pdfSplit = ({
       if (persisted) {
         emitPdfArtifact(dataStream, {
           id: source.documentId,
+          pages: first.pages,
+          storageKey: first.storageKey,
           title: nextTitle,
         });
       }
@@ -675,6 +686,8 @@ export const pdfArrange = ({
       if (persisted) {
         emitPdfArtifact(dataStream, {
           id: source.documentId,
+          pages: result.pages,
+          storageKey: result.storageKey,
           title: nextTitle,
         });
       }
@@ -746,6 +759,8 @@ export const pdfRotatePages = ({
       if (persisted) {
         emitPdfArtifact(dataStream, {
           id: source.documentId,
+          pages: result.pages,
+          storageKey: result.storageKey,
           title: nextTitle,
         });
       }
@@ -962,7 +977,12 @@ export const imageToPdf = ({
       }
 
       if (docId) {
-        emitPdfArtifact(dataStream, { id: docId, title: pdfTitle });
+        emitPdfArtifact(dataStream, {
+          id: docId,
+          pages: result.pages,
+          storageKey: result.storageKey,
+          title: pdfTitle,
+        });
       }
 
       return {

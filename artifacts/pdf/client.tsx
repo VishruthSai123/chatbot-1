@@ -7,6 +7,7 @@ export const pdfArtifact = new Artifact({
     title,
     content,
     currentVersionIndex,
+    documentId,
     handleVersionChange,
     onSaveContent,
     totalVersions,
@@ -14,6 +15,7 @@ export const pdfArtifact = new Artifact({
     <PdfStudioCanvas
       content={content}
       currentVersionIndex={currentVersionIndex}
+      documentId={documentId}
       handleVersionChange={handleVersionChange}
       onSaveContent={onSaveContent}
       title={title}
@@ -28,12 +30,15 @@ export const pdfArtifact = new Artifact({
     // signed URL itself. The stream only has to reveal the panel and point it at
     // the document the server just wrote.
     if ((streamPart as any).type === "data-pdfDelta") {
+      const deltaData = (streamPart as any).data;
       setArtifact((draftArtifact) => ({
         ...draftArtifact,
+        content: deltaData || draftArtifact.content,
         isVisible: true,
         status: "idle",
       }));
     }
   },
+
   toolbar: [],
 });
