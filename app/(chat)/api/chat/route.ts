@@ -50,6 +50,7 @@ import {
   pdfSplit,
 } from "@/lib/ai/tools/pdf-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
+import { research } from "@/lib/ai/tools/research";
 import {
   sheetConvertFormat,
   sheetFilterSort,
@@ -58,6 +59,7 @@ import {
   sheetSummaryStats,
 } from "@/lib/ai/tools/sheet-tools";
 import { updateDocument } from "@/lib/ai/tools/update-document";
+import { readUrl, webSearch } from "@/lib/ai/tools/web-search";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -377,6 +379,9 @@ export async function POST(request: Request) {
                   "sheetRemoveDuplicates",
                   "sheetSummaryStats",
                   "sheetConvertFormat",
+                  "webSearch",
+                  "readUrl",
+                  "research",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -564,11 +569,13 @@ export async function POST(request: Request) {
               messages: uiMessages,
               session,
             }),
+            readUrl: readUrl({ session }),
             requestSuggestions: requestSuggestions({
               dataStream,
               modelId: chatModel,
               session,
             }),
+            research: research({ dataStream, session }),
             sheetConvertFormat: sheetConvertFormat({
               activeSheet,
               chatId: id,
@@ -601,6 +608,7 @@ export async function POST(request: Request) {
               modelId: chatModel,
               session,
             }),
+            webSearch: webSearch({ session }),
           },
         });
 

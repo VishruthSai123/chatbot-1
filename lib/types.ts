@@ -28,6 +28,7 @@ import type {
   pdfSplit,
 } from "./ai/tools/pdf-tools";
 import type { requestSuggestions } from "./ai/tools/request-suggestions";
+import type { research } from "./ai/tools/research";
 import type {
   sheetConvertFormat,
   sheetFilterSort,
@@ -36,6 +37,7 @@ import type {
   sheetSummaryStats,
 } from "./ai/tools/sheet-tools";
 import type { updateDocument } from "./ai/tools/update-document";
+import type { readUrl, webSearch } from "./ai/tools/web-search";
 import type { Suggestion } from "./db/schema";
 
 export const messageMetadataSchema = z.object({
@@ -74,6 +76,9 @@ type sheetSummaryStatsTool = InferUITool<ReturnType<typeof sheetSummaryStats>>;
 type sheetConvertFormatTool = InferUITool<
   ReturnType<typeof sheetConvertFormat>
 >;
+type webSearchTool = InferUITool<ReturnType<typeof webSearch>>;
+type readUrlTool = InferUITool<ReturnType<typeof readUrl>>;
+type researchTool = InferUITool<ReturnType<typeof research>>;
 type pdfGetInfoTool = InferUITool<ReturnType<typeof pdfGetInfo>>;
 type pdfMergeTool = InferUITool<ReturnType<typeof pdfMerge>>;
 type pdfSplitTool = InferUITool<ReturnType<typeof pdfSplit>>;
@@ -112,10 +117,20 @@ export type ChatTools = {
   sheetRemoveDuplicates: sheetRemoveDuplicatesTool;
   sheetSummaryStats: sheetSummaryStatsTool;
   sheetConvertFormat: sheetConvertFormatTool;
+  webSearch: webSearchTool;
+  readUrl: readUrlTool;
+  research: researchTool;
 };
 
 export type WaitingStatusData = {
-  phase: "waiting" | "still-waiting" | "health" | "thinking";
+  phase:
+    | "waiting"
+    | "still-waiting"
+    | "health"
+    | "thinking"
+    | "searching"
+    | "reading"
+    | "researching";
   message: string;
   modelId: string;
   modelName: string;

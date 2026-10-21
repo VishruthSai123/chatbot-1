@@ -24,6 +24,7 @@ import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
 import { PdfToolCard, type PdfToolType } from "./pdf-tool-card";
 import { PreviewAttachment } from "./preview-attachment";
+import { SearchToolCard, type SearchToolType } from "./search-tool-card";
 import { SheetToolCard, type SheetToolType } from "./sheet-tool-card";
 import { Weather } from "./weather";
 
@@ -348,6 +349,73 @@ const PurePreviewMessage = ({
             )}
           </ToolContent>
         </Tool>
+      );
+    }
+
+    const SEARCH_TOOL_LABELS: Record<string, string> = {
+      "tool-readUrl": "Read Page",
+      "tool-research": "Deep Research",
+      "tool-webSearch": "Web Search",
+    };
+
+    if (type && type in SEARCH_TOOL_LABELS) {
+      const { toolCallId, output } = part as {
+        toolCallId: string;
+        output?: any;
+      };
+
+      const { state, errorText } = part as {
+        state?: string;
+        errorText?: string;
+      };
+
+      if (
+        state === "output-error" ||
+        errorText ||
+        (output && "error" in output)
+      ) {
+        const errorMsg =
+          errorText ||
+          (output && "error" in output
+            ? String(output.error)
+            : "The search could not be completed.");
+
+        return (
+          <div
+            className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            key={toolCallId}
+          >
+            {errorMsg}
+          </div>
+        );
+      }
+
+      if (output) {
+        return (
+          <SearchToolCard
+            isReadonly={isReadonly}
+            key={toolCallId}
+            output={output}
+            toolCallId={toolCallId}
+            toolType={type as SearchToolType}
+          />
+        );
+      }
+
+      return (
+        <div
+          className="w-[min(100%,450px)] flex items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
+          key={toolCallId}
+        >
+          <Loader2 className="size-3.5 animate-spin text-sky-400 shrink-0" />
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            {`${SEARCH_TOOL_LABELS[type]}...`}
+          </Shimmer>
+        </div>
       );
     }
 
