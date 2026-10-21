@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { runImageAction } from "@/lib/tools/image/handler";
 import { runPdfAction } from "@/lib/tools/pdf/handler";
+import { runSheetAction } from "@/lib/tools/sheet/handler";
 
 export const maxDuration = 60;
 
@@ -32,6 +33,8 @@ export async function POST(
         return await runImageAction({ body, session });
       case "pdf":
         return await runPdfAction({ body, session });
+      case "sheet":
+        return await runSheetAction({ body, session });
       default:
         return NextResponse.json(
           { error: `Unknown tool family: ${family}` },

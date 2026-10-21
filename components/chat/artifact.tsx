@@ -200,12 +200,16 @@ function PureArtifact({
   }, [currentVersionIndex, setArtifact]);
 
   // A streamed tool result (or a workbench edit) appends a version on the server.
-  // Re-read the list whenever the image or PDF changes so the cursor lands on that
-  // new version — otherwise a cursor parked on an older version by Undo would keep
-  // showing the old file even though the edit was applied to it.
+  // Re-read the list whenever the image, PDF or sheet changes so the cursor lands
+  // on that new version — otherwise a cursor parked on an older version by Undo
+  // would keep showing the old file even though the edit was applied to it.
   const lastBinaryContentRef = useRef<string>("");
   useEffect(() => {
-    if (artifact.kind !== "image" && artifact.kind !== "pdf") {
+    if (
+      artifact.kind !== "image" &&
+      artifact.kind !== "pdf" &&
+      artifact.kind !== "sheet"
+    ) {
       return;
     }
     if (artifact.content === lastBinaryContentRef.current) {

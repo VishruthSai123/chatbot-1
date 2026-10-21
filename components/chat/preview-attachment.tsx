@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileSpreadsheet, FileText } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useState } from "react";
 
@@ -28,9 +28,11 @@ export const PreviewAttachment = ({
 
   const isImage = contentType?.startsWith("image");
   const isPdf = contentType === "application/pdf";
+  const isSheet =
+    isPdf === false && /\.(csv|tsv|tab|xlsx|xlsm)$/i.test(name ?? "") === true;
 
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !(isImage || isPdf)) {
+    if (isUploading || !(isImage || isPdf || isSheet)) {
       return;
     }
     if (isGuest) {
@@ -42,14 +44,15 @@ export const PreviewAttachment = ({
       content: url,
       documentId: documentId || generateUUID(),
       isVisible: true,
-      kind: isPdf ? "pdf" : "image",
+      kind: isImage ? "image" : isPdf ? "pdf" : "sheet",
       status: "idle",
-      title: name || (isPdf ? "PDF Studio" : "Image Studio"),
+      title: name || (isSheet ? "Data Studio" : "Image Studio"),
     });
   }, [
     isUploading,
     isImage,
     isPdf,
+    isSheet,
     isGuest,
     setArtifact,
     url,
@@ -93,6 +96,23 @@ export const PreviewAttachment = ({
           <FileText className="size-6" />
           <span className="px-1 text-center text-[9px] leading-tight">
             {name ?? "PDF"}
+          </span>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
+            <span className="rounded bg-sky-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow">
+              Studio
+            </span>
+          </span>
+        </button>
+      ) : isSheet ? (
+        <button
+          className="flex size-full cursor-pointer flex-col items-center justify-center gap-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+          onClick={handleOpenStudio}
+          title="Click to open in Data Studio"
+          type="button"
+        >
+          <FileSpreadsheet className="size-6" />
+          <span className="px-1 text-center text-[9px] leading-tight">
+            {name ?? "Sheet"}
           </span>
           <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
             <span className="rounded bg-sky-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow">

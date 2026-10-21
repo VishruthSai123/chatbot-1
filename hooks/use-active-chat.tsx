@@ -110,6 +110,10 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     documentId: string;
     versionIndex?: number;
   } | null>(null);
+  const activeSheetRef = useRef<{
+    documentId: string;
+    versionIndex?: number;
+  } | null>(null);
   useEffect(() => {
     const documentId = activeArtifact?.documentId;
     const versionIndex = activeArtifact?.versionIndex;
@@ -125,6 +129,15 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         : null;
     activePdfRef.current =
       activeArtifact?.kind === "pdf" && documentId && documentId !== "init"
+        ? {
+            documentId,
+            ...(typeof versionIndex === "number" && versionIndex >= 0
+              ? { versionIndex }
+              : {}),
+          }
+        : null;
+    activeSheetRef.current =
+      activeArtifact?.kind === "sheet" && documentId && documentId !== "init"
         ? {
             documentId,
             ...(typeof versionIndex === "number" && versionIndex >= 0
@@ -205,6 +218,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
               : { message: lastMessage }),
             activeImage: activeImageRef.current ?? undefined,
             activePdf: activePdfRef.current ?? undefined,
+            activeSheet: activeSheetRef.current ?? undefined,
             selectedChatModel: currentModelIdRef.current,
             selectedVisibilityType: visibility,
             ...request.body,

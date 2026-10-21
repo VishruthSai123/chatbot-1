@@ -25,6 +25,13 @@ import type {
   pdfSplit,
 } from "./ai/tools/pdf-tools";
 import type { requestSuggestions } from "./ai/tools/request-suggestions";
+import type {
+  sheetConvertFormat,
+  sheetFilterSort,
+  sheetGetInfo,
+  sheetRemoveDuplicates,
+  sheetSummaryStats,
+} from "./ai/tools/sheet-tools";
 import type { updateDocument } from "./ai/tools/update-document";
 import type { Suggestion } from "./db/schema";
 
@@ -52,6 +59,15 @@ type imagePixelateTool = InferUITool<ReturnType<typeof imagePixelate>>;
 type imageRotateTool = InferUITool<ReturnType<typeof imageRotate>>;
 type imageOcrTool = InferUITool<ReturnType<typeof imageOcr>>;
 type imageListPresetsTool = InferUITool<ReturnType<typeof imageListPresets>>;
+type sheetGetInfoTool = InferUITool<ReturnType<typeof sheetGetInfo>>;
+type sheetFilterSortTool = InferUITool<ReturnType<typeof sheetFilterSort>>;
+type sheetRemoveDuplicatesTool = InferUITool<
+  ReturnType<typeof sheetRemoveDuplicates>
+>;
+type sheetSummaryStatsTool = InferUITool<ReturnType<typeof sheetSummaryStats>>;
+type sheetConvertFormatTool = InferUITool<
+  ReturnType<typeof sheetConvertFormat>
+>;
 type pdfGetInfoTool = InferUITool<ReturnType<typeof pdfGetInfo>>;
 type pdfMergeTool = InferUITool<ReturnType<typeof pdfMerge>>;
 type pdfSplitTool = InferUITool<ReturnType<typeof pdfSplit>>;
@@ -82,6 +98,11 @@ export type ChatTools = {
   pdfRotatePages: pdfRotatePagesTool;
   pdfExtractText: pdfExtractTextTool;
   imageToPdf: imageToPdfTool;
+  sheetGetInfo: sheetGetInfoTool;
+  sheetFilterSort: sheetFilterSortTool;
+  sheetRemoveDuplicates: sheetRemoveDuplicatesTool;
+  sheetSummaryStats: sheetSummaryStatsTool;
+  sheetConvertFormat: sheetConvertFormatTool;
 };
 
 export type WaitingStatusData = {

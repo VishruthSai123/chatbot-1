@@ -8,7 +8,9 @@ import {
   SparklesIcon,
   UndoIcon,
 } from "@/components/chat/icons";
+import { DataStudioCanvas } from "@/components/chat/sheet/data-studio-canvas";
 import { SpreadsheetEditor } from "@/components/chat/sheet-editor";
+import { isSheetRef } from "@/lib/sheet/ref";
 
 type Metadata = Record<string, never>;
 
@@ -46,6 +48,13 @@ export const sheetArtifact = new Artifact<"sheet", Metadata>({
       description: "Copy as .csv",
       icon: <CopyIcon />,
       onClick: ({ content }) => {
+        // A stored file holds a reference, not the rows; copying it as text
+        // means fetching the real thing first.
+        if (isSheetRef(content)) {
+          toast.info("Download the file to copy its contents.");
+          return;
+        }
+
         const parsed = parse<string[]>(content, { skipEmptyLines: true });
 
         const nonEmptyRows = parsed.data.filter((row) =>
@@ -59,15 +68,38 @@ export const sheetArtifact = new Artifact<"sheet", Metadata>({
       },
     },
   ],
-  content: ({ content, currentVersionIndex, onSaveContent, status }) => (
-    <SpreadsheetEditor
-      content={content}
-      currentVersionIndex={currentVersionIndex}
-      isCurrentVersion={true}
-      saveContent={onSaveContent}
-      status={status}
-    />
-  ),
+  content: ({
+    content,
+    currentVersionIndex,
+    documentId,
+    handleVersionChange,
+    onSaveContent,
+    status,
+    title,
+    totalVersions,
+  }) =>
+    // Two shapes of sheet, two canvases. A file uploaded by the user is a
+    // reference to a stored document and gets the full Data Studio; a sheet the
+    // model wrote is raw CSV in the document and keeps the inline editor, which
+    // can write cell edits straight back into the text.
+    isSheetRef(content) ? (
+      <DataStudioCanvas
+        content={content}
+        currentVersionIndex={currentVersionIndex}
+        documentId={documentId}
+        handleVersionChange={handleVersionChange}
+        title={title}
+        totalVersions={totalVersions}
+      />
+    ) : (
+      <SpreadsheetEditor
+        content={content}
+        currentVersionIndex={currentVersionIndex}
+        isCurrentVersion={true}
+        saveContent={onSaveContent}
+        status={status}
+      />
+    ),
   description: "Useful for working with spreadsheets",
   initialize: () => null,
   kind: "sheet",

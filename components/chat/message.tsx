@@ -24,6 +24,7 @@ import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
 import { PdfToolCard, type PdfToolType } from "./pdf-tool-card";
 import { PreviewAttachment } from "./preview-attachment";
+import { SheetToolCard, type SheetToolType } from "./sheet-tool-card";
 import { Weather } from "./weather";
 
 function WaitingText() {
@@ -419,6 +420,74 @@ const PurePreviewMessage = ({
             duration={1.2}
           >
             {`Processing photo (${toolLabel})...`}
+          </Shimmer>
+        </div>
+      );
+    }
+
+    const SHEET_TOOL_LABELS: Record<string, string> = {
+      "tool-sheetConvertFormat": "Convert Format",
+      "tool-sheetFilterSort": "Filter & Sort",
+      "tool-sheetGetInfo": "Inspect Sheet",
+      "tool-sheetRemoveDuplicates": "Remove Duplicates",
+      "tool-sheetSummaryStats": "Summary Stats",
+    };
+
+    if (type && type in SHEET_TOOL_LABELS) {
+      const { toolCallId, output } = part as {
+        toolCallId: string;
+        output?: any;
+      };
+
+      const { state, errorText } = part as {
+        state?: string;
+        errorText?: string;
+      };
+
+      if (
+        state === "output-error" ||
+        errorText ||
+        (output && "error" in output)
+      ) {
+        const errorMsg =
+          errorText ||
+          (output && "error" in output
+            ? String(output.error)
+            : "An error occurred during data processing.");
+        return (
+          <div
+            className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            key={toolCallId}
+          >
+            Failed to process the spreadsheet: {errorMsg}
+          </div>
+        );
+      }
+
+      if (output) {
+        return (
+          <SheetToolCard
+            isReadonly={isReadonly}
+            key={toolCallId}
+            output={output}
+            toolCallId={toolCallId}
+            toolType={type as SheetToolType}
+          />
+        );
+      }
+
+      return (
+        <div
+          className="w-[min(100%,450px)] flex items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
+          key={toolCallId}
+        >
+          <Loader2 className="size-3.5 animate-spin text-sky-400 shrink-0" />
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            {`Processing data (${SHEET_TOOL_LABELS[type] || "Data Operation"})...`}
           </Shimmer>
         </div>
       );

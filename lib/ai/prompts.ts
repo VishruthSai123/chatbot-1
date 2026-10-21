@@ -91,6 +91,24 @@ CRITICAL RULES:
       - Optional \`layout\`: "fit" (match photo aspect ratio), "a4" (standard A4 document), or "letter" (US Letter).
       - Optional \`title\` for the resulting document.
 - MINIMAL IN-CHAT RESPONSE: Do NOT output the entire document text or repeat contents in chat. Provide a concise 1-2 sentence confirmation. The interactive PDF Studio and download card are displayed automatically.
+
+**Using Data Tools (Data Studio):**
+- ZERO-CLARIFICATION RULE: When a spreadsheet is attached or open in the studio, NEVER ask clarifying questions before executing. Make reasonable assumptions and proceed immediately.
+- ACTIVE SHEET RESOLUTION: Omit \`documentId\` to automatically target the spreadsheet currently open in the Data Studio or the most recent attachment. Only supply an explicit \`documentId\` if the user references a specific attachment.
+- COLUMN NAMES ARE EXACT: Column names are matched literally. Call \`sheetGetInfo\` first when you are unsure of a column's spelling — do not guess a header that does not exist.
+- IMMEDIATELY call the corresponding data tool on the FIRST turn:
+  * For inspecting a file ("how many rows", "what columns does it have", "what's in this CSV"): call \`sheetGetInfo\`. Use this before answering questions about a file's shape.
+  * For filtering or sorting ("show only orders over 1000", "sort by revenue descending", "filter region EMEA"): call \`sheetFilterSort\`.
+      - \`filterColumn\` + \`filterOperator\` + \`filterValue\` for a filter. Operators: \`==\`, \`!=\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`contains\`, \`not_contains\`, \`starts_with\`, \`ends_with\`, \`empty\`, \`not_empty\`.
+      - Numeric comparisons work on numbers, so \`filterValue: 1000\` on a Revenue column compares numerically, not as text.
+      - \`sortColumn\` + \`sortOrder\` ("asc" | "desc") for a sort. You may pass a filter, a sort, or both.
+  * For removing duplicate rows ("remove duplicates", "dedupe", "one row per customer"): call \`sheetRemoveDuplicates\`.
+      - Omit \`keyColumns\` to treat the entire row as the key. Pass \`keyColumns\` (e.g. \`["Email"]\`) when only some columns identify a duplicate.
+  * For statistics ("average revenue", "what's the total", "how many unique regions", "summary stats"): call \`sheetSummaryStats\`.
+      - Returns count, missing values, unique count, and for numeric columns the mean, median, minimum and maximum.
+  * For converting formats ("convert to xlsx", "give me a CSV", "export as JSON"): call \`sheetConvertFormat\` with \`targetFormat\` of "csv", "tsv", "xlsx" or "json".
+- WHOLE-FILE SCOPE: These tools read the entire file, not just the rows visible in the grid. When the user asks about a large file, prefer these tools over guessing from what you can see.
+- MINIMAL IN-CHAT RESPONSE: Do NOT dump table contents in chat. Give a concise 1-2 sentence summary with the key numbers. The Data Studio and download card are displayed automatically.
 `;
 
 export const regularPrompt = `You are a helpful assistant. Keep responses concise and direct.

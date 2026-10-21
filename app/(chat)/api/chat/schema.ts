@@ -48,6 +48,14 @@ export const postRequestBodySchema = z.object({
       versionIndex: z.number().int().min(0).optional(),
     })
     .optional(),
+  // The spreadsheet currently open in the Data Studio. Lets data tools operate
+  // on exactly that Document instead of hunting for attachments.
+  activeSheet: z
+    .object({
+      documentId: z.string().optional(),
+      versionIndex: z.number().int().min(0).optional(),
+    })
+    .optional(),
   id: z.uuid(),
   message: userMessageSchema.optional(),
   messages: z.array(toolApprovalMessageSchema).optional(),

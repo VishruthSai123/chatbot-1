@@ -47,6 +47,13 @@ import {
   pdfSplit,
 } from "@/lib/ai/tools/pdf-tools";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
+import {
+  sheetConvertFormat,
+  sheetFilterSort,
+  sheetGetInfo,
+  sheetRemoveDuplicates,
+  sheetSummaryStats,
+} from "@/lib/ai/tools/sheet-tools";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
@@ -106,6 +113,7 @@ export async function POST(request: Request) {
     const {
       activeImage,
       activePdf,
+      activeSheet,
       id,
       message,
       messages,
@@ -358,6 +366,11 @@ export async function POST(request: Request) {
                   "pdfRotatePages",
                   "pdfExtractText",
                   "imageToPdf",
+                  "sheetGetInfo",
+                  "sheetFilterSort",
+                  "sheetRemoveDuplicates",
+                  "sheetSummaryStats",
+                  "sheetConvertFormat",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -527,6 +540,33 @@ export async function POST(request: Request) {
             requestSuggestions: requestSuggestions({
               dataStream,
               modelId: chatModel,
+              session,
+            }),
+            sheetConvertFormat: sheetConvertFormat({
+              activeSheet,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            sheetFilterSort: sheetFilterSort({
+              activeSheet,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            sheetGetInfo: sheetGetInfo({
+              activeSheet,
+              dataStream,
+              session,
+            }),
+            sheetRemoveDuplicates: sheetRemoveDuplicates({
+              activeSheet,
+              chatId: id,
+              dataStream,
+              session,
+            }),
+            sheetSummaryStats: sheetSummaryStats({
+              activeSheet,
               session,
             }),
             updateDocument: updateDocument({

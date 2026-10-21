@@ -5,6 +5,7 @@ import { auth } from "@/app/(auth)/auth";
 import { saveDocument } from "@/lib/db/queries";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { encodePdfRef } from "@/lib/pdf/ref";
+import { encodeSheetRef } from "@/lib/sheet/ref";
 import {
   artifactExists,
   createSignedUpload,
@@ -167,6 +168,98 @@ async function persistPdfArtifact({
   }
 }
 
+/**
+ * Turns an uploaded spreadsheet into an editable artifact.
+ *
+ * Same reasoning as the PDF: the bytes stay in storage and `Document.content`
+ * holds a `sheet-ref:` envelope. A 50,000-row CSV is megabytes of text, and
+ * every operation would otherwise copy the whole file into Postgres again.
+ */
+async function persistSheetArtifact({
+  chatId: _chatId,
+  filename,
+  size,
+  storageKey,
+  userId,
+}: {
+  chatId?: string;
+  filename: string;
+  size: number;
+  storageKey: string;
+  userId: string;
+}): Promise<string | undefined> {
+  try {
+    const saved = await saveDocument({
+      content: encodeSheetRef({
+        filename,
+        format: detectSheetFormat(filename),
+        sizeBytes: size,
+        storageKey,
+      }),
+      id: generateUUID(),
+      kind: "sheet",
+      title: filename,
+      userId,
+    });
+
+    return saved?.[0]?.id;
+  } catch (error) {
+    // The file is already in storage and downloadable; failing to index it must
+    // not turn a successful upload into an error.
+    console.warn(
+      "Non-fatal: failed to persist uploaded sheet document:",
+      error
+    );
+  }
+}
+
+/** Infers the sheet format from a filename. */
+function detectSheetFormat(filename: string): "csv" | "tsv" | "xlsx" {
+  const lower = filename.toLowerCase();
+
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xlsm")) {
+    return "xlsx";
+  }
+
+  if (lower.endsWith(".tsv") || lower.endsWith(".tab")) {
+    return "tsv";
+  }
+
+  return "csv";
+}
+
+/**
+ * Extensions this family can actually read.
+ *
+ * The legacy `.xls` binary format is deliberately absent: `exceljs` only reads
+ * the OOXML format, so indexing an `.xls` would produce a studio that fails to
+ * open rather than one that works.
+ */
+const SHEET_EXTENSIONS = [".csv", ".tsv", ".tab", ".xlsx", ".xlsm"];
+
+const SHEET_MIME_TYPES = [
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+/**
+ * Decides whether an upload should become a spreadsheet.
+ *
+ * The extension is trusted over the MIME type because browsers routinely report
+ * a spreadsheet as `application/octet-stream`, while the filename is never
+ * wrong about the format the user actually chose.
+ */
+function isSheetUpload(contentType: string, filename: string): boolean {
+  const lower = filename.toLowerCase();
+
+  if (SHEET_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    return true;
+  }
+
+  return SHEET_MIME_TYPES.includes(contentType);
+}
+
 export async function POST(request: Request) {
   const session = await auth();
 
@@ -327,6 +420,14 @@ async function handleMetadataUpload(request: Request, userId: string) {
       storageKey,
       userId,
     });
+  } else if (isSheetUpload(body.contentType, pathname)) {
+    documentId = await persistSheetArtifact({
+      chatId: body.chatId,
+      filename: pathname,
+      size: body.size,
+      storageKey,
+      userId,
+    });
   }
 
   return NextResponse.json({ ...data, documentId });
@@ -409,6 +510,14 @@ async function handleProxiedUpload(request: Request, userId: string) {
       });
     } else if (mimeType === "application/pdf") {
       documentId = await persistPdfArtifact({
+        chatId,
+        filename,
+        size: fileBuffer.byteLength,
+        storageKey: data.storageKey,
+        userId,
+      });
+    } else if (isSheetUpload(mimeType, filename)) {
+      documentId = await persistSheetArtifact({
         chatId,
         filename,
         size: fileBuffer.byteLength,
