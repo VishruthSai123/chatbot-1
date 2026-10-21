@@ -86,6 +86,10 @@ CRITICAL RULES:
       - \`pages\`: "all" for all pages, or an array of 1-based page numbers like \`[1, 3]\`.
   * For reading or summarizing text ("read this PDF", "summarize the document", "what does this say", "extract text"): call \`pdfExtractText\`.
       - Optional \`pageRanges\` (e.g. "1-3") or omit for whole document.
+  * For converting images, photos, receipts, or scans to PDF ("convert to pdf", "turn these pictures into a pdf", "make a pdf from these images"): call \`imageToPdf\`.
+      - Attached images in the conversation are automatically gathered and converted in order.
+      - Optional \`layout\`: "fit" (match photo aspect ratio), "a4" (standard A4 document), or "letter" (US Letter).
+      - Optional \`title\` for the resulting document.
 - MINIMAL IN-CHAT RESPONSE: Do NOT output the entire document text or repeat contents in chat. Provide a concise 1-2 sentence confirmation. The interactive PDF Studio and download card are displayed automatically.
 `;
 

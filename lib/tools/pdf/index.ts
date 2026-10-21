@@ -6,6 +6,10 @@ import {
   isValidUUID,
 } from "@/lib/db/queries";
 import {
+  convertImagesToPdf,
+  type ImageToPdfLayout,
+} from "@/lib/pdf/images-to-pdf";
+import {
   arrangePdfPages,
   extractPdfText,
   getPdfInfo,
@@ -367,5 +371,37 @@ export async function executePdfMetadata({
     sizeBytes: info.sizeBytes,
     title: info.title,
     wasEncrypted: info.wasEncrypted,
+  };
+}
+
+export async function executeImagesToPdf({
+  context,
+  images,
+  options,
+}: {
+  context: PdfContext;
+  images: Array<{ buffer: Buffer; filename?: string; mimeType?: string }>;
+  options?: {
+    layout?: ImageToPdfLayout;
+    margin?: number;
+    title?: string;
+  };
+}): Promise<{ result: PdfOperationPayload }> {
+  const converted = await convertImagesToPdf(images, options);
+
+  const filename = options?.title
+    ? `${safeStorageFilename(options.title)}.pdf`
+    : images.length > 1
+      ? "converted-images.pdf"
+      : "converted-image.pdf";
+
+  return {
+    result: await persistPdfBytes({
+      bytes: converted.buffer,
+      chatId: context.chatId,
+      filename,
+      pages: converted.pages,
+      userId: context.userId,
+    }),
   };
 }

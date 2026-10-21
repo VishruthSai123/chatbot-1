@@ -70,6 +70,30 @@ export const extractTextSchema = z.object({
     .describe("Pages to extract. Omit for the whole document."),
 });
 
+export const imagesToPdfSchema = z.object({
+  documentIds: z
+    .array(z.string())
+    .optional()
+    .describe("Optional document IDs of image documents to convert."),
+  layout: z
+    .enum(["fit", "a4", "letter"])
+    .optional()
+    .default("fit")
+    .describe(
+      'Page sizing layout: "fit" (match image aspect), "a4" (standard A4), or "letter" (US Letter).'
+    ),
+  margin: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe("Page margin in points (default 0 for fit, 28 for a4/letter)."),
+  title: z
+    .string()
+    .optional()
+    .describe("Title for the generated PDF document."),
+});
+
 export const metadataSchema = z.object({});
 
 export type MergeInput = z.input<typeof mergeSchema>;
@@ -77,6 +101,7 @@ export type SplitInput = z.input<typeof splitSchema>;
 export type ArrangeInput = z.input<typeof arrangeSchema>;
 export type RotatePdfInput = z.input<typeof rotateSchema>;
 export type ExtractTextInput = z.input<typeof extractTextSchema>;
+export type ImagesToPdfInput = z.input<typeof imagesToPdfSchema>;
 
 export type PdfAction =
   | "merge"
@@ -84,7 +109,8 @@ export type PdfAction =
   | "arrange"
   | "rotate"
   | "extract_text"
-  | "get_metadata";
+  | "get_metadata"
+  | "images_to_pdf";
 
 export type PdfOperationPayload = {
   /** Storage key of the produced PDF. */

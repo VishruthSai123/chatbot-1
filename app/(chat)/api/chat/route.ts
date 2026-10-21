@@ -38,6 +38,7 @@ import {
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
 import {
+  imageToPdf,
   pdfArrange,
   pdfExtractText,
   pdfGetInfo,
@@ -356,6 +357,7 @@ export async function POST(request: Request) {
                   "pdfArrange",
                   "pdfRotatePages",
                   "pdfExtractText",
+                  "imageToPdf",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -463,6 +465,13 @@ export async function POST(request: Request) {
             }),
             imageRotate: imageRotate({
               activeImage,
+              chatId: id,
+              dataStream,
+              messages: uiMessages,
+              session,
+            }),
+            imageToPdf: imageToPdf({
+              activePdf,
               chatId: id,
               dataStream,
               messages: uiMessages,

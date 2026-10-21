@@ -26,7 +26,8 @@ export type PdfToolType =
   | "tool-pdfSplit"
   | "tool-pdfArrange"
   | "tool-pdfRotatePages"
-  | "tool-pdfExtractText";
+  | "tool-pdfExtractText"
+  | "tool-imageToPdf";
 
 export interface PdfToolOutput {
   documentId?: string;
@@ -37,6 +38,7 @@ export interface PdfToolOutput {
     sizeBytes?: number;
     url?: string;
   }>;
+  imageCount?: number;
   mergedCount?: number;
   metadata?: {
     pageCount?: number;
@@ -74,6 +76,11 @@ const TOOL_CONFIG: Record<
     accentColor: string;
   }
 > = {
+  "tool-imageToPdf": {
+    accentColor: "text-emerald-500",
+    icon: "🖼️",
+    label: "Images to PDF",
+  },
   "tool-pdfArrange": {
     accentColor: "text-amber-500",
     icon: "🔀",
@@ -269,6 +276,13 @@ export function PdfToolCard({
           {output?.mergedCount ? (
             <span className="rounded bg-indigo-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-indigo-500 dark:text-indigo-400">
               {output.mergedCount} files merged
+            </span>
+          ) : null}
+
+          {output?.imageCount ? (
+            <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-emerald-500 dark:text-emerald-400">
+              {output.imageCount} {output.imageCount === 1 ? "image" : "images"}{" "}
+              converted
             </span>
           ) : null}
 

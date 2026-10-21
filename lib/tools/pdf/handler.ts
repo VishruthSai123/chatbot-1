@@ -4,10 +4,12 @@ import type { Session } from "next-auth";
 import { guestRegex } from "@/lib/constants";
 import { saveDocument } from "@/lib/db/queries";
 import { encodePdfRef } from "@/lib/pdf/ref";
+import { parseImageInput } from "@/lib/tools/image";
 import {
   describePdfSource,
   executeArrange,
   executeExtractText,
+  executeImagesToPdf,
   executeMerge,
   executePdfMetadata,
   executeRotatePdf,
@@ -17,6 +19,7 @@ import {
 import {
   arrangeSchema,
   extractTextSchema,
+  imagesToPdfSchema,
   mergeSchema,
   rotateSchema,
   splitSchema,
@@ -273,6 +276,73 @@ export async function runPdfAction({
         pages: result.pages,
         storageKey: result.storageKey,
         title: title || source.title,
+        userId: session.user.id,
+      });
+
+      return NextResponse.json({
+        documentId: nextId,
+        persisted: Boolean(nextId),
+        result,
+        success: true,
+      });
+    }
+
+    case "images_to_pdf": {
+      const ids: string[] = Array.isArray(sourceDocumentIds)
+        ? sourceDocumentIds
+        : [];
+
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { error: "Choose at least one image to convert to PDF." },
+          { status: 400 }
+        );
+      }
+
+      const validated = imagesToPdfSchema.parse(params ?? {});
+      const resolvedList = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const parsed = await parseImageInput(id, {
+              chatId: context.chatId,
+              userId: session.user.id,
+            });
+            if (parsed?.buffer?.length > 0) {
+              return parsed;
+            }
+          } catch {
+            // ignore unresolvable image
+          }
+          return null;
+        })
+      );
+
+      const imageInputs = resolvedList.filter(
+        (img): img is NonNullable<typeof img> => Boolean(img)
+      );
+
+      if (imageInputs.length === 0) {
+        return NextResponse.json(
+          { error: "Could not read any of the specified images." },
+          { status: 404 }
+        );
+      }
+
+      const pdfTitle = title || validated.title || "Images Document";
+      const { result } = await executeImagesToPdf({
+        context,
+        images: imageInputs,
+        options: {
+          layout: validated.layout,
+          margin: validated.margin,
+          title: pdfTitle,
+        },
+      });
+
+      const nextId = await persistVersion({
+        pages: result.pages,
+        storageKey: result.storageKey,
+        title: pdfTitle,
         userId: session.user.id,
       });
 

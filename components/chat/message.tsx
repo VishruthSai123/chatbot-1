@@ -425,6 +425,7 @@ const PurePreviewMessage = ({
     }
 
     const PDF_TOOL_LABELS: Record<string, string> = {
+      "tool-imageToPdf": "Images to PDF",
       "tool-pdfArrange": "Arrange Pages",
       "tool-pdfExtractText": "Extract Text",
       "tool-pdfGetInfo": "Inspect PDF",

@@ -16,6 +16,7 @@ import type {
   imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
 import type {
+  imageToPdf,
   pdfArrange,
   pdfExtractText,
   pdfGetInfo,
@@ -57,6 +58,7 @@ type pdfSplitTool = InferUITool<ReturnType<typeof pdfSplit>>;
 type pdfArrangeTool = InferUITool<ReturnType<typeof pdfArrange>>;
 type pdfRotatePagesTool = InferUITool<ReturnType<typeof pdfRotatePages>>;
 type pdfExtractTextTool = InferUITool<ReturnType<typeof pdfExtractText>>;
+type imageToPdfTool = InferUITool<ReturnType<typeof imageToPdf>>;
 
 export type ChatTools = {
   getWeather: weatherTool;
@@ -79,6 +81,7 @@ export type ChatTools = {
   pdfArrange: pdfArrangeTool;
   pdfRotatePages: pdfRotatePagesTool;
   pdfExtractText: pdfExtractTextTool;
+  imageToPdf: imageToPdfTool;
 };
 
 export type WaitingStatusData = {

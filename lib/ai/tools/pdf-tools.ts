@@ -10,9 +10,11 @@ import {
   saveDocument,
 } from "@/lib/db/queries";
 import { encodePdfRef } from "@/lib/pdf/ref";
+import { parseImageInput } from "@/lib/tools/image";
 import {
   executeArrange,
   executeExtractText,
+  executeImagesToPdf,
   executeMerge,
   executePdfMetadata,
   executeRotatePdf,
@@ -22,6 +24,7 @@ import {
 import {
   arrangeSchema,
   extractTextSchema,
+  imagesToPdfSchema,
   rotateSchema,
   splitSchema,
 } from "@/lib/tools/pdf/types";
@@ -131,6 +134,65 @@ function extractPdfAttachmentsFromMessages(messages?: ChatMessage[]): {
               });
             }
           }
+        }
+      }
+      if (results.length > 0) {
+        break;
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Extracts image attachments from conversation messages. */
+function extractImageAttachmentsFromMessages(messages?: ChatMessage[]): {
+  documentId?: string;
+  name?: string;
+  url?: string;
+}[] {
+  if (!messages || messages.length === 0) {
+    return [];
+  }
+
+  const results: { documentId?: string; name?: string; url?: string }[] = [];
+  const userMessages = messages.filter((m) => m.role === "user");
+  const lastUserMsg = userMessages.at(-1);
+
+  const checkPart = (part: any) => {
+    if (part.type === "file" || part.type === "image") {
+      const filePart = part as {
+        documentId?: string;
+        mediaType?: string;
+        name?: string;
+        url?: string;
+      };
+      const isImg =
+        filePart.mediaType?.startsWith("image/") ||
+        /\.(jpe?g|png|webp|avif|gif|heic|tiff?)$/i.test(filePart.name || "") ||
+        /\.(jpe?g|png|webp|avif|gif|heic|tiff?)/i.test(filePart.url || "");
+      if (isImg) {
+        results.push({
+          documentId: filePart.documentId,
+          name: filePart.name,
+          url: filePart.url,
+        });
+      }
+    }
+  };
+
+  if (lastUserMsg?.parts) {
+    for (const part of lastUserMsg.parts) {
+      checkPart(part);
+    }
+  }
+
+  if (results.length === 0) {
+    for (let i = userMessages.length - 1; i >= 0; i -= 1) {
+      const msg = userMessages[i];
+      if (msg.parts) {
+        for (const part of msg.parts) {
+          checkPart(part);
         }
       }
       if (results.length > 0) {
@@ -757,4 +819,161 @@ export const pdfExtractText = ({
         .optional()
         .describe('Pages to read, e.g. "1-3". Omit for the whole document.'),
     }),
+  });
+
+export const imageToPdf = ({
+  chatId,
+  dataStream,
+  messages,
+  session,
+}: PdfToolsProps) =>
+  tool({
+    description:
+      "Convert one or more images (photos, receipts, invoices, screenshots) into a PDF document. Images attached to the conversation or in the studio are automatically detected and converted in order.",
+    execute: async ({ documentIds, layout, margin, title }) => {
+      if (checkIsGuest(session)) {
+        return { error: "Sign in to convert images to PDF." };
+      }
+
+      const userId = session.user.id;
+      const imageInputs: Array<{
+        buffer: Buffer;
+        filename?: string;
+        mimeType?: string;
+      }> = [];
+
+      // 1. Explicit documentIds passed by the model
+      if (documentIds && documentIds.length > 0) {
+        const resolvedList = await Promise.all(
+          documentIds.map(async (candidate) => {
+            try {
+              const parsed = await parseImageInput(candidate, {
+                chatId,
+                userId,
+              });
+              if (parsed?.buffer?.length > 0) {
+                return {
+                  buffer: parsed.buffer,
+                  mimeType: parsed.mimeType,
+                };
+              }
+            } catch (err) {
+              console.warn("Could not parse image candidate:", err);
+            }
+            return null;
+          })
+        );
+        for (const img of resolvedList) {
+          if (img) {
+            imageInputs.push(img);
+          }
+        }
+      }
+
+      // 2. Attached images from messages
+      if (imageInputs.length === 0 && messages) {
+        const attached = extractImageAttachmentsFromMessages(messages);
+        const resolvedAttached = await Promise.all(
+          attached.map(async (att) => {
+            const source = att.url || att.documentId;
+            if (source) {
+              try {
+                const parsed = await parseImageInput(source, {
+                  chatId,
+                  userId,
+                });
+                if (parsed?.buffer?.length > 0) {
+                  return {
+                    buffer: parsed.buffer,
+                    filename: att.name,
+                    mimeType: parsed.mimeType,
+                  };
+                }
+              } catch (err) {
+                console.warn("Could not parse attached image:", err);
+              }
+            }
+            return null;
+          })
+        );
+        for (const img of resolvedAttached) {
+          if (img) {
+            imageInputs.push(img);
+          }
+        }
+      }
+
+      // 3. Fallback: newest image from database or active image registry
+      if (imageInputs.length === 0) {
+        try {
+          const fallback = await parseImageInput(undefined, {
+            chatId,
+            userId,
+          });
+          if (fallback?.buffer?.length > 0) {
+            imageInputs.push(fallback);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (imageInputs.length === 0) {
+        return {
+          error:
+            "No images found to convert to PDF. Please attach one or more images first.",
+        };
+      }
+
+      const pdfTitle =
+        title ||
+        (imageInputs.length === 1 && imageInputs[0].filename
+          ? imageInputs[0].filename.replace(/\.[^/.]+$/, "")
+          : "Converted Image Document");
+
+      const { result } = await executeImagesToPdf({
+        context: { chatId, userId },
+        images: imageInputs,
+        options: {
+          layout: layout ?? "fit",
+          margin,
+          title: pdfTitle,
+        },
+      });
+
+      let docId: string | undefined;
+      try {
+        const saved = await saveDocument({
+          content: encodePdfRef({
+            pages: result.pages,
+            storageKey: result.storageKey,
+          }),
+          id: crypto.randomUUID(),
+          kind: "pdf",
+          title: pdfTitle,
+          userId,
+        });
+        docId = saved?.[0]?.id;
+      } catch (err) {
+        console.warn(
+          "Non-fatal: failed to persist image-to-PDF document:",
+          err
+        );
+      }
+
+      if (docId) {
+        emitPdfArtifact(dataStream, { id: docId, title: pdfTitle });
+      }
+
+      return {
+        documentId: docId,
+        imageCount: imageInputs.length,
+        layout: layout ?? "fit",
+        pages: result.pages,
+        sizeBytes: result.sizeBytes,
+        title: pdfTitle,
+        url: result.url,
+      };
+    },
+    inputSchema: imagesToPdfSchema,
   });
