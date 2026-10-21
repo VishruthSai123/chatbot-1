@@ -3,12 +3,19 @@
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Download,
+  Eye,
   FileText,
+  LayoutGrid,
   Loader2,
   RotateCw,
   Scissors,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -57,6 +64,8 @@ export interface PdfStudioCanvasProps {
 }
 
 type PageItem = {
+  /** Aspect ratio width / height from the unrotated page */
+  aspectRatio?: number;
   /** Stable identity across reorders, so React keeps the right canvas. */
   id: string;
   /** 1-based page number in the source document. */
@@ -77,15 +86,24 @@ type ResolvedFile = {
 
 type SplitPart = { filename: string; pages: number; url: string };
 
-const THUMB_WIDTH = 168;
-/** Thumbnails render at 1.6× so they stay sharp on retina displays. */
-const THUMB_PIXEL_RATIO = 1.6;
+const THUMB_WIDTH = 180;
 
 /** Same-origin prefix for pdf.js worker, CMaps, fonts and wasm codecs. */
 const PDFJS_BASE = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/pdfjs`;
 
 function signature(pages: PageItem[]): string {
   return pages.map((page) => `${page.sourcePage}:${page.rotation}`).join(",");
+}
+
+function getEffectiveAspect(
+  intrinsicAspect = Math.SQRT1_2,
+  rotation = 0
+): number {
+  const norm = normaliseDegrees(rotation);
+  if (norm === 90 || norm === 270) {
+    return 1 / (intrinsicAspect || Math.SQRT1_2);
+  }
+  return intrinsicAspect || Math.SQRT1_2;
 }
 
 /**
@@ -98,16 +116,25 @@ function signature(pages: PageItem[]): string {
  */
 const PageThumb = memo(function InnerPageThumb({
   doc,
+  intrinsicAspect,
   rotation,
   sourcePage,
 }: {
   doc: any;
+  intrinsicAspect?: number;
   rotation: number;
   sourcePage: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
+  const [aspect, setAspect] = useState<number>(() =>
+    getEffectiveAspect(intrinsicAspect, rotation)
+  );
+
+  useEffect(() => {
+    setAspect(getEffectiveAspect(intrinsicAspect, rotation));
+  }, [intrinsicAspect, rotation]);
 
   useEffect(() => {
     const element = boxRef.current;
@@ -123,7 +150,7 @@ const PageThumb = memo(function InnerPageThumb({
           observer.disconnect();
         }
       },
-      { rootMargin: "240px" }
+      { rootMargin: "300px" }
     );
 
     observer.observe(element);
@@ -148,12 +175,23 @@ const PageThumb = memo(function InnerPageThumb({
 
       const angle = normaliseDegrees(page.rotate + rotation);
       const base = page.getViewport({ rotation: angle });
+      const currentAspect = base.width / base.height;
+      setAspect(currentAspect);
+
+      const dpr =
+        typeof window === "undefined"
+          ? 2
+          : Math.min(window.devicePixelRatio || 2, 3);
+      const containerWidth = boxRef.current?.clientWidth || THUMB_WIDTH;
+      const targetWidth = Math.max(containerWidth, THUMB_WIDTH);
+      const scale = (targetWidth / base.width) * dpr;
+
       const viewport = page.getViewport({
         rotation: angle,
-        scale: (THUMB_WIDTH / base.width) * THUMB_PIXEL_RATIO,
+        scale,
       });
       const canvas = canvasRef.current;
-      const context = canvas?.getContext("2d");
+      const context = canvas?.getContext("2d", { alpha: false });
 
       if (!(canvas && context) || cancelled) {
         return;
@@ -162,7 +200,9 @@ const PageThumb = memo(function InnerPageThumb({
       canvas.width = Math.max(1, Math.floor(viewport.width));
       canvas.height = Math.max(1, Math.floor(viewport.height));
 
-      // v6 accepts both; passing the canvas keeps the type contract explicit.
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
       task = page.render({ canvas, canvasContext: context, viewport });
       await (task as any).promise;
     };
@@ -181,17 +221,128 @@ const PageThumb = memo(function InnerPageThumb({
 
   return (
     <div
-      className="flex aspect-[3/4] items-center justify-center overflow-hidden bg-muted/30"
+      className="relative flex w-full items-center justify-center overflow-hidden rounded-md bg-white shadow-xs transition-all hover:shadow-md dark:bg-zinc-900 border border-border/60"
       ref={boxRef}
+      style={{ aspectRatio: `${aspect}` }}
     >
       {visible ? (
         <canvas
-          className="max-h-full max-w-full object-contain"
+          className="h-full w-full object-contain select-none"
           ref={canvasRef}
         />
       ) : (
-        <div className="size-full animate-pulse bg-muted/40" />
+        <div className="size-full animate-pulse bg-muted/30" />
       )}
+    </div>
+  );
+});
+
+/**
+ * High-resolution single-page Document Reader.
+ *
+ * Provides a dedicated reading mode where pages are rendered at full crispness
+ * with paper elevation, zoom controls, and page navigation.
+ */
+const PageReader = memo(function InnerPageReader({
+  doc,
+  pageNumber,
+  rotation,
+  zoom,
+}: {
+  doc: any;
+  pageNumber: number;
+  rotation: number;
+  zoom: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [aspect, setAspect] = useState<number>(Math.SQRT1_2);
+  const [isRendering, setIsRendering] = useState(true);
+
+  useEffect(() => {
+    if (!doc) {
+      return;
+    }
+
+    let cancelled = false;
+    let task: { cancel: () => void } | null = null;
+    setIsRendering(true);
+
+    const render = async () => {
+      const page = await doc.getPage(pageNumber);
+      if (cancelled) {
+        return;
+      }
+
+      const angle = normaliseDegrees(page.rotate + rotation);
+      const base = page.getViewport({ rotation: angle });
+      const pageAspect = base.width / base.height;
+      setAspect(pageAspect);
+
+      const dpr =
+        typeof window === "undefined"
+          ? 2
+          : Math.min(window.devicePixelRatio || 2, 3);
+      const baseWidth = 680;
+      const scaledWidth = baseWidth * (zoom / 100);
+      const scale = (scaledWidth / base.width) * dpr;
+
+      const viewport = page.getViewport({ rotation: angle, scale });
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d", { alpha: false });
+
+      if (!(canvas && context) || cancelled) {
+        return;
+      }
+
+      canvas.width = Math.max(1, Math.floor(viewport.width));
+      canvas.height = Math.max(1, Math.floor(viewport.height));
+
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      task = page.render({ canvas, canvasContext: context, viewport });
+      await (task as any).promise;
+
+      if (!cancelled) {
+        setIsRendering(false);
+      }
+    };
+
+    render().catch((err) => {
+      console.warn("Reader render failed:", err);
+      if (!cancelled) {
+        setIsRendering(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      task?.cancel();
+    };
+  }, [doc, pageNumber, rotation, zoom]);
+
+  const targetWidthPx = Math.round(680 * (zoom / 100));
+
+  return (
+    <div className="flex min-h-full w-full items-center justify-center p-4 md:p-8 overflow-auto overscroll-contain bg-muted/20">
+      <div
+        className="relative mx-auto rounded-lg bg-white shadow-xl dark:bg-zinc-950 border border-border/70 transition-all duration-150"
+        style={{
+          aspectRatio: `${aspect}`,
+          maxWidth: "100%",
+          width: `${targetWidthPx}px`,
+        }}
+      >
+        <canvas
+          className="h-full w-full rounded-lg object-contain select-none"
+          ref={canvasRef}
+        />
+        {isRendering ? (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/30 backdrop-blur-xs">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 });
@@ -261,6 +412,34 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
   const [isWorking, setIsWorking] = useState(false);
   const [extractedText, setExtractedText] = useState<string | null>(null);
   const [splitParts, setSplitParts] = useState<SplitPart[]>([]);
+  const [viewMode, setViewMode] = useState<"grid" | "reader">("grid");
+  const [readerPage, setReaderPage] = useState<number>(1);
+  const [readerZoom, setReaderZoom] = useState<number>(100);
+
+  useEffect(() => {
+    if (viewMode !== "reader") {
+      return;
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setReaderPage((prev) => Math.max(1, prev - 1));
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setReaderPage((prev) => Math.min(pages.length, prev + 1));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [pages.length, viewMode]);
 
   const request = useCallback(
     async (action: string, params?: Record<string, unknown>) => {
@@ -377,12 +556,18 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
         pageNumbers.map((num) => loaded.getPage(num))
       );
 
-      const items: PageItem[] = loadedPages.map((page, index) => ({
-        id: `page-${index + 1}`,
-        intrinsic: normaliseDegrees(page.rotate),
-        rotation: 0,
-        sourcePage: index + 1,
-      }));
+      const items: PageItem[] = loadedPages.map((page, index) => {
+        const vp = page.getViewport({
+          rotation: normaliseDegrees(page.rotate),
+        });
+        return {
+          aspectRatio: vp.width / vp.height,
+          id: `page-${index + 1}`,
+          intrinsic: normaliseDegrees(page.rotate),
+          rotation: 0,
+          sourcePage: index + 1,
+        };
+      });
 
       if (cancelled) {
         return;
@@ -717,60 +902,177 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
         </div>
       </div>
 
-      {/* Page-level actions */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border/40 px-2 py-1">
-        <button
-          className="cursor-pointer rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-          onClick={() =>
-            setSelected(
-              selected.size === pages.length
-                ? new Set()
-                : new Set(pages.map((page) => page.id))
-            )
-          }
-          type="button"
-        >
-          {selected.size === pages.length && pages.length > 0
-            ? "Clear"
-            : "Select all"}
-        </button>
-        <span className="mx-0.5 h-3 w-px bg-border" />
-        <button
-          className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          disabled={busy || pages.length === 0}
-          onClick={rotate}
-          type="button"
-        >
-          <RotateCw className="size-3" />
-          Rotate
-        </button>
-        <button
-          className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
-          disabled={busy || selected.size === 0}
-          onClick={removeSelected}
-          type="button"
-        >
-          <Trash2 className="size-3" />
-          Delete
-        </button>
-        <button
-          className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          disabled={busy || selected.size === 0}
-          onClick={splitSelected}
-          type="button"
-        >
-          <Scissors className="size-3" />
-          Extract
-        </button>
-        <button
-          className="ml-auto flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          disabled={busy}
-          onClick={extractText}
-          type="button"
-        >
-          <FileText className="size-3" />
-          Text
-        </button>
+      {/* Page-level actions & View Mode switcher */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 border-b border-border/40 px-2 py-1">
+        {/* Left: View Mode Toggle */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5">
+            <button
+              aria-label="Grid view"
+              className={cn(
+                "flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer",
+                viewMode === "grid"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              onClick={() => setViewMode("grid")}
+              type="button"
+            >
+              <LayoutGrid className="size-3" />
+              Grid
+            </button>
+            <button
+              aria-label="Reader view"
+              className={cn(
+                "flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer",
+                viewMode === "reader"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              disabled={pages.length === 0}
+              onClick={() => setViewMode("reader")}
+              type="button"
+            >
+              <BookOpen className="size-3" />
+              Reader
+            </button>
+          </div>
+
+          {viewMode === "reader" && pages.length > 0 ? (
+            <div className="flex items-center gap-0.5 border-l border-border/40 pl-1.5">
+              <button
+                aria-label="Previous page"
+                className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                disabled={readerPage <= 1}
+                onClick={() => setReaderPage((p) => Math.max(1, p - 1))}
+                type="button"
+              >
+                <ChevronLeft className="size-3.5" />
+              </button>
+              <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                {readerPage} / {pages.length}
+              </span>
+              <button
+                aria-label="Next page"
+                className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                disabled={readerPage >= pages.length}
+                onClick={() =>
+                  setReaderPage((p) => Math.min(pages.length, p + 1))
+                }
+                type="button"
+              >
+                <ChevronRight className="size-3.5" />
+              </button>
+              <span className="mx-1 h-3 w-px bg-border" />
+              <button
+                aria-label="Zoom out"
+                className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                disabled={readerZoom <= 50}
+                onClick={() => setReaderZoom((z) => Math.max(50, z - 25))}
+                type="button"
+              >
+                <ZoomOut className="size-3.5" />
+              </button>
+              <span className="font-mono text-[10px] text-muted-foreground w-7 text-center">
+                {readerZoom}%
+              </span>
+              <button
+                aria-label="Zoom in"
+                className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                disabled={readerZoom >= 200}
+                onClick={() => setReaderZoom((z) => Math.min(200, z + 25))}
+                type="button"
+              >
+                <ZoomIn className="size-3.5" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center gap-1">
+          {viewMode === "grid" ? (
+            <>
+              <button
+                className="cursor-pointer rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() =>
+                  setSelected(
+                    selected.size === pages.length
+                      ? new Set()
+                      : new Set(pages.map((page) => page.id))
+                  )
+                }
+                type="button"
+              >
+                {selected.size === pages.length && pages.length > 0
+                  ? "Clear"
+                  : "Select all"}
+              </button>
+              <span className="mx-0.5 h-3 w-px bg-border" />
+              <button
+                className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                disabled={busy || pages.length === 0}
+                onClick={rotate}
+                type="button"
+              >
+                <RotateCw className="size-3" />
+                Rotate
+              </button>
+              <button
+                className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+                disabled={busy || selected.size === 0}
+                onClick={removeSelected}
+                type="button"
+              >
+                <Trash2 className="size-3" />
+                Delete
+              </button>
+              <button
+                className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                disabled={busy || selected.size === 0}
+                onClick={splitSelected}
+                type="button"
+              >
+                <Scissors className="size-3" />
+                Extract
+              </button>
+            </>
+          ) : (
+            <button
+              className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+              disabled={busy || pages.length === 0}
+              onClick={() => {
+                const currentPageItem = pages[readerPage - 1];
+                if (currentPageItem) {
+                  setPages((current) =>
+                    current.map((item) =>
+                      item.id === currentPageItem.id
+                        ? {
+                            ...item,
+                            rotation: normaliseDegrees(item.rotation + 90),
+                          }
+                        : item
+                    )
+                  );
+                }
+              }}
+              type="button"
+            >
+              <RotateCw className="size-3" />
+              Rotate Page
+            </button>
+          )}
+
+          <button
+            className="ml-1 flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+            disabled={busy}
+            onClick={extractText}
+            type="button"
+          >
+            <FileText className="size-3" />
+            Text
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -784,122 +1086,156 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
             </p>
           </div>
         ) : extractedText === null ? (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-            {isLoading && pages.length === 0 ? (
-              <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                Rendering pages…
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3">
-                {pages.map((page, index) => {
-                  const isSelected = selected.has(page.id);
+          viewMode === "grid" ? (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+              {isLoading && pages.length === 0 ? (
+                <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Rendering pages…
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3">
+                  {pages.map((page, index) => {
+                    const isSelected = selected.has(page.id);
 
-                  return (
-                    <div
-                      className={cn(
-                        "group relative overflow-hidden rounded-lg border bg-card transition-colors",
-                        isSelected
-                          ? "border-foreground ring-1 ring-foreground"
-                          : "border-border/60 hover:border-foreground/40"
-                      )}
-                      key={page.id}
-                    >
-                      <button
-                        aria-label={`Select page ${index + 1}`}
-                        aria-pressed={isSelected}
-                        className="block w-full cursor-pointer"
-                        onClick={() => toggleSelected(page.id)}
-                        type="button"
+                    return (
+                      <div
+                        className={cn(
+                          "group relative overflow-hidden rounded-lg border bg-card transition-colors",
+                          isSelected
+                            ? "border-foreground ring-1 ring-foreground"
+                            : "border-border/60 hover:border-foreground/40"
+                        )}
+                        key={page.id}
                       >
-                        <div className="relative">
-                          <PageThumb
-                            doc={doc}
-                            rotation={page.rotation}
-                            sourcePage={page.sourcePage}
-                          />
-                          <span className="absolute top-1 left-1 rounded bg-background/85 px-1.5 py-0.5 font-medium text-[10px] text-foreground tabular-nums">
-                            {index + 1}
-                          </span>
-                        </div>
-                      </button>
+                        <button
+                          aria-label={`Select page ${index + 1}`}
+                          aria-pressed={isSelected}
+                          className="block w-full cursor-pointer"
+                          onClick={() => toggleSelected(page.id)}
+                          onDoubleClick={() => {
+                            setReaderPage(index + 1);
+                            setViewMode("reader");
+                          }}
+                          type="button"
+                        >
+                          <div className="relative">
+                            <PageThumb
+                              doc={doc}
+                              intrinsicAspect={page.aspectRatio}
+                              rotation={page.rotation}
+                              sourcePage={page.sourcePage}
+                            />
+                            <span className="absolute top-1 left-1 rounded bg-background/85 px-1.5 py-0.5 font-medium text-[10px] text-foreground tabular-nums">
+                              {index + 1}
+                            </span>
+                          </div>
+                        </button>
 
-                      {/* Per-page controls sit outside the selection button so a tap
-                          on a control never also toggles the page. */}
-                      <div className="flex items-center justify-between border-t border-border/40 px-1 py-0.5">
-                        <div className="flex items-center">
-                          <button
-                            aria-label={`Move page ${index + 1} earlier`}
-                            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                            disabled={index === 0}
-                            onClick={() => movePage(page.id, -1)}
-                            type="button"
-                          >
-                            <ArrowUp className="size-3" />
-                          </button>
-                          <button
-                            aria-label={`Move page ${index + 1} later`}
-                            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
-                            disabled={index === pages.length - 1}
-                            onClick={() => movePage(page.id, 1)}
-                            type="button"
-                          >
-                            <ArrowDown className="size-3" />
-                          </button>
-                        </div>
-                        <div className="flex items-center">
-                          <button
-                            aria-label={`Rotate page ${index + 1}`}
-                            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                            onClick={() =>
-                              setPages((current) =>
-                                current.map((item) =>
-                                  item.id === page.id
-                                    ? {
-                                        ...item,
-                                        rotation: normaliseDegrees(
-                                          item.rotation + 90
-                                        ),
-                                      }
-                                    : item
+                        {/* Per-page controls sit outside the selection button so a tap
+                            on a control never also toggles the page. */}
+                        <div className="flex items-center justify-between border-t border-border/40 px-1 py-0.5">
+                          <div className="flex items-center">
+                            <button
+                              aria-label={`Move page ${index + 1} earlier`}
+                              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                              disabled={index === 0}
+                              onClick={() => movePage(page.id, -1)}
+                              type="button"
+                            >
+                              <ArrowUp className="size-3" />
+                            </button>
+                            <button
+                              aria-label={`Move page ${index + 1} later`}
+                              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30"
+                              disabled={index === pages.length - 1}
+                              onClick={() => movePage(page.id, 1)}
+                              type="button"
+                            >
+                              <ArrowDown className="size-3" />
+                            </button>
+                          </div>
+                          <div className="flex items-center">
+                            <button
+                              aria-label={`Inspect page ${index + 1}`}
+                              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                              onClick={() => {
+                                setReaderPage(index + 1);
+                                setViewMode("reader");
+                              }}
+                              type="button"
+                            >
+                              <Eye className="size-3" />
+                            </button>
+                            <button
+                              aria-label={`Rotate page ${index + 1}`}
+                              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                              onClick={() =>
+                                setPages((current) =>
+                                  current.map((item) =>
+                                    item.id === page.id
+                                      ? {
+                                          ...item,
+                                          rotation: normaliseDegrees(
+                                            item.rotation + 90
+                                          ),
+                                        }
+                                      : item
+                                  )
                                 )
-                              )
-                            }
-                            type="button"
-                          >
-                            <RotateCw className="size-3" />
-                          </button>
-                          <button
-                            aria-label={`Delete page ${index + 1}`}
-                            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
-                            onClick={() => {
-                              setPages((current) => {
-                                const next = current.filter(
-                                  (item) => item.id !== page.id
-                                );
-
-                                if (next.length === 0) {
-                                  toast.error(
-                                    "A document needs at least one page"
+                              }
+                              type="button"
+                            >
+                              <RotateCw className="size-3" />
+                            </button>
+                            <button
+                              aria-label={`Delete page ${index + 1}`}
+                              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
+                              onClick={() => {
+                                setPages((current) => {
+                                  const next = current.filter(
+                                    (item) => item.id !== page.id
                                   );
-                                  return current;
-                                }
 
-                                return next;
-                              });
-                            }}
-                            type="button"
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
+                                  if (next.length === 0) {
+                                    toast.error(
+                                      "A document needs at least one page"
+                                    );
+                                    return current;
+                                  }
+
+                                  return next;
+                                });
+                              }}
+                              type="button"
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {isLoading && pages.length === 0 ? (
+                <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Rendering page…
+                </div>
+              ) : (
+                <PageReader
+                  doc={doc}
+                  pageNumber={pages[readerPage - 1]?.sourcePage ?? 1}
+                  rotation={pages[readerPage - 1]?.rotation ?? 0}
+                  zoom={readerZoom}
+                />
+              )}
+            </div>
+          )
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
