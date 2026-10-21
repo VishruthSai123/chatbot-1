@@ -127,7 +127,9 @@ const PageThumb = memo(function InnerPageThumb({
 }) {
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const activeTaskRef = useRef<any>(null);
+  // Default first 18 pages to visible so initial viewport renders immediately without waiting on IntersectionObserver
+  const [visible, setVisible] = useState(() => sourcePage <= 18);
   const [isRendered, setIsRendered] = useState(false);
   const [aspect, setAspect] = useState<number>(() =>
     getEffectiveAspect(intrinsicAspect, rotation)
@@ -137,9 +139,13 @@ const PageThumb = memo(function InnerPageThumb({
     setAspect(getEffectiveAspect(intrinsicAspect, rotation));
   }, [intrinsicAspect, rotation]);
 
+  // For pages beyond 18, use IntersectionObserver with a generous rootMargin and scroll fallback
   useEffect(() => {
-    const element = boxRef.current;
+    if (visible) {
+      return;
+    }
 
+    const element = boxRef.current;
     if (!element) {
       return;
     }
@@ -151,13 +157,21 @@ const PageThumb = memo(function InnerPageThumb({
           observer.disconnect();
         }
       },
-      { rootMargin: "300px" }
+      { rootMargin: "600px" }
     );
 
     observer.observe(element);
 
-    return () => observer.disconnect();
-  }, []);
+    // Fallback: Ensure page becomes visible after 1.5s regardless of observer triggers
+    const timer = setTimeout(() => {
+      setVisible(true);
+    }, 1500);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!(visible && doc && canvasEl)) {
@@ -165,9 +179,23 @@ const PageThumb = memo(function InnerPageThumb({
     }
 
     let cancelled = false;
-    let task: { cancel: () => void } | null = null;
 
     const render = async () => {
+      // Cancel and wait for any previous in-flight task on this canvas before starting
+      if (activeTaskRef.current) {
+        try {
+          activeTaskRef.current.cancel();
+          await activeTaskRef.current.promise.catch(() => undefined);
+        } catch {
+          // ignore
+        }
+        activeTaskRef.current = null;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
       const page = await doc.getPage(sourcePage);
 
       if (cancelled) {
@@ -192,7 +220,7 @@ const PageThumb = memo(function InnerPageThumb({
         scale,
       });
 
-      const context = canvasEl.getContext("2d", { alpha: false });
+      const context = canvasEl.getContext("2d");
 
       if (!context || cancelled) {
         return;
@@ -204,8 +232,14 @@ const PageThumb = memo(function InnerPageThumb({
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      task = page.render({ canvasContext: context, viewport });
-      await (task as any).promise;
+      const renderTask = page.render({
+        background: "rgb(255, 255, 255)",
+        canvasContext: context,
+        viewport,
+      });
+
+      activeTaskRef.current = renderTask;
+      await renderTask.promise;
 
       if (!cancelled) {
         setIsRendered(true);
@@ -213,40 +247,41 @@ const PageThumb = memo(function InnerPageThumb({
     };
 
     render().catch((error) => {
-      // A single unrenderable page (corrupt stream, unsupported codec) must not
-      // blank the entire grid.
+      if (error?.name === "RenderingCancelledException") {
+        return;
+      }
       console.warn(`Page ${sourcePage} could not be rendered:`, error);
     });
 
     return () => {
       cancelled = true;
-      task?.cancel();
+      if (activeTaskRef.current) {
+        try {
+          activeTaskRef.current.cancel();
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [canvasEl, doc, rotation, sourcePage, visible]);
 
   return (
     <div
-      className="relative flex w-full items-center justify-center overflow-hidden rounded-md bg-white shadow-xs transition-all hover:shadow-md dark:bg-zinc-900 border border-border/60"
+      className="relative flex w-full items-center justify-center overflow-hidden rounded-md bg-white shadow-xs transition-all hover:shadow-md border border-border/60"
       ref={boxRef}
       style={{ aspectRatio: `${aspect}` }}
     >
-      {visible ? (
-        <>
-          <canvas
-            className={cn(
-              "h-full w-full object-contain select-none transition-opacity duration-200",
-              isRendered ? "opacity-100" : "opacity-0"
-            )}
-            ref={setCanvasEl}
-          />
-          {isRendered ? null : (
-            <div className="absolute inset-0 flex items-center justify-center bg-muted/20 animate-pulse">
-              <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="size-full animate-pulse bg-muted/30" />
+      <canvas
+        className={cn(
+          "h-full w-full object-contain select-none transition-opacity duration-200",
+          isRendered ? "opacity-100" : "opacity-0"
+        )}
+        ref={setCanvasEl}
+      />
+      {isRendered ? null : (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/20 animate-pulse">
+          <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
+        </div>
       )}
     </div>
   );
@@ -272,6 +307,7 @@ const PageReader = memo(function InnerPageReader({
   const [canvasEl, setCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [aspect, setAspect] = useState<number>(Math.SQRT1_2);
   const [isRendering, setIsRendering] = useState(true);
+  const activeTaskRef = useRef<any>(null);
 
   useEffect(() => {
     if (!doc || !canvasEl) {
@@ -279,10 +315,23 @@ const PageReader = memo(function InnerPageReader({
     }
 
     let cancelled = false;
-    let task: { cancel: () => void } | null = null;
     setIsRendering(true);
 
     const render = async () => {
+      if (activeTaskRef.current) {
+        try {
+          activeTaskRef.current.cancel();
+          await activeTaskRef.current.promise.catch(() => undefined);
+        } catch {
+          // ignore
+        }
+        activeTaskRef.current = null;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
       const page = await doc.getPage(pageNumber);
       if (cancelled) {
         return;
@@ -302,7 +351,7 @@ const PageReader = memo(function InnerPageReader({
       const scale = (scaledWidth / base.width) * dpr;
 
       const viewport = page.getViewport({ rotation: angle, scale });
-      const context = canvasEl.getContext("2d", { alpha: false });
+      const context = canvasEl.getContext("2d");
 
       if (!context || cancelled) {
         return;
@@ -314,8 +363,14 @@ const PageReader = memo(function InnerPageReader({
       context.fillStyle = "#ffffff";
       context.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-      task = page.render({ canvasContext: context, viewport });
-      await (task as any).promise;
+      const renderTask = page.render({
+        background: "rgb(255, 255, 255)",
+        canvasContext: context,
+        viewport,
+      });
+
+      activeTaskRef.current = renderTask;
+      await renderTask.promise;
 
       if (!cancelled) {
         setIsRendering(false);
@@ -323,6 +378,9 @@ const PageReader = memo(function InnerPageReader({
     };
 
     render().catch((err) => {
+      if (err?.name === "RenderingCancelledException") {
+        return;
+      }
       console.warn("Reader render failed:", err);
       if (!cancelled) {
         setIsRendering(false);
@@ -331,7 +389,13 @@ const PageReader = memo(function InnerPageReader({
 
     return () => {
       cancelled = true;
-      task?.cancel();
+      if (activeTaskRef.current) {
+        try {
+          activeTaskRef.current.cancel();
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [canvasEl, doc, pageNumber, rotation, zoom]);
 
@@ -340,7 +404,7 @@ const PageReader = memo(function InnerPageReader({
   return (
     <div className="flex min-h-full w-full items-center justify-center p-4 md:p-8 overflow-auto overscroll-contain bg-muted/20">
       <div
-        className="relative mx-auto rounded-lg bg-white shadow-xl dark:bg-zinc-950 border border-border/70 transition-all duration-150"
+        className="relative mx-auto rounded-lg bg-white shadow-xl border border-border/70 transition-all duration-150"
         style={{
           aspectRatio: `${aspect}`,
           maxWidth: "100%",

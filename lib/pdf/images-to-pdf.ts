@@ -1,6 +1,6 @@
 import "server-only";
 
-import { PDFDocument, type PDFImage } from "pdf-lib";
+import { PDFDocument, type PDFImage, rgb } from "pdf-lib";
 import { getSharp } from "@/lib/image/native";
 
 export type ImageToPdfLayout = "fit" | "a4" | "letter";
@@ -58,8 +58,8 @@ export async function convertImagesToPdf(
 
   const prepared = await Promise.all(
     images.map(async (input) => {
-      // 1. Normalize image with Sharp: auto-orient based on EXIF and extract metadata
-      const pipeline = sharp(input.buffer).rotate();
+      // 1. Normalize image with Sharp: auto-orient based on EXIF, ensure sRGB and extract metadata
+      const pipeline = sharp(input.buffer).rotate().toColorspace("srgb");
       const metadata = await pipeline.metadata();
 
       const rawWidth = metadata.width || 800;
@@ -135,6 +135,14 @@ export async function convertImagesToPdf(
     }
 
     const page = pdfDoc.addPage([pageWidth, pageHeight]);
+    // Explicit opaque white background for standard rendering across dark/light mode viewers and print
+    page.drawRectangle({
+      color: rgb(1, 1, 1),
+      height: pageHeight,
+      width: pageWidth,
+      x: 0,
+      y: 0,
+    });
     page.drawImage(item.embeddedImage, {
       height: drawHeight,
       width: drawWidth,
