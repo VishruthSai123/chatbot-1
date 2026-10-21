@@ -29,8 +29,7 @@ test.describe("PDF Schema Validation", () => {
   test("imagesToPdfSchema rejects invalid layout", () => {
     expect(() =>
       imagesToPdfSchema.parse({
-        // @ts-expect-error
-        layout: "tabloid",
+        layout: "tabloid" as any,
       })
     ).toThrow();
   });

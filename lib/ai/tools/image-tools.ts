@@ -8,9 +8,9 @@ import {
   getLatestDocumentByKind,
   getMessagesByChatId,
   isValidUUID,
-  saveDocument,
 } from "@/lib/db/queries";
 import type { DimensionSpec } from "@/lib/image/dimensions";
+import { persistAndSaveImageDocument } from "@/lib/image/persist";
 import { findPresetsByQuery, getPresetByKey } from "@/lib/image/presets";
 import { applyResizeRequirement } from "@/lib/image/requirements";
 import { resolveDocumentImage } from "@/lib/image/resolve-source";
@@ -621,12 +621,15 @@ export const imageResize = ({
 
         // Save version to DB non-fatally
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn("Non-fatal: Failed to persist resized document:", dbErr);
@@ -838,12 +841,15 @@ export const imageRemoveBg = ({
 
         // Save version non-fatally
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn(
@@ -1006,12 +1012,15 @@ export const imageCrop = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn("Non-fatal: Failed to persist crop document:", dbErr);
@@ -1156,12 +1165,15 @@ export const imageRotate = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn("Non-fatal: Failed to persist rotate document:", dbErr);
@@ -1294,12 +1306,15 @@ export const imageCompress = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn(
@@ -1403,12 +1418,15 @@ export const imageConvert = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn("Non-fatal: Failed to persist convert document:", dbErr);
@@ -1526,12 +1544,15 @@ export const imageUpscaleEnhance = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn("Non-fatal: Failed to persist upscale document:", dbErr);
@@ -1681,12 +1702,15 @@ export const imagePixelate = ({
         });
 
         try {
-          await saveDocument({
-            content: result.base64,
-            id: validDocId,
-            kind: "image",
+          await persistAndSaveImageDocument({
+            buffer: result.buffer ?? Buffer.from(result.base64, "base64"),
+            chatId,
+            documentId: validDocId,
+            format: result.format,
+            height: result.height,
             title: resolved.title,
             userId: session.user?.id as string,
+            width: result.width,
           });
         } catch (dbErr) {
           console.warn(

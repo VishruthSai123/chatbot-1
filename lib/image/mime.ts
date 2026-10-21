@@ -84,13 +84,36 @@ export function imageSrcMime(src: string): string {
   return "image/png";
 }
 
-/** Promotes bare base64 to a data URL the DOM (and the clipboard) can use. */
+/** Promotes bare base64 or storage envelopes to a URL the DOM can use. */
 export function imageSrcToDataUrl(src: string): string {
   if (!src) {
     return "";
   }
   if (/^(https?:|blob:|data:)/i.test(src)) {
     return src;
+  }
+  if (src.startsWith("image-ref:")) {
+    try {
+      const parsed = JSON.parse(src.slice("image-ref:".length));
+      if (parsed?.url) {
+        return parsed.url;
+      }
+    } catch {
+      // ignore JSON parse error
+    }
+  }
+  if (src.startsWith("image-collection:")) {
+    try {
+      const parsed = JSON.parse(src.slice("image-collection:".length));
+      const active =
+        parsed.items?.find((i: any) => i.documentId === parsed.activeId) ||
+        parsed.items?.[0];
+      if (active?.url) {
+        return active.url;
+      }
+    } catch {
+      // ignore JSON parse error
+    }
   }
   return `data:${imageSrcMime(src)};base64,${src}`;
 }

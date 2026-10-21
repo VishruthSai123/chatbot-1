@@ -25,6 +25,12 @@ import {
   upscaleToTarget,
 } from "@/lib/image/native";
 import { extractTextFromImage } from "@/lib/image/ocr";
+import {
+  decodeImageCollection,
+  decodeImageRef,
+  isImageCollection,
+  isImageRef,
+} from "@/lib/image/ref";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { downloadArtifact } from "@/lib/storage";
 import type {
@@ -210,16 +216,61 @@ export async function parseImageInput(
     try {
       const latest = await getLatestDocumentByKind({ kind: "image", userId });
       if (latest?.content) {
-        const buffer = Buffer.from(latest.content, "base64");
-        if (buffer.length > 0) {
-          activeImageRegistry.setActiveImage({
-            base64: latest.content,
-            chatId: fallbackContext?.chatId,
-            documentId: latest.id,
-            title: latest.title,
-            userId,
-          });
-          return { buffer, mimeType: "image/png" };
+        if (isImageRef(latest.content)) {
+          const ref = decodeImageRef(latest.content);
+          if (ref) {
+            try {
+              const buffer = await downloadArtifact(ref.storageKey);
+              activeImageRegistry.setActiveImage({
+                base64: buffer.toString("base64"),
+                chatId: fallbackContext?.chatId,
+                documentId: latest.id,
+                title: latest.title,
+                userId,
+              });
+              return {
+                buffer,
+                mimeType: inferMimeType(ref.filename || ref.storageKey),
+              };
+            } catch (storageErr) {
+              console.warn("Failed to download latest image ref:", storageErr);
+            }
+          }
+        } else if (isImageCollection(latest.content)) {
+          const col = decodeImageCollection(latest.content);
+          const item =
+            col?.items.find((i) => i.documentId === col.activeId) ||
+            col?.items[0];
+          if (item) {
+            try {
+              const buffer = await downloadArtifact(item.storageKey);
+              activeImageRegistry.setActiveImage({
+                base64: buffer.toString("base64"),
+                chatId: fallbackContext?.chatId,
+                documentId: item.documentId || latest.id,
+                title: item.title || latest.title,
+                userId,
+              });
+              return {
+                buffer,
+                mimeType: inferMimeType(item.filename || item.storageKey),
+              };
+            } catch (storageErr) {
+              console.warn("Failed to download collection item:", storageErr);
+            }
+          }
+        } else {
+          const buffer = Buffer.from(latest.content, "base64");
+          if (buffer.length > 0) {
+            activeImageRegistry.setActiveImage({
+              base64: latest.content,
+              chatId: fallbackContext?.chatId,
+              documentId: latest.id,
+              title: latest.title,
+              userId,
+            });
+            return { buffer, mimeType: "image/png" };
+          }
         }
       }
     } catch (err) {
@@ -259,19 +310,95 @@ export async function parseImageInput(
     try {
       const doc = await getDocumentById({ id: trimmed });
       if (doc?.content) {
-        const buffer = Buffer.from(doc.content, "base64");
-        if (buffer.length > 0) {
-          activeImageRegistry.setActiveImage({
-            base64: doc.content,
-            documentId: doc.id,
-            title: doc.title,
-            userId: fallbackContext?.userId,
-          });
-          return { buffer, mimeType: "image/png" };
+        if (isImageRef(doc.content)) {
+          const ref = decodeImageRef(doc.content);
+          if (ref) {
+            try {
+              const buffer = await downloadArtifact(ref.storageKey);
+              activeImageRegistry.setActiveImage({
+                base64: buffer.toString("base64"),
+                documentId: doc.id,
+                title: doc.title,
+                userId: fallbackContext?.userId,
+              });
+              return {
+                buffer,
+                mimeType: inferMimeType(ref.filename || ref.storageKey),
+              };
+            } catch (storageErr) {
+              console.warn("Failed to download doc image ref:", storageErr);
+            }
+          }
+        } else if (isImageCollection(doc.content)) {
+          const col = decodeImageCollection(doc.content);
+          const item =
+            col?.items.find((i) => i.documentId === col.activeId) ||
+            col?.items[0];
+          if (item) {
+            try {
+              const buffer = await downloadArtifact(item.storageKey);
+              activeImageRegistry.setActiveImage({
+                base64: buffer.toString("base64"),
+                documentId: item.documentId || doc.id,
+                title: item.title || doc.title,
+                userId: fallbackContext?.userId,
+              });
+              return {
+                buffer,
+                mimeType: inferMimeType(item.filename || item.storageKey),
+              };
+            } catch (storageErr) {
+              console.warn("Failed to download collection item:", storageErr);
+            }
+          }
+        } else {
+          const buffer = Buffer.from(doc.content, "base64");
+          if (buffer.length > 0) {
+            activeImageRegistry.setActiveImage({
+              base64: doc.content,
+              documentId: doc.id,
+              title: doc.title,
+              userId: fallbackContext?.userId,
+            });
+            return { buffer, mimeType: "image/png" };
+          }
         }
       }
     } catch (docErr) {
       console.warn("Non-fatal: Document lookup for image UUID failed:", docErr);
+    }
+  }
+
+  // 1b. Check if source is directly an image-ref or image-collection envelope
+  if (isImageRef(trimmed)) {
+    const ref = decodeImageRef(trimmed);
+    if (ref?.storageKey) {
+      try {
+        const buffer = await downloadArtifact(ref.storageKey);
+        return {
+          buffer,
+          mimeType: inferMimeType(ref.filename || ref.storageKey),
+        };
+      } catch (err) {
+        console.warn("Failed to download direct image-ref:", err);
+      }
+    }
+  }
+
+  if (isImageCollection(trimmed)) {
+    const col = decodeImageCollection(trimmed);
+    const item =
+      col?.items.find((i) => i.documentId === col.activeId) || col?.items[0];
+    if (item?.storageKey) {
+      try {
+        const buffer = await downloadArtifact(item.storageKey);
+        return {
+          buffer,
+          mimeType: inferMimeType(item.filename || item.storageKey),
+        };
+      } catch (err) {
+        console.warn("Failed to download direct collection item:", err);
+      }
     }
   }
 
@@ -486,6 +613,7 @@ function formatResult(
 
   return {
     base64,
+    buffer,
     dataUrl,
     density,
     format,

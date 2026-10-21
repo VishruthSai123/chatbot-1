@@ -269,10 +269,14 @@ export interface OcrOperationResult {
 
 export interface ImageOperationResult {
   base64: string;
+  buffer?: Buffer;
   dataUrl: string;
   density?: number;
   format: string;
   height: number;
   sizeBytes: number;
+  storageKey?: string;
+  thumbUrl?: string;
+  url?: string;
   width: number;
 }

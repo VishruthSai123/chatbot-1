@@ -3,6 +3,8 @@ import type { Session } from "next-auth";
 
 import { guestRegex } from "@/lib/constants";
 import { getLatestDocumentByKind, saveDocument } from "@/lib/db/queries";
+import { persistImageBytes } from "@/lib/image/persist";
+import { encodeImageRef } from "@/lib/image/ref";
 import { resolveDocumentImage } from "@/lib/image/resolve-source";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { MAX_INLINE_BASE64_CHARS } from "@/lib/storage/limits";
@@ -166,6 +168,42 @@ export async function runImageAction({
   let result: any;
 
   switch (action) {
+    case "resolve": {
+      if (!resolvedDocumentId) {
+        return NextResponse.json(
+          { error: "Missing documentId to resolve." },
+          { status: 400 }
+        );
+      }
+      const resolved = await resolveDocumentImage({
+        chatId,
+        documentId: resolvedDocumentId,
+        userId: session.user.id,
+        versionIndex,
+      });
+      if (!resolved) {
+        return NextResponse.json(
+          { error: "Could not open that document." },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({
+        result: {
+          documentId: resolved.documentId,
+          format: resolved.format,
+          height: resolved.height,
+          sizeBytes: resolved.sizeBytes,
+          storageKey: resolved.storageKey,
+          thumbUrl: resolved.thumbUrl,
+          title: resolved.title,
+          url:
+            resolved.url ||
+            `data:image/${resolved.format || "png"};base64,${resolved.base64}`,
+          width: resolved.width,
+        },
+        success: true,
+      });
+    }
     case "resize":
     case "resize_physical": {
       const validated = resizeSchema.parse(params);
@@ -278,10 +316,27 @@ export async function runImageAction({
   // is already durable so it does not re-upload the same bytes.
   let persisted = false;
 
-  if (resolvedDocumentId && result?.base64) {
+  if (resolvedDocumentId && (result?.buffer || result?.base64)) {
+    const buffer = result.buffer ?? Buffer.from(result.base64, "base64");
     try {
+      const persistedRef = await persistImageBytes({
+        bytes: buffer,
+        chatId,
+        filename: resolvedTitle
+          ? `${resolvedTitle}.${result.format || "png"}`
+          : undefined,
+        format: result.format,
+        height: result.height,
+        userId: session.user.id,
+        width: result.width,
+      });
+
+      result.storageKey = persistedRef.storageKey;
+      result.url = persistedRef.url;
+      result.thumbUrl = persistedRef.thumbUrl;
+
       await saveDocument({
-        content: result.base64,
+        content: encodeImageRef(persistedRef),
         id: resolvedDocumentId,
         kind: "image",
         title: resolvedTitle ?? "Image",
@@ -289,7 +344,22 @@ export async function runImageAction({
       });
       persisted = true;
     } catch (err) {
-      console.warn("Failed to persist document version:", err);
+      console.warn(
+        "Storage upload failed, falling back to database base64:",
+        err
+      );
+      try {
+        await saveDocument({
+          content: result.base64,
+          id: resolvedDocumentId,
+          kind: "image",
+          title: resolvedTitle ?? "Image",
+          userId: session.user.id,
+        });
+        persisted = true;
+      } catch (dbErr) {
+        console.warn("Failed to persist document version to DB:", dbErr);
+      }
     }
   }
 

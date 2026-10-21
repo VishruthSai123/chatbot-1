@@ -20,6 +20,7 @@ import { useIsGuest } from "@/hooks/use-is-guest";
 import { aspectRatioInPercent, type CropBox } from "@/lib/image/crop-box";
 import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { CROP_ASPECT_PRESETS } from "@/lib/image/presets";
+import { toolEndpoint } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
 import { BeforeAfterSlider } from "../before-after-slider";
 import { BackgroundRemovalInspector } from "./background-removal-inspector";
@@ -162,19 +163,65 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
   const [naturalWidth, setNaturalWidth] = useState<number>(0);
   const [naturalHeight, setNaturalHeight] = useState<number>(0);
 
-  // Sync with incoming content changes
+  // Sync with incoming content changes and resolve storage references if needed
   useEffect(() => {
-    if (content && content !== currentBase64) {
+    if (!content) {
+      return;
+    }
+
+    if (content.startsWith("image-ref:")) {
+      try {
+        const parsed = JSON.parse(content.slice("image-ref:".length));
+        if (parsed?.url) {
+          setCurrentBase64(parsed.url);
+          if (!originalBase64) {
+            setOriginalBase64(parsed.url);
+          }
+          return;
+        }
+      } catch {
+        // ignore JSON parse error
+      }
+
+      const docId = documentId || artifact.documentId;
+      if (docId && docId !== "init") {
+        fetch(toolEndpoint("image"), {
+          body: JSON.stringify({
+            action: "resolve",
+            documentId: docId,
+            versionIndex: currentVersionIndex,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.result?.url) {
+              setCurrentBase64(data.result.url);
+              if (!originalBase64) {
+                setOriginalBase64(data.result.url);
+              }
+            }
+          })
+          .catch((err) => console.warn("Failed to resolve image:", err));
+      }
+      return;
+    }
+
+    if (content !== currentBase64) {
       setCurrentBase64(content);
     }
-  }, [content, currentBase64]);
-
-  // Set original reference on first load
-  useEffect(() => {
-    if (content && !originalBase64) {
+    if (!originalBase64) {
       setOriginalBase64(content);
     }
-  }, [content, originalBase64]);
+  }, [
+    content,
+    currentBase64,
+    originalBase64,
+    documentId,
+    artifact.documentId,
+    currentVersionIndex,
+  ]);
 
   /**
    * Stored images are bare base64 with no declared type, so the data URL is built
