@@ -14,6 +14,8 @@ import {
   toGroundingSources,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
+import type { ResearchRun } from "@/lib/research/ref";
+import { findResearchRun, saveResearchRun } from "@/lib/research/store";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
 
 type ResearchToolsProps = {
@@ -100,27 +102,71 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
       const budget = DEPTH_BUDGET[depth] ?? DEPTH_BUDGET.standard;
 
       try {
+        // ── 0. Pick up an earlier run, if there is one ──────────────────
+        //
+        // A run that was cut short keeps what it found. Asking again about the
+        // same topic continues from those findings instead of starting over,
+        // and the questions already asked are not asked again.
+        const existing = await findResearchRun({
+          topic,
+          userId: session.user.id,
+        });
+        const run: ResearchRun = existing?.run ?? {
+          findings: [],
+          queriesAsked: [],
+          sources: [],
+          topic,
+          updatedAt: new Date().toISOString(),
+        };
+        const runDocumentId = existing?.documentId;
+
+        const alreadyAsked = new Set(
+          run.queriesAsked.map((q) => q.toLowerCase())
+        );
+
         // ── 1. Plan the angles ────────────────────────────────────────────
-        writeStatus(dataStream, "thinking", "Planning the research…");
+        writeStatus(
+          dataStream,
+          "thinking",
+          existing
+            ? "Planning what is still missing…"
+            : "Planning the research…"
+        );
 
         const { object: plan } = await generateObject({
           model: getGroundingModel(),
           prompt: [
             `Break this research topic into ${budget.queries} specific web search queries.`,
             "Each query should attack a different angle of the topic, and each should be a phrase a person would actually type into a search engine.",
+            run.queriesAsked.length > 0
+              ? `These questions have already been asked, so do not repeat them: ${run.queriesAsked.join("; ")}.`
+              : "",
             "Return nothing but the queries.",
             "",
             topic,
-          ].join("\n"),
+          ]
+            .filter(Boolean)
+            .join("\n"),
           schema: z.object({
             queries: z.array(z.string().min(3)).max(8),
           }),
         });
 
-        const queries = plan.queries.slice(0, budget.queries);
+        const queries = plan.queries
+          .filter((query) => !alreadyAsked.has(query.toLowerCase()))
+          .slice(0, budget.queries);
 
         if (queries.length === 0) {
-          return { error: "Could not plan a search for that topic." };
+          // Everything planned has been asked. Report what the run has, rather
+          // than searching again for the same ground.
+          return {
+            continued: Boolean(existing),
+            documentId: runDocumentId,
+            findings: run.findings,
+            report: run.report ?? run.findings.join("\n\n"),
+            sources: run.sources,
+            topic,
+          };
         }
 
         // ── 2. Search each angle ──────────────────────────────────────────
@@ -151,8 +197,15 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           })
         );
 
+        run.queriesAsked = [...run.queriesAsked, ...queries];
+        await saveResearchRun({
+          documentId: runDocumentId,
+          run,
+          userId: session.user.id,
+        });
+
         // ── 3. Collect the pages worth reading ───────────────────────────
-        const seenUrls = new Set<string>();
+        const seenUrls = new Set<string>(run.sources.map((s) => s.url));
         const sources: GroundingSource[] = [];
 
         for (const result of searchResults) {
@@ -166,7 +219,7 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           }
         }
 
-        if (sources.length === 0) {
+        if (sources.length === 0 && run.findings.length === 0) {
           return {
             error:
               "The searches found no readable sources. Try a broader or differently worded topic.",
@@ -205,6 +258,28 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
               }
             })
           );
+
+          // The findings are written down as they arrive, so a run that is cut
+          // short keeps what it read rather than losing all of it.
+          for (const reading of readings) {
+            if (!reading.text) {
+              continue;
+            }
+
+            run.findings.push(reading.text);
+            run.sources.push({
+              note: reading.text.slice(0, 400),
+              title: reading.source.title,
+              url: reading.source.url,
+            });
+          }
+
+          run.updatedAt = new Date().toISOString();
+          await saveResearchRun({
+            documentId: runDocumentId,
+            run,
+            userId: session.user.id,
+          });
         }
 
         // ── 5. Write the report ──────────────────────────────────────────
@@ -212,8 +287,21 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
 
         const cited = readings.filter((reading) => reading.text);
 
+        // A continuation writes the whole picture, not just this round's slice.
+        const earlierFindings = run.findings
+          .filter(
+            (finding) => !cited.some((reading) => reading.text === finding)
+          )
+          .slice(0, 12);
+
+        const allSources = [...run.sources, ...sources];
+
         const material = [
-          "Here is what the web searches found, per query:",
+          earlierFindings.length > 0
+            ? "What earlier rounds of this research already established:"
+            : "",
+          ...earlierFindings.map((finding) => `FINDING: ${finding}\n`),
+          "Here is what this round's web searches found, per query:",
           ...searchResults
             .filter((result) => result.snippet)
             .map((result) => `QUERY: ${result.query}\n${result.snippet}\n`),
@@ -237,17 +325,31 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
             "Structure it with short sections and a few clear headings. Lead with the answer.",
             "",
             "NUMBERED SOURCE LIST:",
-            ...sources.map((source, index) => `[${index + 1}] ${source.url}`),
+            ...allSources.map(
+              (source, index) => `[${index + 1}] ${source.url}`
+            ),
             "",
             "MATERIAL:",
             material,
           ].join("\n"),
         });
 
+        // The report is kept, so a later continuation can build on it.
+        run.report = report;
+        run.updatedAt = new Date().toISOString();
+
+        const savedRunId = await saveResearchRun({
+          documentId: runDocumentId,
+          run,
+          userId: session.user.id,
+        });
+
         return {
+          continued: Boolean(existing),
           depth,
+          documentId: savedRunId,
           report,
-          sources,
+          sources: allSources,
           topic,
         };
       } catch (error: any) {

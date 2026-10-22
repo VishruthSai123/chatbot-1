@@ -28,3 +28,6 @@ tsconfig.tsbuildinfo
 
 # pdf.js runtime assets, copied from node_modules by scripts/sync-pdfjs-assets.mjs
 /public/pdfjs
+
+# yt-dlp binary, fetched at build time by scripts/fetch-ytdlp.mjs
+/.ytdlp/

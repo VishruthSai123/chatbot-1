@@ -24,6 +24,9 @@ importers:
       '@ai-sdk/react':
         specifier: 4.0.145
         version: 4.0.145(react@19.2.7)(zod@4.4.3)
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
       '@codemirror/lang-python':
         specifier: ^6.2.1
         version: 6.2.1
@@ -443,6 +446,9 @@ packages:
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
+
+  '@breezystack/lamejs@1.2.7':
+    resolution: {integrity: sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==}
 
   '@chevrotain/cst-dts-gen@11.1.1':
     resolution: {integrity: sha512-fRHyv6/f542qQqiRGalrfJl/evD39mAvbJLCekPazhiextEatq1Jx1K/i9gSd5NNO0ds03ek0Cbo/4uVKmOBcw==}
@@ -5535,6 +5541,8 @@ snapshots:
   '@borewit/text-codec@0.2.2': {}
 
   '@braintree/sanitize-url@7.1.2': {}
+
+  '@breezystack/lamejs@1.2.7': {}
 
   '@chevrotain/cst-dts-gen@11.1.1':
     dependencies:

@@ -30,6 +30,7 @@ import type {
   imageStitch,
   imageUpscaleEnhance,
 } from "./ai/tools/image-tools";
+import type { downloadMedia } from "./ai/tools/media-tools";
 import type {
   notebookAddSource,
   notebookAsk,
@@ -107,6 +108,7 @@ type docConvertTool = InferUITool<ReturnType<typeof docConvert>>;
 type audioInfoTool = InferUITool<ReturnType<typeof audioInfo>>;
 type audioTranscribeTool = InferUITool<ReturnType<typeof audioTranscribe>>;
 type audioOpenTool = InferUITool<ReturnType<typeof audioOpen>>;
+type downloadMediaTool = InferUITool<ReturnType<typeof downloadMedia>>;
 type notebookCreateTool = InferUITool<ReturnType<typeof notebookCreate>>;
 type notebookAskTool = InferUITool<ReturnType<typeof notebookAsk>>;
 type notebookGenerateTool = InferUITool<ReturnType<typeof notebookGenerate>>;
@@ -168,6 +170,7 @@ export type ChatTools = {
   audioInfo: audioInfoTool;
   audioTranscribe: audioTranscribeTool;
   audioOpen: audioOpenTool;
+  downloadMedia: downloadMediaTool;
 };
 
 export type WaitingStatusData = {

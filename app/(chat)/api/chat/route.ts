@@ -53,6 +53,7 @@ import {
   imageStitch,
   imageUpscaleEnhance,
 } from "@/lib/ai/tools/image-tools";
+import { downloadMedia } from "@/lib/ai/tools/media-tools";
 import {
   notebookAddSource,
   notebookAsk,
@@ -105,7 +106,15 @@ import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
 import { type PostRequestBody, postRequestBodySchema } from "./schema";
 
-export const maxDuration = 60;
+/**
+ * How long a chat turn may run.
+ *
+ * A deep research turn searches, reads several pages and writes a report, which
+ * does not fit in a minute. The platform's own ceiling is what actually applies
+ * — 300 seconds on the Hobby plan with Fluid compute — so this asks for the
+ * room rather than imposing the old minute.
+ */
+export const maxDuration = 300;
 
 const HEALTH_CHECK_DELAY_MS = 9000;
 
@@ -427,6 +436,7 @@ export async function POST(request: Request) {
                   "audioInfo",
                   "audioTranscribe",
                   "audioOpen",
+                  "downloadMedia",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -486,6 +496,7 @@ export async function POST(request: Request) {
             docRead: docRead({ messages: uiMessages, session }),
             docStats: docStats({ messages: uiMessages, session }),
             docSummarize: docSummarize({ messages: uiMessages, session }),
+            downloadMedia: downloadMedia({ chatId: id, session }),
             editDocument: editDocument({ dataStream, session }),
             getWeather,
             imageCollage: imageCollage({

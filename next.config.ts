@@ -70,6 +70,10 @@ const nextConfig: NextConfig = {
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
     ],
+    // The yt-dlp binary is fetched by scripts/fetch-ytdlp.mjs into .ytdlp/ at
+    // build time. It is a native executable outside node_modules, so it needs to
+    // be traced explicitly or the downloader would deploy without it.
+    "/api/download": ["./.ytdlp/**"],
     "/api/tools/**": [
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",

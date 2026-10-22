@@ -7,6 +7,8 @@ import {
   googleUrlContextTool,
 } from "@/lib/ai/search/grounding";
 import { extractTextFromImage } from "@/lib/image/ocr";
+import { fetchVideoTranscript } from "@/lib/media/transcript";
+import { isVideoUrl } from "@/lib/media/url";
 import { extractPdfText } from "@/lib/pdf/native";
 import { readSheetFile } from "@/lib/sheet/native";
 import type { NotebookChunk } from "./chunk";
@@ -118,6 +120,19 @@ async function extractImage(
  * `readUrl`.
  */
 export async function extractUrl(url: string): Promise<ExtractionResult> {
+  // A video's words are more useful than its video page, so a video link is
+  // read as its transcript rather than as a page of links and comments.
+  if (isVideoUrl(url)) {
+    const transcript = await fetchVideoTranscript({ url });
+
+    if (transcript) {
+      return {
+        sections: [{ label: "Transcript", text: transcript.text }],
+        title: transcript.title,
+      };
+    }
+  }
+
   try {
     const { text } = await generateText({
       model: getGroundingModel(),
