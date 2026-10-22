@@ -11,6 +11,7 @@ import {
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
+import { z } from "zod";
 import { auth, type UserType } from "@/app/(auth)/auth";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import {
@@ -23,6 +24,13 @@ import {
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { createDocument } from "@/lib/ai/tools/create-document";
+import {
+  docConvert,
+  docDiff,
+  docRead,
+  docStats,
+  docSummarize,
+} from "@/lib/ai/tools/doc-tools";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
 import {
@@ -118,7 +126,17 @@ export async function POST(request: Request) {
   try {
     const json = await request.json();
     requestBody = postRequestBodySchema.parse(json);
-  } catch {
+  } catch (error) {
+    // The validation detail is logged but not returned: the client gets a
+    // generic message, and the server keeps the reason. Swallowing it entirely
+    // makes a rejected request indistinguishable from any other bad request.
+    if (error instanceof z.ZodError) {
+      console.error(
+        "Chat request failed validation:",
+        JSON.stringify(error.issues, null, 2)
+      );
+    }
+
     return new ChatbotError("bad_request:api").toResponse();
   }
 
@@ -396,6 +414,11 @@ export async function POST(request: Request) {
                   "notebookQuiz",
                   "notebookGrade",
                   "notebookAddSource",
+                  "docRead",
+                  "docSummarize",
+                  "docDiff",
+                  "docStats",
+                  "docConvert",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -447,6 +470,11 @@ export async function POST(request: Request) {
               modelId: chatModel,
               session,
             }),
+            docConvert: docConvert({ messages: uiMessages, session }),
+            docDiff: docDiff({ messages: uiMessages, session }),
+            docRead: docRead({ messages: uiMessages, session }),
+            docStats: docStats({ messages: uiMessages, session }),
+            docSummarize: docSummarize({ messages: uiMessages, session }),
             editDocument: editDocument({ dataStream, session }),
             getWeather,
             imageCollage: imageCollage({

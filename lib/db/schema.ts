@@ -77,7 +77,7 @@ export const document = pgTable(
     createdAt: timestamp("createdAt").notNull(),
     id: uuid("id").notNull().defaultRandom(),
     kind: varchar("text", {
-      enum: ["text", "code", "image", "sheet", "pdf", "notebook"],
+      enum: ["text", "code", "image", "sheet", "pdf", "notebook", "doc"],
     })
       .notNull()
       .default("text"),

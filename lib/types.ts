@@ -2,6 +2,13 @@ import type { InferUITool, UIMessage } from "ai";
 import { z } from "zod";
 import type { ArtifactKind, ImageToolMode } from "@/components/chat/artifact";
 import type { createDocument } from "./ai/tools/create-document";
+import type {
+  docConvert,
+  docDiff,
+  docRead,
+  docStats,
+  docSummarize,
+} from "./ai/tools/doc-tools";
 import type { getWeather } from "./ai/tools/get-weather";
 import type {
   imageCollage,
@@ -87,6 +94,11 @@ type sheetConvertFormatTool = InferUITool<
 type webSearchTool = InferUITool<ReturnType<typeof webSearch>>;
 type readUrlTool = InferUITool<ReturnType<typeof readUrl>>;
 type researchTool = InferUITool<ReturnType<typeof research>>;
+type docReadTool = InferUITool<ReturnType<typeof docRead>>;
+type docSummarizeTool = InferUITool<ReturnType<typeof docSummarize>>;
+type docDiffTool = InferUITool<ReturnType<typeof docDiff>>;
+type docStatsTool = InferUITool<ReturnType<typeof docStats>>;
+type docConvertTool = InferUITool<ReturnType<typeof docConvert>>;
 type notebookCreateTool = InferUITool<ReturnType<typeof notebookCreate>>;
 type notebookAskTool = InferUITool<ReturnType<typeof notebookAsk>>;
 type notebookGenerateTool = InferUITool<ReturnType<typeof notebookGenerate>>;
@@ -140,6 +152,11 @@ export type ChatTools = {
   notebookQuiz: notebookQuizTool;
   notebookGrade: notebookGradeTool;
   notebookAddSource: notebookAddSourceTool;
+  docRead: docReadTool;
+  docSummarize: docSummarizeTool;
+  docDiff: docDiffTool;
+  docStats: docStatsTool;
+  docConvert: docConvertTool;
 };
 
 export type WaitingStatusData = {
@@ -175,6 +192,7 @@ export type CustomUIDataTypes = {
   imageOcrText: string;
   pdfDelta: string;
   notebookDelta: string;
+  docDelta: string;
 };
 
 export type ChatMessage = UIMessage<

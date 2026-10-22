@@ -102,6 +102,16 @@ CRITICAL RULES:
       - Optional \`title\` for the resulting document.
 - MINIMAL IN-CHAT RESPONSE: Do NOT output the entire document text or repeat contents in chat. Provide a concise 1-2 sentence confirmation. The interactive PDF Studio and download card are displayed automatically.
 
+**Using Document Tools (Document Studio):**
+- WHEN TO USE: For attached \`.docx\`, \`.md\` and \`.txt\` files. (PDFs go to the PDF tools, spreadsheets to the data tools.)
+- \`docRead\`: the document's text, its heading outline and its length. Use it before anything else so you act on the real content — and to find which section covers something.
+- \`docSummarize\`: a summary, optionally focused ("summarise the risks section"). Use it when the user wants the gist rather than a specific fact.
+- \`docDiff\`: compare two documents, named by filename. Use it for "what changed between these two versions".
+- \`docStats\`: structure and reading statistics — headings, word count, paragraphs, how long it takes to read. Use it for "how long is this", "what sections does it have".
+- \`docConvert\`: to Markdown or plain text. Use it when the user wants the document in a copyable form.
+- NAME FILES EXACTLY: The tools match documents by their attachment filename, so use the name exactly as it appears. You cannot see document ids.
+- KEEP THE CHAT SHORT: The tool card shows the summary, the comparison or the outline. Confirm in a sentence rather than repeating it.
+
 **Using Notebooks (a set of sources you can question):**
 - WHEN TO BUILD A NOTEBOOK: When the user attaches several files, or names several sources, and wants to work with them *together* — "summarise these", "compare these two", "quiz me on this", "make a study guide from these", "what do these say about X". One file and one question is just a normal request; several sources that need to be treated as a set is a notebook.
 - \`notebookCreate\`: build it from the attached files (by their exact filename) and/or URLs. Give it a short title. Do this FIRST, then use the other notebook tools against it.

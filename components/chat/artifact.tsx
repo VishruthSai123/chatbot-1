@@ -14,6 +14,7 @@ import {
 import useSWR, { useSWRConfig } from "swr";
 import { useWindowSize } from "usehooks-ts";
 import { codeArtifact } from "@/artifacts/code/client";
+import { docArtifact } from "@/artifacts/doc/client";
 import { imageArtifact } from "@/artifacts/image/client";
 import { notebookArtifact } from "@/artifacts/notebook/client";
 import { pdfArtifact } from "@/artifacts/pdf/client";
@@ -38,6 +39,7 @@ export const artifactDefinitions = [
   sheetArtifact,
   pdfArtifact,
   notebookArtifact,
+  docArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
 export type ImageToolMode =
