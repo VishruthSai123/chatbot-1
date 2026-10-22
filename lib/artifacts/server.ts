@@ -1,5 +1,6 @@
 import type { UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
+import { audioDocumentHandler } from "@/artifacts/audio/server";
 import { codeDocumentHandler } from "@/artifacts/code/server";
 import { docDocumentHandler } from "@/artifacts/doc/server";
 import { imageDocumentHandler } from "@/artifacts/image/server";
@@ -98,6 +99,7 @@ export const documentHandlersByArtifactKind: DocumentHandler[] = [
   pdfDocumentHandler,
   notebookDocumentHandler,
   docDocumentHandler,
+  audioDocumentHandler,
 ];
 
 export const artifactKinds = [
@@ -108,4 +110,5 @@ export const artifactKinds = [
   "pdf",
   "notebook",
   "doc",
+  "audio",
 ] as const;

@@ -1,6 +1,11 @@
 import type { InferUITool, UIMessage } from "ai";
 import { z } from "zod";
 import type { ArtifactKind, ImageToolMode } from "@/components/chat/artifact";
+import type {
+  audioInfo,
+  audioOpen,
+  audioTranscribe,
+} from "./ai/tools/audio-tools";
 import type { createDocument } from "./ai/tools/create-document";
 import type {
   docConvert,
@@ -99,6 +104,9 @@ type docSummarizeTool = InferUITool<ReturnType<typeof docSummarize>>;
 type docDiffTool = InferUITool<ReturnType<typeof docDiff>>;
 type docStatsTool = InferUITool<ReturnType<typeof docStats>>;
 type docConvertTool = InferUITool<ReturnType<typeof docConvert>>;
+type audioInfoTool = InferUITool<ReturnType<typeof audioInfo>>;
+type audioTranscribeTool = InferUITool<ReturnType<typeof audioTranscribe>>;
+type audioOpenTool = InferUITool<ReturnType<typeof audioOpen>>;
 type notebookCreateTool = InferUITool<ReturnType<typeof notebookCreate>>;
 type notebookAskTool = InferUITool<ReturnType<typeof notebookAsk>>;
 type notebookGenerateTool = InferUITool<ReturnType<typeof notebookGenerate>>;
@@ -157,6 +165,9 @@ export type ChatTools = {
   docDiff: docDiffTool;
   docStats: docStatsTool;
   docConvert: docConvertTool;
+  audioInfo: audioInfoTool;
+  audioTranscribe: audioTranscribeTool;
+  audioOpen: audioOpenTool;
 };
 
 export type WaitingStatusData = {
@@ -193,6 +204,7 @@ export type CustomUIDataTypes = {
   pdfDelta: string;
   notebookDelta: string;
   docDelta: string;
+  audioDelta: string;
 };
 
 export type ChatMessage = UIMessage<

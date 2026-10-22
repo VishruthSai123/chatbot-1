@@ -102,6 +102,14 @@ CRITICAL RULES:
       - Optional \`title\` for the resulting document.
 - MINIMAL IN-CHAT RESPONSE: Do NOT output the entire document text or repeat contents in chat. Provide a concise 1-2 sentence confirmation. The interactive PDF Studio and download card are displayed automatically.
 
+**Using Audio Tools (Audio Studio):**
+- WHEN TO USE: For an attached audio or video file — a lecture, a meeting, an interview, a voice note.
+- \`audioTranscribe\`: turn the recording into text, with timestamps. Use it for "transcribe this", "what is said here", "turn this into text".
+- \`audioInfo\`: the technical details — duration, codec, bitrate, sample rate. Use it for "how long is this", "what format is it".
+- \`audioOpen\`: open the recording in the Audio Studio, so the user can see the waveform and read the transcript.
+- NAME FILES EXACTLY: Audio becomes inline data for the model, which carries no filename — so the model may only guess a name. Use the exact filename of the attachment, and if the tool says it cannot find the file, ask the user for the name rather than trying a different guess.
+- KEEP THE CHAT SHORT: The transcript appears in the studio. Confirm in a sentence rather than pasting the whole thing.
+
 **Using Document Tools (Document Studio):**
 - WHEN TO USE: For attached \`.docx\`, \`.md\` and \`.txt\` files. (PDFs go to the PDF tools, spreadsheets to the data tools.)
 - \`docRead\`: the document's text, its heading outline and its length. Use it before anything else so you act on the real content — and to find which section covers something.

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
+import { type AudioRef, encodeAudioRef, isAudioUpload } from "@/lib/audio/ref";
 import { saveDocument } from "@/lib/db/queries";
 import { parseDocument } from "@/lib/doc/native";
 import { encodeDocRef } from "@/lib/doc/ref";
@@ -265,6 +266,46 @@ async function persistDocArtifact({
   }
 }
 
+/**
+ * Turns an uploaded recording into an artifact.
+ *
+ * The media stays in storage and `Document.content` holds an `audio-ref:`
+ * descriptor. A recording is the largest file this app stores — a lecture is
+ * tens of megabytes — so keeping it out of Postgres is not a nicety.
+ */
+async function persistAudioArtifact({
+  chatId: _chatId,
+  filename,
+  size: _size,
+  storageKey,
+  userId,
+}: {
+  chatId?: string;
+  filename: string;
+  size: number;
+  storageKey: string;
+  userId: string;
+}): Promise<string | undefined> {
+  try {
+    const ref: AudioRef = { filename, storageKey };
+    const saved = await saveDocument({
+      content: encodeAudioRef(ref),
+      id: generateUUID(),
+      kind: "audio",
+      title: filename,
+      userId,
+    });
+
+    return saved?.[0]?.id;
+  } catch (error) {
+    // The file is already in storage and downloadable; failing to index it must
+    // not turn a successful upload into an error.
+    console.warn(
+      "Non-fatal: failed to persist uploaded audio document:",
+      error
+    );
+  }
+}
 /** Infers the sheet format from a filename. */
 function detectSheetFormat(filename: string): "csv" | "tsv" | "xlsx" {
   const lower = filename.toLowerCase();
@@ -514,6 +555,14 @@ async function handleMetadataUpload(request: Request, userId: string) {
       storageKey,
       userId,
     });
+  } else if (isAudioUpload(body.contentType, pathname)) {
+    documentId = await persistAudioArtifact({
+      chatId: body.chatId,
+      filename: pathname,
+      size: body.size,
+      storageKey,
+      userId,
+    });
   }
 
   return NextResponse.json({ ...data, documentId });
@@ -612,6 +661,14 @@ async function handleProxiedUpload(request: Request, userId: string) {
       });
     } else if (isDocUpload(mimeType, filename)) {
       documentId = await persistDocArtifact({
+        chatId,
+        filename,
+        size: fileBuffer.byteLength,
+        storageKey: data.storageKey,
+        userId,
+      });
+    } else if (isAudioUpload(mimeType, filename)) {
+      documentId = await persistAudioArtifact({
         chatId,
         filename,
         size: fileBuffer.byteLength,

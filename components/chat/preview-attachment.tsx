@@ -34,18 +34,25 @@ export const PreviewAttachment = ({
     (!contentType &&
       /\.(png|jpe?g|gif|webp|avif|svg|bmp|tiff?)$/i.test(name ?? ""));
   const isPdf = contentType === "application/pdf" || /\.pdf$/i.test(name ?? "");
-  const isSheet =
-    !isImage &&
-    !isPdf &&
-    /\.(csv|tsv|tab|xlsx|xlsm)$/i.test(name ?? "") === true;
   const isDoc =
     !isImage &&
     !isPdf &&
-    !isSheet &&
     /\.(docx|md|markdown|txt|text)$/i.test(name ?? "") === true;
+  const isSheet =
+    !isImage &&
+    !isPdf &&
+    !isDoc &&
+    /\.(csv|tsv|tab|xlsx|xlsm)$/i.test(name ?? "") === true;
+  const isAudio =
+    !isImage &&
+    !isPdf &&
+    !isSheet &&
+    !isDoc &&
+    /\.(mp3|m4a|wav|flac|ogg|aac|opus|webm|m4v|mp4|mov)$/i.test(name ?? "") ===
+      true;
 
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !(isImage || isPdf || isSheet || isDoc)) {
+    if (isUploading || !(isImage || isPdf || isSheet || isDoc || isAudio)) {
       return;
     }
     if (isGuest) {
@@ -57,11 +64,25 @@ export const PreviewAttachment = ({
       content: url,
       documentId: documentId || generateUUID(),
       isVisible: true,
-      kind: isImage ? "image" : isPdf ? "pdf" : isSheet ? "sheet" : "doc",
+      kind: isImage
+        ? "image"
+        : isPdf
+          ? "pdf"
+          : isSheet
+            ? "sheet"
+            : isDoc
+              ? "doc"
+              : "audio",
       status: "idle",
       title:
         name ||
-        (isSheet ? "Data Studio" : isDoc ? "Document Studio" : "Image Studio"),
+        (isSheet
+          ? "Data Studio"
+          : isDoc
+            ? "Document Studio"
+            : isAudio
+              ? "Audio Studio"
+              : "Image Studio"),
     });
   }, [
     isUploading,
@@ -69,6 +90,7 @@ export const PreviewAttachment = ({
     isPdf,
     isSheet,
     isDoc,
+    isAudio,
     isGuest,
     setArtifact,
     url,

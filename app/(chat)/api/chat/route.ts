@@ -23,6 +23,11 @@ import {
 } from "@/lib/ai/models";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  audioInfo,
+  audioOpen,
+  audioTranscribe,
+} from "@/lib/ai/tools/audio-tools";
 import { createDocument } from "@/lib/ai/tools/create-document";
 import {
   docConvert,
@@ -419,6 +424,9 @@ export async function POST(request: Request) {
                   "docDiff",
                   "docStats",
                   "docConvert",
+                  "audioInfo",
+                  "audioTranscribe",
+                  "audioOpen",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -465,6 +473,9 @@ export async function POST(request: Request) {
               Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT),
           },
           tools: {
+            audioInfo: audioInfo({ messages: uiMessages, session }),
+            audioOpen: audioOpen({ messages: uiMessages, session }),
+            audioTranscribe: audioTranscribe({ messages: uiMessages, session }),
             createDocument: createDocument({
               dataStream,
               modelId: chatModel,
