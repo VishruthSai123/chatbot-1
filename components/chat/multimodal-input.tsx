@@ -243,6 +243,12 @@ function PureMultimodalInput({
       parts: [
         ...attachments.map((attachment) => ({
           documentId: attachment.documentId,
+          // The AI SDK reads `filename` when it converts a file part for the
+          // provider, and drops everything else. Without it the model sees an
+          // anonymous file and cannot name it — which is why a request like
+          // "merge these two PDFs" used to come back asking for filenames the
+          // user had already attached.
+          filename: attachment.name,
           mediaType: attachment.contentType,
           name: attachment.name,
           type: "file" as const,

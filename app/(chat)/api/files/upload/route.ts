@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
 import { saveDocument } from "@/lib/db/queries";
+import { parseDocument } from "@/lib/doc/native";
+import { encodeDocRef } from "@/lib/doc/ref";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { encodePdfRef } from "@/lib/pdf/ref";
 import { encodeSheetRef } from "@/lib/sheet/ref";
@@ -213,6 +215,56 @@ async function persistSheetArtifact({
   }
 }
 
+/**
+ * Turns an uploaded document into an artifact.
+ *
+ * The text is extracted here so the studio can open immediately, and it is
+ * capped: a very long document would otherwise make the document row enormous,
+ * and the tools re-extract the text from the file when they need the whole of
+ * it. The cap is generous — a 200,000-character document is roughly 35,000
+ * words, which is already a full book.
+ */
+async function persistDocArtifact({
+  chatId: _chatId,
+  filename,
+  size: _size,
+  storageKey,
+  userId,
+}: {
+  chatId?: string;
+  filename: string;
+  size: number;
+  storageKey: string;
+  userId: string;
+}): Promise<string | undefined> {
+  try {
+    const buffer = await downloadArtifact(storageKey);
+    const parsed = await parseDocument({ buffer, filename });
+
+    const saved = await saveDocument({
+      content: encodeDocRef({
+        filename,
+        format: parsed.format,
+        outline: parsed.outline,
+        stats: parsed.stats,
+        storageKey,
+        text: parsed.text.slice(0, 200_000),
+        title: filename,
+      }),
+      id: generateUUID(),
+      kind: "doc",
+      title: filename,
+      userId,
+    });
+
+    return saved?.[0]?.id;
+  } catch (error) {
+    // The file is already in storage and downloadable; failing to index it must
+    // not turn a successful upload into an error.
+    console.warn("Non-fatal: failed to persist uploaded document:", error);
+  }
+}
+
 /** Infers the sheet format from a filename. */
 function detectSheetFormat(filename: string): "csv" | "tsv" | "xlsx" {
   const lower = filename.toLowerCase();
@@ -258,6 +310,32 @@ function isSheetUpload(contentType: string, filename: string): boolean {
   }
 
   return SHEET_MIME_TYPES.includes(contentType);
+}
+
+/** Extensions the Document Studio can open. */
+const DOC_EXTENSIONS = [".docx", ".md", ".markdown", ".txt", ".text"];
+
+const DOC_MIME_TYPES = [
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/markdown",
+  "text/plain",
+];
+
+/**
+ * Decides whether an upload should become a document.
+ *
+ * The extension is trusted over the MIME type, for the same reason as the
+ * spreadsheet check: browsers routinely report a document as
+ * `application/octet-stream`, while the filename is never wrong.
+ */
+function isDocUpload(contentType: string, filename: string): boolean {
+  const lower = filename.toLowerCase();
+
+  if (DOC_EXTENSIONS.some((extension) => lower.endsWith(extension))) {
+    return true;
+  }
+
+  return DOC_MIME_TYPES.includes(contentType);
 }
 
 export async function POST(request: Request) {
@@ -428,6 +506,14 @@ async function handleMetadataUpload(request: Request, userId: string) {
       storageKey,
       userId,
     });
+  } else if (isDocUpload(body.contentType, pathname)) {
+    documentId = await persistDocArtifact({
+      chatId: body.chatId,
+      filename: pathname,
+      size: body.size,
+      storageKey,
+      userId,
+    });
   }
 
   return NextResponse.json({ ...data, documentId });
@@ -518,6 +604,14 @@ async function handleProxiedUpload(request: Request, userId: string) {
       });
     } else if (isSheetUpload(mimeType, filename)) {
       documentId = await persistSheetArtifact({
+        chatId,
+        filename,
+        size: fileBuffer.byteLength,
+        storageKey: data.storageKey,
+        userId,
+      });
+    } else if (isDocUpload(mimeType, filename)) {
+      documentId = await persistDocArtifact({
         chatId,
         filename,
         size: fileBuffer.byteLength,

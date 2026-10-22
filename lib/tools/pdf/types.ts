@@ -74,7 +74,9 @@ export const imagesToPdfSchema = z.object({
   documentIds: z
     .array(z.string())
     .optional()
-    .describe("Optional document IDs of image documents to convert."),
+    .describe(
+      "Leave empty to convert every attached image in order. The model cannot see the filenames of inline images, so a name here would be a guess."
+    ),
   layout: z
     .enum(["fit", "a4", "letter"])
     .optional()

@@ -9,7 +9,7 @@ import {
   toAlphaFloats,
 } from "@/lib/image/alpha";
 import { segmentImage } from "@/lib/image/background-removal";
-import { decodeBase64Image } from "@/lib/image/base64";
+import { decodeBase64Image, sniffImageMime } from "@/lib/image/base64";
 import { formatSupportsAlpha, resolveAlphaFormat } from "@/lib/image/formats";
 import {
   compressImage,
@@ -497,16 +497,31 @@ export async function parseImageInput(
   const cleanBase64 = trimmed.replace(/\s+/g, "");
   const buffer = Buffer.from(cleanBase64, "base64");
   if (buffer.length === 0) {
-    const recovered = await durableFallback();
-    if (recovered) {
-      return recovered;
-    }
     throw new Error("Invalid or empty image data provided.");
+  }
+
+  // The decoded bytes must actually be an image.
+  //
+  // Node's base64 decoder silently *ignores* characters outside the alphabet,
+  // so a filename like "image.png" does not fail — it decodes "imagepng" into
+  // six bytes of rubbish and returns them as if they were a PNG. Sharp then
+  // rejects that much later with "unsupported image format", which is a very
+  // confusing way to learn that the caller passed a name instead of an image.
+  //
+  // It is also a dangerous failure: the "fallback" below would quietly swap in
+  // whichever image happened to be newest, so an edit aimed at one photo would
+  // land on another. Failing loudly is the only safe answer.
+  const mimeType = sniffImageMime(buffer);
+
+  if (!mimeType) {
+    throw new Error(
+      "That is not image data. Pass a document id, a URL, or the image's base64 content."
+    );
   }
 
   return {
     buffer,
-    mimeType: "image/png",
+    mimeType,
   };
 }
 

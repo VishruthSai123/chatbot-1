@@ -32,6 +32,25 @@ export type ReferenceResolution = {
 };
 
 /**
+ * Finds the attachment a name refers to.
+ *
+ * The model names files by their filename, so a tool handed "photo.jpg" needs
+ * the attachment that filename belongs to. Returns the matched candidate with
+ * its url and document id.
+ */
+export function findAttachment({
+  messages,
+  reference,
+}: {
+  messages?: ChatMessage[];
+  reference: string;
+}): { documentId?: string; name?: string; url?: string } | undefined {
+  const candidates = collectImageCandidates(messages ?? []);
+
+  return matchCandidate(reference, candidates);
+}
+
+/**
  * Resolves a list of references to document ids.
  *
  * A reference that cannot be matched is reported in `missing` rather than

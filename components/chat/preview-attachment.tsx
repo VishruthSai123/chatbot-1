@@ -26,13 +26,26 @@ export const PreviewAttachment = ({
   const { isGuest } = useIsGuest();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
-  const isImage = contentType?.startsWith("image");
-  const isPdf = contentType === "application/pdf";
+  // The extension is checked alongside the media type, and the extension wins:
+  // browsers routinely report a PDF as `application/octet-stream`, and a file
+  // whose type is unknown should still open in the right studio.
+  const isImage =
+    contentType?.startsWith("image") ||
+    (!contentType &&
+      /\.(png|jpe?g|gif|webp|avif|svg|bmp|tiff?)$/i.test(name ?? ""));
+  const isPdf = contentType === "application/pdf" || /\.pdf$/i.test(name ?? "");
   const isSheet =
-    isPdf === false && /\.(csv|tsv|tab|xlsx|xlsm)$/i.test(name ?? "") === true;
+    !isImage &&
+    !isPdf &&
+    /\.(csv|tsv|tab|xlsx|xlsm)$/i.test(name ?? "") === true;
+  const isDoc =
+    !isImage &&
+    !isPdf &&
+    !isSheet &&
+    /\.(docx|md|markdown|txt|text)$/i.test(name ?? "") === true;
 
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !(isImage || isPdf || isSheet)) {
+    if (isUploading || !(isImage || isPdf || isSheet || isDoc)) {
       return;
     }
     if (isGuest) {
@@ -44,15 +57,18 @@ export const PreviewAttachment = ({
       content: url,
       documentId: documentId || generateUUID(),
       isVisible: true,
-      kind: isImage ? "image" : isPdf ? "pdf" : "sheet",
+      kind: isImage ? "image" : isPdf ? "pdf" : isSheet ? "sheet" : "doc",
       status: "idle",
-      title: name || (isSheet ? "Data Studio" : "Image Studio"),
+      title:
+        name ||
+        (isSheet ? "Data Studio" : isDoc ? "Document Studio" : "Image Studio"),
     });
   }, [
     isUploading,
     isImage,
     isPdf,
     isSheet,
+    isDoc,
     isGuest,
     setArtifact,
     url,
@@ -120,9 +136,31 @@ export const PreviewAttachment = ({
             </span>
           </span>
         </button>
+      ) : isDoc ? (
+        <button
+          className="flex size-full cursor-pointer flex-col items-center justify-center gap-1 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+          onClick={handleOpenStudio}
+          title="Click to open in Document Studio"
+          type="button"
+        >
+          <FileText className="size-6" />
+          <span className="px-1 text-center text-[9px] leading-tight">
+            {name ?? "Document"}
+          </span>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100">
+            <span className="rounded bg-sky-600/90 px-1 py-0.5 text-[9px] font-semibold text-white shadow">
+              Studio
+            </span>
+          </span>
+        </button>
       ) : (
-        <div className="flex size-full items-center justify-center text-muted-foreground text-xs">
-          File
+        <div className="flex size-full flex-col items-center justify-center gap-1 p-1 text-center text-muted-foreground">
+          <FileText className="size-5" />
+          {/* The filename, not a generic label: the user has to be able to tell
+              their attachments apart, and the model reads the same name. */}
+          <span className="line-clamp-2 text-[9px] leading-tight">
+            {name ?? "File"}
+          </span>
         </div>
       )}
 

@@ -54,7 +54,14 @@ const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
 
 function extractChatId(pathname: string): string | null {
   const match = pathname.match(/\/chat\/([^/]+)/);
-  return match ? match[1] : null;
+
+  // `/chat/new` is not a chat: the id in the URL has to be a real UUID, and
+  // sending the literal string "new" to the API is rejected as invalid.
+  if (!match || match[1] === "new") {
+    return null;
+  }
+
+  return match[1];
 }
 
 export function ActiveChatProvider({ children }: { children: ReactNode }) {

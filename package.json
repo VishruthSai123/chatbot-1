@@ -104,6 +104,7 @@
     "@tailwindcss/postcss": "^4.3.2",
     "@tailwindcss/typography": "^0.5.20",
     "@types/d3-scale": "^4.0.9",
+    "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^24.13.2",
     "@types/papaparse": "^5.5.2",
     "@types/pdf-parse": "^1.1.5",

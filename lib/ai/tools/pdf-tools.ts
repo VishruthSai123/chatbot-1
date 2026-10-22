@@ -1,7 +1,7 @@
 import { tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
-
+import { findAttachment } from "@/lib/ai/tools/image-references";
 import { guestRegex } from "@/lib/constants";
 import {
   getLatestDocumentByKind,
@@ -844,7 +844,7 @@ export const imageToPdf = ({
 }: PdfToolsProps) =>
   tool({
     description:
-      "Convert one or more images (photos, receipts, invoices, screenshots) into a PDF document. Images attached to the conversation or in the studio are automatically detected and converted in order.",
+      "Convert one or more images (photos, receipts, invoices, screenshots) into a PDF document. Images attached to the conversation are converted automatically, in attachment order. Leave `documentIds` empty unless the user has asked for a specific subset — the model cannot see the filenames of inline images, so naming them is guesswork.",
     execute: async ({ documentIds, layout, margin, title }) => {
       if (checkIsGuest(session)) {
         return { error: "Sign in to convert images to PDF." };
@@ -862,13 +862,22 @@ export const imageToPdf = ({
         const resolvedList = await Promise.all(
           documentIds.map(async (candidate) => {
             try {
-              const parsed = await parseImageInput(candidate, {
+              // The model names files by their filename, so a bare name has to
+              // become the attachment it refers to before it can be read.
+              const attachment = findAttachment({
+                messages,
+                reference: candidate,
+              });
+              const source = attachment?.url ?? candidate;
+
+              const parsed = await parseImageInput(source, {
                 chatId,
                 userId,
               });
               if (parsed?.buffer?.length > 0) {
                 return {
                   buffer: parsed.buffer,
+                  filename: attachment?.name ?? candidate,
                   mimeType: parsed.mimeType,
                 };
               }
@@ -946,15 +955,32 @@ export const imageToPdf = ({
           ? imageInputs[0].filename.replace(/\.[^/.]+$/, "")
           : "Converted Image Document");
 
-      const { result } = await executeImagesToPdf({
-        context: { chatId, userId },
-        images: imageInputs,
-        options: {
-          layout: layout ?? "fit",
-          margin,
-          title: pdfTitle,
-        },
-      });
+      let result: Awaited<ReturnType<typeof executeImagesToPdf>>["result"];
+
+      try {
+        const converted = await executeImagesToPdf({
+          context: { chatId, userId },
+          images: imageInputs,
+          options: {
+            layout: layout ?? "fit",
+            margin,
+            title: pdfTitle,
+          },
+        });
+
+        const { result: convertedResult } = converted;
+        result = convertedResult;
+      } catch (error: any) {
+        // Without this the tool throws, and the SDK turns it into "An error
+        // occurred." — which the model then paraphrases as "the images are in
+        // an unsupported format". The real reason is far more useful.
+        console.error("imageToPdf failed:", error);
+        return {
+          error:
+            error?.message ??
+            "The images could not be converted to a PDF. Please try again.",
+        };
+      }
 
       let docId: string | undefined;
       try {

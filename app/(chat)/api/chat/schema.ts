@@ -10,6 +10,10 @@ const filePartSchema = z.object({
   // validation (zod strips unknown keys) so image tools can resolve bytes from the
   // database instead of relying on expiring signed URLs.
   documentId: z.uuid().optional(),
+  // The name the user sees on the attachment. The AI SDK copies this into the
+  // provider message, so it is how the model learns what a file is called —
+  // without it the model sees an anonymous file and cannot name it.
+  filename: z.string().max(255).optional(),
   mediaType: z.string(),
   name: z.string().optional(),
   type: z.literal("file"),
