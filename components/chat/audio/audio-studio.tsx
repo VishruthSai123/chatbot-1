@@ -81,22 +81,19 @@ export const AudioStudio = memo(function InnerAudioStudio({
    * produce — and it means the recording is readable by anyone who cannot use
    * the transcript panel.
    */
-  const captionUrl = useMemo(
-    () =>
-      URL.createObjectURL(
-        new Blob([toVtt(segments) || "WEBVTT\n"], { type: "text/vtt" })
-      ),
-    [segments]
-  );
+  const captionUrl = useMemo(() => {
+    const vtt = toVtt(blocks) || "WEBVTT\n";
 
-  useEffect(
-    () => () => {
-      if (captionUrl) {
-        URL.revokeObjectURL(captionUrl);
-      }
-    },
-    [captionUrl]
-  );
+    /**
+     * A data URL, not an object URL.
+     *
+     * An object URL is minted during render, so the server and the browser
+     * produce different values for the same track and React reports a
+     * hydration mismatch. A data URL is a pure function of the text, so both
+     * sides agree, and the track costs a few kilobytes at most.
+     */
+    return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
+  }, [blocks]);
 
   /**
    * Decodes the file and reduces it to peaks.
@@ -369,7 +366,7 @@ export const AudioStudio = memo(function InnerAudioStudio({
                       title="Jump to this moment"
                       type="button"
                     >
-                      {block.text}
+                      {formatTimestamp(block.timestamp)}
                     </button>
                     {block.text}
                   </>

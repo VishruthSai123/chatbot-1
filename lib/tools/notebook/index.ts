@@ -31,6 +31,7 @@ import {
   sourceCacheKey,
 } from "@/lib/notebook/registry";
 import { planRetrieval } from "@/lib/notebook/retrieval";
+import { quizQuestionSchema } from "@/lib/quiz/schema";
 import { downloadArtifact } from "@/lib/storage";
 
 /**
@@ -135,7 +136,7 @@ async function resolveSource(
   }
 
   if (source.kind === "url" && source.url) {
-    const extraction: ExtractionResult = await extractUrl(source.url);
+    const extraction: ExtractionResult = await extractUrl(source.url, userId);
 
     if (extraction.error) {
       return { chunks: [], error: extraction.error, source, text: "" };
@@ -544,20 +545,14 @@ export async function generateQuiz({
     model: getGroundingModel(),
     output: Output.object({
       schema: z.object({
-        questions: z.array(
-          z.object({
-            correctIndex: z.number().int().min(0).max(3),
-            options: z.array(z.string().min(1)).length(4),
-            question: z.string().min(5),
-            sourceTitle: z.string().optional(),
-          })
-        ),
+        questions: z.array(quizQuestionSchema.omit({ id: true })),
       }),
     }),
     prompt: [
       `Write ${QUIZ_LENGTH} quiz questions about the sources below.`,
       "Each question must be answerable from the sources alone.",
       "Give each question exactly four options, with the correct one FIRST, and record its position in correctIndex.",
+      "For each question, write a short explanation (1–2 sentences) of why the correct answer is right.",
       "Say which source each question came from in its sourceTitle field.",
       "",
       "SOURCES:",
@@ -584,6 +579,8 @@ export async function generateQuiz({
       ];
 
       return {
+        correctIndex: correctPosition,
+        explanation: question.explanation,
         id: `q${index + 1}`,
         options,
         question: question.question,

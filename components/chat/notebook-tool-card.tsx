@@ -13,6 +13,7 @@ import {
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
+import type { QuizQuestion } from "@/lib/quiz/schema";
 import { cn } from "@/lib/utils";
 
 /**
@@ -50,7 +51,7 @@ export interface NotebookToolOutput {
   matched?: boolean;
   mode?: string;
   question?: string;
-  questions?: { id: string; options?: string[]; question: string }[];
+  questions?: (QuizQuestion & { id: string })[];
   sources?: string[];
   title?: string;
   unmatched?: string[];
@@ -105,6 +106,205 @@ function CitationList({ citations }: { citations: NotebookCitation[] }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Interactive Quiz Card
+// ---------------------------------------------------------------------------
+
+type QuizQuestionData = QuizQuestion & {
+  id: string;
+};
+
+function InteractiveQuizCard({ questions }: { questions: QuizQuestionData[] }) {
+  // selectedIndex per question id
+  const [selected, setSelected] = useState<Record<string, number>>({});
+  // graded per question id → true once submitted
+  const [graded, setGraded] = useState<Record<string, boolean>>({});
+
+  const totalQuestions = questions.length;
+  const totalGraded = Object.keys(graded).length;
+  const totalCorrect = questions.filter(
+    (q) => graded[q.id] && selected[q.id] === q.correctIndex
+  ).length;
+
+  const allDone = totalGraded === totalQuestions;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {questions.map((q, qIndex) => {
+        const isGraded = !!graded[q.id];
+        const selectedIdx = selected[q.id];
+        const isCorrect = isGraded && selectedIdx === q.correctIndex;
+
+        return (
+          <div
+            className={cn(
+              "rounded-lg border p-3 transition-all",
+              isGraded
+                ? isCorrect
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : "border-rose-500/40 bg-rose-500/5"
+                : "border-border/50 bg-muted/20"
+            )}
+            key={q.id}
+          >
+            {/* Question text */}
+            <p className="mb-2 text-[12px] font-medium leading-relaxed text-foreground/90">
+              {qIndex + 1}. {q.question}
+            </p>
+
+            {/* Options */}
+            <div className="flex flex-col gap-1">
+              {q.options.map((option, optIdx) => {
+                const letter = String.fromCharCode(65 + optIdx);
+                const isSelected = selectedIdx === optIdx;
+                const isCorrectOption = optIdx === q.correctIndex;
+
+                let optionStyle =
+                  "border-border/30 bg-background/50 hover:border-border/60 hover:bg-background/80";
+
+                if (isGraded) {
+                  if (isCorrectOption) {
+                    optionStyle =
+                      "border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+                  } else if (isSelected && !isCorrectOption) {
+                    optionStyle =
+                      "border-rose-500/60 bg-rose-500/10 text-rose-700 dark:text-rose-400 line-through";
+                  } else {
+                    optionStyle =
+                      "border-border/20 bg-background/30 text-muted-foreground/60";
+                  }
+                } else if (isSelected) {
+                  optionStyle =
+                    "border-zinc-500 bg-zinc-500/10 ring-1 ring-zinc-500/30";
+                }
+
+                return (
+                  <button
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[11px] transition-all",
+                      optionStyle,
+                      isGraded && "cursor-default"
+                    )}
+                    disabled={isGraded}
+                    key={`${q.id}-${letter}`}
+                    onClick={() =>
+                      setSelected((prev) => ({ ...prev, [q.id]: optIdx }))
+                    }
+                    type="button"
+                  >
+                    {/* Radio indicator */}
+                    <span
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded-full border transition-all",
+                        isGraded && isCorrectOption
+                          ? "border-emerald-500 bg-emerald-500"
+                          : isGraded && isSelected && !isCorrectOption
+                            ? "border-rose-500 bg-rose-500"
+                            : isSelected
+                              ? "border-zinc-500 bg-zinc-500"
+                              : "border-border/50"
+                      )}
+                    >
+                      {isGraded && isCorrectOption ? (
+                        <Check className="size-2.5 text-white" />
+                      ) : isGraded && isSelected && !isCorrectOption ? (
+                        <CircleX className="size-2.5 text-white" />
+                      ) : isSelected ? (
+                        <span className="size-1.5 rounded-full bg-white" />
+                      ) : null}
+                    </span>
+                    <span className="font-mono text-[10px] opacity-60">
+                      {letter}.
+                    </span>
+                    <span className="min-w-0 flex-1">{option}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Submit / Result */}
+            <div className="mt-2">
+              {isGraded ? (
+                <div className="flex flex-col gap-1">
+                  <div
+                    className={cn(
+                      "flex items-center gap-1.5 text-[11px] font-medium",
+                      isCorrect
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    )}
+                  >
+                    {isCorrect ? (
+                      <>
+                        <CircleCheck className="size-3.5" />
+                        Correct!
+                      </>
+                    ) : (
+                      <>
+                        <CircleX className="size-3.5" />
+                        Incorrect — answer is{" "}
+                        {String.fromCharCode(65 + q.correctIndex)}.{" "}
+                        {q.options[q.correctIndex]}
+                      </>
+                    )}
+                  </div>
+                  {q.explanation ? (
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                      {q.explanation}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <button
+                  className={cn(
+                    "rounded-md px-3 py-1 text-[11px] font-medium transition-all",
+                    selectedIdx === undefined
+                      ? "cursor-not-allowed bg-muted text-muted-foreground"
+                      : "cursor-pointer bg-foreground text-background hover:bg-foreground/90"
+                  )}
+                  disabled={selectedIdx === undefined}
+                  onClick={() =>
+                    setGraded((prev) => ({ ...prev, [q.id]: true }))
+                  }
+                  type="button"
+                >
+                  Submit
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Score summary */}
+      {allDone ? (
+        <div
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg border p-3 text-[13px] font-semibold",
+            totalCorrect === totalQuestions
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : totalCorrect >= totalQuestions / 2
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+          )}
+        >
+          Score: {totalCorrect}/{totalQuestions} (
+          {Math.round((totalCorrect / totalQuestions) * 100)}%)
+        </div>
+      ) : totalGraded > 0 ? (
+        <p className="text-center text-[10px] text-muted-foreground">
+          {totalCorrect}/{totalGraded} correct so far —{" "}
+          {totalQuestions - totalGraded} remaining
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Card
+// ---------------------------------------------------------------------------
 
 export function NotebookToolCard({
   toolType,
@@ -238,36 +438,9 @@ export function NotebookToolCard({
         ) : null}
 
         {toolType === "tool-notebookQuiz" && output?.questions ? (
-          <div className="flex flex-col gap-2">
-            <ol className="flex flex-col gap-1.5">
-              {output.questions.map((question, index) => (
-                <li
-                  className="rounded-md border border-border/50 bg-muted/20 p-2"
-                  key={question.id}
-                >
-                  <p className="text-[12px] font-medium leading-relaxed text-foreground/90">
-                    {index + 1}. {question.question}
-                  </p>
-                  {question.options ? (
-                    <ul className="mt-1 flex flex-col gap-0.5">
-                      {question.options.map((option, optionIndex) => (
-                        <li
-                          className="font-mono text-[10px] text-muted-foreground"
-                          key={option}
-                        >
-                          {String.fromCharCode(65 + optionIndex)}. {option}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-            <p className="text-[10px] text-muted-foreground/70">
-              Answer in the chat — each answer is marked against the source it
-              came from.
-            </p>
-          </div>
+          <InteractiveQuizCard
+            questions={output.questions as QuizQuestionData[]}
+          />
         ) : null}
 
         {body ? (

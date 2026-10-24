@@ -60,6 +60,7 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { PaperclipIcon, StopIcon } from "./icons";
 import { ImageCollectionLauncher } from "./image/image-collection-launcher";
+import { MediaSessionDialog } from "./media-session-dialog";
 import { PreviewAttachment } from "./preview-attachment";
 import {
   type SlashCommand,
@@ -152,6 +153,7 @@ function PureMultimodalInput({
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
+  const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
 
   const handleInput = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -192,6 +194,9 @@ function PureMultimodalInput({
         }
         case "theme":
           setTheme(resolvedTheme === "dark" ? "light" : "dark");
+          break;
+        case "media":
+          setMediaSessionOpen(true);
           break;
         case "delete":
           toast("Delete this chat?", {
@@ -541,6 +546,10 @@ function PureMultimodalInput({
 
   return (
     <div className={cn("relative flex w-full flex-col gap-4", className)}>
+      <MediaSessionDialog
+        onOpenChange={setMediaSessionOpen}
+        open={mediaSessionOpen}
+      />
       {draggingFiles ? (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border/80 bg-card/90 px-8 py-6 shadow-lg">

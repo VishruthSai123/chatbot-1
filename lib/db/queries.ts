@@ -23,6 +23,8 @@ import {
   chat,
   type DBMessage,
   document,
+  type MediaSession,
+  mediaSession,
   message,
   type Suggestion,
   stream,
@@ -33,7 +35,33 @@ import {
 } from "./schema";
 import { generateHashedPassword } from "./utils";
 
+/**
+ * The database pool.
+ *
+ * The connection string points at Supabase's **session** pooler (port 5432),
+ * which allows fifteen sessions in total — not per client, not per query. The
+ * default pool size of ten connections per instance therefore means that two
+ * serverless instances can exhaust the pooler on their own, and the symptom is
+ * `max clients reached in session mode - pool_size: 15` on every query.
+ *
+ * Three settings fix that:
+ *
+ * - `max: 3` — a request handler never needs ten concurrent queries, and three
+ *   instances can share the pooler's fifteen slots comfortably.
+ * - `idle_timeout` — idle connections are closed, so a burst of traffic does not
+ *   hold sessions open after the work is done.
+ * - `connect_timeout` — a pool that cannot be reached fails in seconds with a
+ *   clear error, rather than hanging until the request times out.
+ *
+ * The better fix, if the deployment can be changed, is the **transaction**
+ * pooler (port 6543): it pools per transaction rather than per session, so it has
+ * no session limit at all. `prepare: false` is already set for exactly that
+ * reason.
+ */
 const client = postgres(process.env.POSTGRES_URL ?? "", {
+  connect_timeout: 10,
+  idle_timeout: 30,
+  max: 3,
   prepare: false,
   ssl:
     process.env.NODE_ENV === "production" ||
@@ -663,6 +691,115 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
       .execute();
 
     return streamIds.map(({ id }) => id);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Stores a user's media session.
+ *
+ * The cookies arrive already encrypted: this layer deals in bytes and knows
+ * nothing about what they are.
+ */
+export async function saveMediaSession({
+  cookies,
+  platform,
+  userId,
+}: {
+  cookies: string;
+  platform: string;
+  userId: string;
+}): Promise<void> {
+  try {
+    await db
+      .insert(mediaSession)
+      .values({
+        cookies,
+        platform,
+        updatedAt: new Date(),
+        userId,
+      })
+      .onConflictDoUpdate({
+        set: { cookies, updatedAt: new Date() },
+        target: [mediaSession.userId, mediaSession.platform],
+      })
+      .execute();
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * The user's session for one platform, if they have stored one.
+ */
+export async function getMediaSession({
+  platform,
+  userId,
+}: {
+  platform: string;
+  userId: string;
+}): Promise<MediaSession | null> {
+  try {
+    const rows = await db
+      .select()
+      .from(mediaSession)
+      .where(
+        and(
+          eq(mediaSession.userId, userId),
+          eq(mediaSession.platform, platform)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return rows[0] ?? null;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Every platform the user has a session for.
+ */
+export async function getMediaSessionPlatforms({
+  userId,
+}: {
+  userId: string;
+}): Promise<string[]> {
+  try {
+    const rows = await db
+      .select({ platform: mediaSession.platform })
+      .from(mediaSession)
+      .where(eq(mediaSession.userId, userId))
+      .execute();
+
+    return rows.map(({ platform }) => platform);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Forgets the user's session for one platform.
+ */
+export async function deleteMediaSession({
+  platform,
+  userId,
+}: {
+  platform: string;
+  userId: string;
+}): Promise<void> {
+  try {
+    await db
+      .delete(mediaSession)
+      .where(
+        and(
+          eq(mediaSession.userId, userId),
+          eq(mediaSession.platform, platform)
+        )
+      )
+      .execute();
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

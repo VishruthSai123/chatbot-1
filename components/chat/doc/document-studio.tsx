@@ -1,14 +1,14 @@
 "use client";
 
 import { Clock, FileText, ListTree, Loader2, Type } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 
 import { MessageResponse } from "@/components/ai-elements/message";
 import { ArtifactCloseButton } from "@/components/chat/artifact-close-button";
 import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
-import { decodeDocRef } from "@/lib/doc/ref";
+import { decodeDocRef, flattenOutline } from "@/lib/doc/ref";
 import { cn } from "@/lib/utils";
 
 /*
@@ -43,16 +43,44 @@ export const DocumentStudio = memo(function InnerDocumentStudio({
 
   const doc = useMemo(() => decodeDocRef(content), [content]);
 
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const headingCounts = useRef(new Map<string, number>());
+
+  /**
+   * Scrolls the document to a heading.
+   *
+   * The headings are rendered by the Markdown renderer, so the target is found
+   * in the DOM rather than tracked by hand. When a document repeats a heading,
+   * each click moves to the next occurrence instead of always jumping back to
+   * the first one.
+   */
+  const jumpToHeading = useCallback((text: string) => {
+    const root = contentRef.current;
+
+    if (!root) {
+      return;
+    }
+
+    const matches = Array.from(
+      root.querySelectorAll("h1, h2, h3, h4, h5, h6")
+    ).filter((node) => (node.textContent ?? "").trim() === text);
+
+    if (matches.length === 0) {
+      return;
+    }
+
+    const seen = headingCounts.current.get(text) ?? 0;
+    const target = matches[Math.min(seen, matches.length - 1)];
+
+    headingCounts.current.set(text, seen + 1);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveHeading(text);
+  }, []);
+
   const outline = doc?.outline ?? [];
   const stats = doc?.stats;
 
-  const headings = useMemo(
-    () =>
-      outline
-        .filter((node) => node.level <= 2)
-        .map((node) => ({ level: node.level, text: node.text })),
-    [outline]
-  );
+  const headings = useMemo(() => flattenOutline(outline), [outline]);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden overscroll-none bg-background text-foreground">
@@ -95,13 +123,14 @@ export const DocumentStudio = memo(function InnerDocumentStudio({
                   <button
                     className={cn(
                       "w-full cursor-pointer truncate rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted/60",
-                      heading.level === 1
+                      heading.depth === 0
                         ? "font-medium text-foreground/90"
-                        : "pl-3 text-muted-foreground",
+                        : "text-muted-foreground",
                       activeHeading === heading.text &&
                         "bg-muted/60 text-foreground"
                     )}
-                    onClick={() => setActiveHeading(heading.text)}
+                    onClick={() => jumpToHeading(heading.text)}
+                    style={{ paddingLeft: `${6 + heading.depth * 10}px` }}
                     title={heading.text}
                     type="button"
                   >
@@ -114,7 +143,10 @@ export const DocumentStudio = memo(function InnerDocumentStudio({
         ) : null}
 
         {/* Content */}
-        <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-4">
+        <div
+          className="min-w-0 flex-1 overflow-y-auto overscroll-contain p-4"
+          ref={contentRef}
+        >
           {isGuest ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <FileText className="size-7 text-muted-foreground/50" />

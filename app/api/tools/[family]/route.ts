@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/app/(auth)/auth";
 import { runAudioResolve } from "@/lib/tools/audio/handler";
 import { runImageAction } from "@/lib/tools/image/handler";
+import {
+  runMediaSessionAction,
+  runMediaSessions,
+} from "@/lib/tools/media/handler";
 import { runPdfAction } from "@/lib/tools/pdf/handler";
 import { runSheetAction } from "@/lib/tools/sheet/handler";
 
@@ -33,6 +37,8 @@ export async function GET(
     switch (family) {
       case "audio":
         return await runAudioResolve({ documentId, session });
+      case "media":
+        return await runMediaSessions({ session });
       default:
         return NextResponse.json(
           { error: `Unknown tool family: ${family}` },
@@ -76,6 +82,8 @@ export async function POST(
         return await runPdfAction({ body, session });
       case "sheet":
         return await runSheetAction({ body, session });
+      case "media":
+        return await runMediaSessionAction({ body, session });
       default:
         return NextResponse.json(
           { error: `Unknown tool family: ${family}` },

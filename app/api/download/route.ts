@@ -4,6 +4,7 @@ import { auth } from "@/app/(auth)/auth";
 import { guestRegex } from "@/lib/constants";
 import { downloadMedia } from "@/lib/media/download";
 import { storeDownloadedMedia } from "@/lib/media/persist";
+import { readMediaSessionForUrl } from "@/lib/media/session";
 
 /**
  * The media downloader.
@@ -53,7 +54,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const media = await downloadMedia({ format, quality, url });
+    const media = await downloadMedia({
+      cookies: await readMediaSessionForUrl({ url, userId: session.user.id }),
+      format,
+      quality,
+      url,
+    });
 
     const stored = await storeDownloadedMedia({
       chatId: typeof body?.chatId === "string" ? body.chatId : undefined,
@@ -62,6 +68,14 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
+      companion: stored.companion
+        ? {
+            documentId: stored.companion.documentId,
+            filename: stored.companion.filename,
+            sizeBytes: stored.companion.sizeBytes,
+            url: stored.companion.url,
+          }
+        : undefined,
       documentId: stored.documentId,
       duration: media.duration,
       filename: stored.filename,

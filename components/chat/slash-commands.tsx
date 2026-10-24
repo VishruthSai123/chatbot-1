@@ -2,6 +2,7 @@
 
 import {
   BombIcon,
+  KeyRoundIcon,
   ListIcon,
   PaletteIcon,
   PenLineIcon,
@@ -50,6 +51,12 @@ export const slashCommands: SlashCommand[] = [
     description: "Toggle dark/light mode",
     icon: <PaletteIcon className="size-3.5" />,
     name: "theme",
+  },
+  {
+    action: "media",
+    description: "Connect an Instagram or Facebook session",
+    icon: <KeyRoundIcon className="size-3.5" />,
+    name: "media",
   },
   {
     action: "delete",

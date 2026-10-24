@@ -5,6 +5,7 @@ import { z } from "zod";
 import { guestRegex } from "@/lib/constants";
 import { downloadMedia as downloadMediaFile } from "@/lib/media/download";
 import { storeDownloadedMedia } from "@/lib/media/persist";
+import { readMediaSessionForUrl } from "@/lib/media/session";
 
 type MediaToolsProps = {
   chatId?: string;
@@ -22,11 +23,15 @@ function checkIsGuest(session: Session): boolean {
  *
  * The heavy lifting is server-side; the MP3 conversion the user may ask for
  * afterwards happens in the browser, so this tool never needs FFmpeg.
+ *
+ * The user's own session for the platform is used when they have connected
+ * one, which is what lets Instagram and Facebook be downloaded at all. The
+ * cookies are never given to the model and never written to a log.
  */
 export const downloadMedia = ({ chatId, session }: MediaToolsProps) =>
   tool({
     description:
-      "Download a video or audio file from a link — a YouTube video, a podcast episode, a clip. Use it when the user pastes a link and asks to download it, save it, or get it as audio. Returns the file, ready to download.",
+      "Download a video or audio file from a link — a YouTube video, an Instagram or TikTok clip, a podcast episode, a Facebook video. Use it when the user pastes a link and asks to download it, save it, or get it as audio. Returns the file, ready to download.",
     execute: async ({ format = "video", quality, url }) => {
       if (checkIsGuest(session)) {
         return {
@@ -36,7 +41,13 @@ export const downloadMedia = ({ chatId, session }: MediaToolsProps) =>
       }
 
       try {
+        const cookies = await readMediaSessionForUrl({
+          url,
+          userId: session.user.id,
+        });
+
         const media = await downloadMediaFile({
+          cookies,
           format: format === "audio" ? "audio" : "video",
           quality,
           url,
@@ -49,6 +60,14 @@ export const downloadMedia = ({ chatId, session }: MediaToolsProps) =>
         });
 
         return {
+          companion: stored.companion
+            ? {
+                documentId: stored.companion.documentId,
+                filename: stored.companion.filename,
+                sizeBytes: stored.companion.sizeBytes,
+                url: stored.companion.url,
+              }
+            : undefined,
           documentId: stored.documentId,
           duration: media.duration,
           filename: stored.filename,

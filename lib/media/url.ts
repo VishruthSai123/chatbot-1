@@ -16,6 +16,9 @@ export type MediaPlatform =
   | "vimeo"
   | "soundcloud"
   | "twitter"
+  | "instagram"
+  | "tiktok"
+  | "facebook"
   | "unknown";
 
 export type MediaFormat = "video" | "audio";
@@ -36,7 +39,27 @@ const PLATFORM_HOSTS: [RegExp, MediaPlatform][] = [
   [/(^|\.)vimeo\.com$/, "vimeo"],
   [/(^|\.)soundcloud\.com$/, "soundcloud"],
   [/(^|\.)twitter\.com$|(^|\.)x\.com$/, "twitter"],
+  [/(^|\.)instagram\.com$|(^|\.)instagr\.am$/, "instagram"],
+  [/(^|\.)tiktok\.com$/, "tiktok"],
+  [
+    /(^|\.)facebook\.com$|(^|\.)fb\.com$|(^|\.)fb\.watch$|(^|\.)messenger\.com$/,
+    "facebook",
+  ],
 ];
+
+/**
+ * The platforms whose videos can be read as a transcript.
+ *
+ * These are the ones yt-dlp can pull a caption track out of, which is what
+ * turns a link into a source you can ask questions of.
+ */
+const TRANSCRIPT_PLATFORMS = new Set<MediaPlatform>([
+  "youtube",
+  "vimeo",
+  "instagram",
+  "tiktok",
+  "facebook",
+]);
 
 /** Schemes we are willing to fetch. */
 const ALLOWED_SCHEMES = new Set(["http:", "https:"]);
@@ -218,9 +241,20 @@ export function isAllowedMediaUrl(url: string): boolean {
  * as its transcript rather than as a page of links and comments.
  */
 export function isVideoUrl(url: string): boolean {
+  return TRANSCRIPT_PLATFORMS.has(detectPlatform(url));
+}
+
+/**
+ * Whether a platform needs the user's own session to be readable.
+ *
+ * Instagram and Facebook serve most content only to a signed-in visitor, so a
+ * download from them needs the user's cookies. TikTok and YouTube usually do
+ * not, and asking for cookies that are not needed is a needless ask.
+ */
+export function needsSession(url: string): boolean {
   const platform = detectPlatform(url);
 
-  return platform === "youtube" || platform === "vimeo";
+  return platform === "instagram" || platform === "facebook";
 }
 
 /**

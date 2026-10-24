@@ -5,6 +5,8 @@ import {
   downloadFileName,
   isAllowedMediaUrl,
   isPublicAddress,
+  isVideoUrl,
+  needsSession,
 } from "../../lib/media/url";
 
 test.describe("the address boundary", () => {
@@ -86,15 +88,60 @@ test.describe("recognising a platform", () => {
     );
   });
 
+  test("finds the social platforms", () => {
+    expect(detectPlatform("https://www.instagram.com/reel/abc/")).toBe(
+      "instagram"
+    );
+    expect(detectPlatform("https://instagr.am/p/abc/")).toBe("instagram");
+    expect(detectPlatform("https://www.tiktok.com/@user/video/123")).toBe(
+      "tiktok"
+    );
+    expect(detectPlatform("https://www.facebook.com/watch/?v=123")).toBe(
+      "facebook"
+    );
+    expect(detectPlatform("https://fb.watch/abc/")).toBe("facebook");
+  });
+
   test("does not mistake a lookalike for the real thing", () => {
     expect(detectPlatform("https://youtube.com.evil.example/watch")).toBe(
       "unknown"
     );
     expect(detectPlatform("https://notyoutube.com/watch")).toBe("unknown");
+    expect(detectPlatform("https://instagram.com.evil.example/reel/")).toBe(
+      "unknown"
+    );
+    expect(detectPlatform("https://notinstagram.com/reel/")).toBe("unknown");
   });
 
   test("an unparseable link is simply unknown", () => {
     expect(detectPlatform("nonsense")).toBe("unknown");
+  });
+});
+
+test.describe("knowing which videos are worth reading", () => {
+  test("a video link is read as a transcript", () => {
+    expect(isVideoUrl("https://www.youtube.com/watch?v=abc")).toBe(true);
+    expect(isVideoUrl("https://www.instagram.com/reel/abc/")).toBe(true);
+    expect(isVideoUrl("https://www.tiktok.com/@user/video/123")).toBe(true);
+    expect(isVideoUrl("https://www.facebook.com/watch/?v=123")).toBe(true);
+  });
+
+  test("an ordinary page is not", () => {
+    expect(isVideoUrl("https://example.com/article")).toBe(false);
+    expect(isVideoUrl("https://soundcloud.com/artist/track")).toBe(false);
+  });
+});
+
+test.describe("knowing which platforms need a session", () => {
+  test("Instagram and Facebook do", () => {
+    expect(needsSession("https://www.instagram.com/reel/abc/")).toBe(true);
+    expect(needsSession("https://www.facebook.com/watch/?v=123")).toBe(true);
+  });
+
+  test("the rest do not", () => {
+    expect(needsSession("https://www.youtube.com/watch?v=abc")).toBe(false);
+    expect(needsSession("https://www.tiktok.com/@user/video/123")).toBe(false);
+    expect(needsSession("https://example.com/article")).toBe(false);
   });
 });
 

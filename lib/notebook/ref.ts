@@ -31,15 +31,13 @@ export type NotebookSource = {
   readable?: boolean;
 };
 
+import type { QuizQuestion } from "@/lib/quiz/schema";
+
+export type { QuizQuestion } from "@/lib/quiz/schema";
+
 /** One question in a quiz. */
-export type NotebookQuizQuestion = {
+export type NotebookQuizQuestion = QuizQuestion & {
   id: string;
-  /** The question text. */
-  question: string;
-  /** Options, for a multiple-choice question. */
-  options?: string[];
-  /** Which source the question came from, for a citation. */
-  sourceTitle?: string;
 };
 
 /** A generated deliverable, kept so the studio can show it again later. */

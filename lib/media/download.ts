@@ -2,11 +2,22 @@ import "server-only";
 
 import { spawn } from "node:child_process";
 import { lookup } from "node:dns/promises";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isAllowedMediaUrl, isPublicAddress } from "@/lib/media/url";
+import {
+  classifyFiles,
+  type FormatSummary,
+  formatExpression,
+  hasCombinedFormat,
+} from "@/lib/media/format";
+import {
+  detectPlatform,
+  isAllowedMediaUrl,
+  isPublicAddress,
+  needsSession,
+} from "@/lib/media/url";
 
 /**
  * Driving yt-dlp.
@@ -30,6 +41,15 @@ const MAX_BYTES = 400 * 1024 * 1024;
 export type MediaResult = {
   /** The file's bytes. */
   buffer: Buffer;
+  /**
+   * The sound track, when the platform publishes the picture and the sound
+   * apart.
+   *
+   * YouTube does; Instagram, TikTok and Facebook do not. Joining the two
+   * needs a muxer, which this deployment does not have, so both parts are
+   * handed over rather than one of them being passed off as the whole thing.
+   */
+  companion?: MediaCompanion;
   /** A sensible file name for it. */
   filename: string;
   /** The format actually produced. */
@@ -42,6 +62,12 @@ export type MediaResult = {
   duration?: number;
   /** The thumbnail, when the platform offered one. */
   thumbnail?: Buffer;
+};
+
+/** The sound track that arrived apart from the picture. */
+export type MediaCompanion = {
+  buffer: Buffer;
+  filename: string;
 };
 
 /**
@@ -154,34 +180,20 @@ async function assertResolvesToPublicAddress(url: string): Promise<void> {
 }
 
 /**
- * The formats the downloader will ask for.
+ * Writes a cookie file for yt-dlp to use.
  *
- * A format expression rather than a fixed list, so a quality choice maps onto
- * what the platform actually offers.
- *
- * Two things here are deliberate:
- *
- * - **Combined formats are preferred for video.** A format that already carries
- *   both streams needs no muxer, and this deployment has no FFmpeg. The `+`
- *   alternative is the fallback for when a platform offers nothing combined.
- * - **The audio case asks for the original stream, not an extraction.**
- *   Extraction (`-x`) shells out to FFmpeg. The browser decodes the native
- *   stream, and the MP3 the user may want is produced in the browser.
+ * The user's session is a credential, so it goes into a file that is removed
+ * the moment the download finishes — whether it finished or failed.
  */
-function formatExpression({
-  format,
-  quality,
-}: {
-  format: "video" | "audio";
-  quality?: number;
-}): string {
-  if (format === "audio") {
-    return "bestaudio/best";
-  }
+async function writeCookieFile(
+  directory: string,
+  cookies: string
+): Promise<string> {
+  const path = join(directory, "cookies.txt");
 
-  const height = quality ?? 1080;
+  await writeFile(path, cookies, "utf8");
 
-  return `best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best`;
+  return path;
 }
 
 /**
@@ -190,12 +202,20 @@ function formatExpression({
  * The order of the checks is deliberate: the URL is validated *before* anything
  * is spawned, and the hostname is resolved *before* the download starts, so an
  * address that points inward never reaches the fetcher at all.
+ *
+ * The cookies, when there are any, are the user's own session for the
+ * platform — the ones Instagram and Facebook need before they will serve a
+ * video. They are written to a file that is deleted with the rest of the
+ * temporary directory.
  */
 export async function downloadMedia({
+  cookies,
   format = "video",
   quality,
   url,
 }: {
+  /** The user's own session for the platform, in Netscape cookie format. */
+  cookies?: string;
   format?: "video" | "audio";
   quality?: number;
   url: string;
@@ -215,17 +235,24 @@ export async function downloadMedia({
   const directory = await mkdtemp(join(tmpdir(), "ytdlp-"));
 
   try {
+    const cookieFile = cookies
+      ? await writeCookieFile(directory, cookies)
+      : undefined;
+    const session = cookieFile ? ["--cookies", cookieFile] : [];
+
     const info = await runYtDlp([
       "--dump-single-json",
       "--no-warnings",
       "--no-playlist",
       "--no-progress",
+      ...session,
       url,
     ]);
 
     if (info.code !== 0) {
       throw new Error(
-        firstUsefulLine(info.stderr) ||
+        sessionHint(url, cookies) ??
+          firstUsefulLine(info.stderr) ??
           "That link could not be read. It may be private, deleted, or unsupported."
       );
     }
@@ -247,6 +274,11 @@ export async function downloadMedia({
     }
 
     const title = metadata?.title || "download";
+    const formats: FormatSummary[] = Array.isArray(metadata?.formats)
+      ? metadata.formats
+      : [];
+    const combined = hasCombinedFormat(formats);
+
     const download = await runYtDlp([
       "--no-playlist",
       "--no-warnings",
@@ -259,9 +291,13 @@ export async function downloadMedia({
       "--fixup",
       "never",
       "-f",
-      formatExpression({ format, quality }),
+      formatExpression({ combined, format, quality }),
+      // The name carries the format it came from, so the file can be matched
+      // back to the platform's own description of it. That is how a picture and
+      // a sound are told apart when they arrive in separate files.
       "-o",
-      join(directory, "%(id)s.%(ext)s"),
+      join(directory, "%(format_id)s.%(ext)s"),
+      ...session,
       url,
     ]);
 
@@ -271,23 +307,67 @@ export async function downloadMedia({
       );
     }
 
-    const files = await readdir(directory);
-    const media = files.find((file) => !file.endsWith(".part"));
+    const produced = await readdir(directory);
+    // The cookie file sits in the same directory, and a partial download leaves
+    // a ".part" file behind; neither is the media.
+    const files = produced.filter(
+      (file) => !file.endsWith(".part") && file !== "cookies.txt"
+    );
 
-    if (!media) {
+    if (files.length === 0) {
       throw new Error("The download produced no file.");
     }
 
-    const buffer = await readFile(join(directory, media));
+    /**
+     * What came back.
+     *
+     * A platform that publishes one file carrying both streams gives one
+     * entry. A platform that publishes them apart gives two: the picture and
+     * the sound. Which is which is read from the platform's own description of
+     * the format each file came from, not guessed from the extension — a
+     * WebM can be either.
+     */
+    const classified = classifyFiles(files, formats);
+    const picture = classified.find((file) => file.kind !== "audio");
+    const sound = classified.find((file) => file.kind === "audio");
+
+    const primary = picture ?? sound;
+
+    if (!primary) {
+      throw new Error("The download produced no file.");
+    }
+
+    const buffer = await readFile(join(directory, primary.filename));
 
     if (buffer.length === 0) {
       throw new Error("The download produced an empty file.");
     }
 
+    /**
+     * The sound track, when it arrived apart from the picture.
+     *
+     * This deployment has no muxer, so the two cannot be joined into one file
+     * with both. Rather than hand over a silent video and say nothing, both
+     * parts are kept and both are offered.
+     */
+    let companion: MediaCompanion | undefined;
+
+    if (picture && sound) {
+      const companionBuffer = await readFile(join(directory, sound.filename));
+
+      if (companionBuffer.length > 0) {
+        companion = {
+          buffer: companionBuffer,
+          filename: sound.filename,
+        };
+      }
+    }
+
     return {
       buffer,
+      companion,
       duration: metadata?.duration,
-      filename: media,
+      filename: primary.filename,
       format,
       sourceUrl: url,
       thumbnail: await fetchThumbnail(metadata?.thumbnail),
@@ -342,4 +422,22 @@ function firstUsefulLine(stderr: string): string | undefined {
     );
 
   return lines[0];
+}
+
+/**
+ * The explanation to give when a platform will not serve its video without a
+ * signed-in session.
+ *
+ * Instagram and Facebook answer an anonymous request with a login page, and
+ * yt-dlp's own message ("login required") does not say what to do about it. The
+ * answer is to connect the user's own session, so that is what the error says.
+ */
+function sessionHint(url: string, cookies?: string): string | undefined {
+  if (cookies || !needsSession(url)) {
+    return;
+  }
+
+  const platform = detectPlatform(url);
+
+  return `${platform === "instagram" ? "Instagram" : "Facebook"} only serves its videos to a signed-in visitor. Connect your session from the media sessions panel, then try again.`;
 }

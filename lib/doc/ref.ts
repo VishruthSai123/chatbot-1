@@ -69,3 +69,36 @@ export function decodeDocRef(
 export function isDocRef(content: string | null | undefined): boolean {
   return decodeDocRef(content) !== null;
 }
+
+/** A heading, flattened out of the tree and ready to render. */
+export type FlatHeading = {
+  /** How deep the heading sits: 0 for a top-level heading, 1 for its child. */
+  depth: number;
+  /** The heading's own level: 1 for an H1, 2 for an H2, and so on. */
+  level: number;
+  text: string;
+};
+
+/**
+ * Flattens the heading tree into a list, keeping the nesting.
+ *
+ * The tree is what the document actually contains — an H2 lives inside the H1
+ * it belongs to — but a navigation panel needs a flat list. Rendering only the
+ * roots would hide every subheading, which is most of a real document.
+ */
+export function flattenOutline(
+  outline: DocOutlineNode[] | undefined
+): FlatHeading[] {
+  const flat: FlatHeading[] = [];
+
+  const walk = (nodes: DocOutlineNode[], depth: number) => {
+    for (const node of nodes) {
+      flat.push({ depth, level: node.level, text: node.text });
+      walk(node.children ?? [], depth + 1);
+    }
+  };
+
+  walk(outline ?? [], 0);
+
+  return flat;
+}

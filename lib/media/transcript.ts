@@ -1,7 +1,7 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,20 +90,36 @@ async function runYtDlp(
  * The subtitle languages are tried in turn, because a video may have captions
  * in one language but not another, and the automatic English track is the one
  * most videos actually have.
+ *
+ * The user's own session is used when there is one, because Instagram and
+ * Facebook will not serve a caption track to an anonymous visitor either.
  */
 export async function fetchVideoTranscript({
+  cookies,
   url,
 }: {
+  /** The user's own session for the platform, in Netscape cookie format. */
+  cookies?: string;
   url: string;
 }): Promise<VideoTranscript | null> {
   const directory = await mkdtemp(join(tmpdir(), "ytsub-"));
 
   try {
+    let session: string[] = [];
+
+    if (cookies) {
+      const cookieFile = join(directory, "cookies.txt");
+
+      await writeFile(cookieFile, cookies, "utf8");
+      session = ["--cookies", cookieFile];
+    }
+
     const info = await runYtDlp([
       "--dump-single-json",
       "--no-warnings",
       "--no-playlist",
       "--skip-download",
+      ...session,
       url,
     ]);
 
@@ -120,27 +136,26 @@ export async function fetchVideoTranscript({
     }
 
     // The auto-generated track first, then any manual track.
-    const downloads = await runYtDlp([
+    await runYtDlp([
       "--no-warnings",
       "--no-playlist",
       "--skip-download",
       "--write-auto-sub",
       "--write-sub",
       "--sub-lang",
-      "en,en-orig,en-US,en-GB",
+      "en,en-US,en-GB,en-orig,eng",
       "--sub-format",
-      "vtt",
+      "vtt/srt/best",
       "-o",
       join(directory, "%(id)s.%(ext)s"),
+      ...session,
       url,
-    ]);
-
-    if (downloads.code !== 0) {
-      return null;
-    }
+    ]).catch(() => null);
 
     const files = await readdir(directory);
-    const subtitle = files.find((file) => file.endsWith(".vtt"));
+    const subtitle = files.find(
+      (file) => file.endsWith(".vtt") || file.endsWith(".srt")
+    );
 
     if (!subtitle) {
       return null;

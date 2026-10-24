@@ -7,6 +7,7 @@ import {
   googleUrlContextTool,
 } from "@/lib/ai/search/grounding";
 import { extractTextFromImage } from "@/lib/image/ocr";
+import { readMediaSessionForUrl } from "@/lib/media/session";
 import { fetchVideoTranscript } from "@/lib/media/transcript";
 import { isVideoUrl } from "@/lib/media/url";
 import { extractPdfText } from "@/lib/pdf/native";
@@ -119,11 +120,19 @@ async function extractImage(
  * that only exist behind a cookie are handled by the same mechanism that powers
  * `readUrl`.
  */
-export async function extractUrl(url: string): Promise<ExtractionResult> {
+export async function extractUrl(
+  url: string,
+  userId?: string
+): Promise<ExtractionResult> {
   // A video's words are more useful than its video page, so a video link is
   // read as its transcript rather than as a page of links and comments.
   if (isVideoUrl(url)) {
-    const transcript = await fetchVideoTranscript({ url });
+    // The user's own session, when they have connected one: Instagram and
+    // Facebook will not serve a caption track to an anonymous visitor either.
+    const cookies = userId
+      ? await readMediaSessionForUrl({ url, userId })
+      : undefined;
+    const transcript = await fetchVideoTranscript({ cookies, url });
 
     if (transcript) {
       return {

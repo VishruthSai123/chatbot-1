@@ -246,3 +246,26 @@ export const artifact = pgTable("Artifact", {
 });
 
 export type Artifact = InferSelectModel<typeof artifact>;
+
+/**
+ * A user's own session for a media platform.
+ *
+ * Instagram and Facebook serve most of their content only to a signed-in
+ * visitor, so a download from them needs the user's cookies. They are a
+ * credential, so they are encrypted before they are stored and never written
+ * to a log.
+ */
+export const mediaSession = pgTable("MediaSession", {
+  /** The encrypted cookie file. */
+  cookies: text("cookies").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  id: uuid("id").notNull().defaultRandom(),
+  /** The platform the session belongs to. */
+  platform: varchar("platform", { length: 32 }).notNull(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id),
+});
+
+export type MediaSession = InferSelectModel<typeof mediaSession>;

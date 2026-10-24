@@ -112,6 +112,26 @@ test.describe("transcript blocks", () => {
     expect(blocks[1].timestamp).toBe(1);
     expect(blocks[1].text).toContain("The important part.");
   });
+
+  test("keeps the timecode out of the passage text", () => {
+    const blocks = toTranscriptBlocks(
+      extractTimestamps("[00:01] The important part.")
+    );
+
+    // The marker lives in `timestamp`; the passage is the words alone. Mixing
+    // the two is what made the panel print every passage twice.
+    expect(blocks[0].text).toBe("The important part.");
+    expect(blocks[0].text).not.toContain("00:01");
+    expect(blocks[0].timestamp).toBe(1);
+  });
+
+  test("a timecode with no words after it still gets a block", () => {
+    const blocks = toTranscriptBlocks(extractTimestamps("[00:07]"));
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].timestamp).toBe(7);
+    expect(blocks[0].text).toBe("");
+  });
 });
 
 test.describe("caption track", () => {
@@ -125,6 +145,24 @@ test.describe("caption track", () => {
     expect(vtt.startsWith("WEBVTT")).toBe(true);
     expect(vtt).toContain("00:00:01.000 --> 00:00:05.000");
     expect(vtt).toContain("Hello there.");
+  });
+
+  test("the cue carries the words, not just the clock", () => {
+    const vtt = toVtt(
+      toTranscriptBlocks(extractTimestamps("[00:01] Hello there. [00:05] Bye."))
+    );
+
+    // The cue is a number, a timing line, and the passage itself. The passage
+    // must not be the timecode it was marked with.
+    const cue = vtt.split("\n\n").at(1)?.trim().split("\n") ?? [];
+    expect(cue.at(-1)).toBe("Hello there.");
+  });
+
+  test("a timecode with no words still gets a readable cue", () => {
+    const vtt = toVtt(toTranscriptBlocks(extractTimestamps("[00:07]")));
+
+    expect(vtt).toContain("00:00:07.000");
+    expect(vtt.split("\n").at(-2)?.trim()).toBe("0:07");
   });
 
   test("a transcript with no timecodes makes no track", () => {

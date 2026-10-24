@@ -108,6 +108,10 @@ export function formatTimestamp(seconds: number): string {
  * renders badly: every sentence ends up in its own paragraph, split away from
  * the timecode that introduces it. Merging them back into one block gives the
  * natural shape — a marker, then the passage it marks.
+ *
+ * The marker stays in `timestamp` and the words stay in `text`. Conflating the
+ * two is what made the panel print every passage twice and left the caption
+ * track containing nothing but a clock reading.
  */
 export function toTranscriptBlocks(
   segments: { text: string; timestamp?: number }[]
@@ -120,7 +124,9 @@ export function toTranscriptBlocks(
     if (segment.timestamp === undefined) {
       if (previous && previous.timestamp !== undefined) {
         // The words that follow a timecode belong with it.
-        previous.text = `${previous.text} ${segment.text}`.trim();
+        previous.text = previous.text
+          ? `${previous.text} ${segment.text}`.trim()
+          : segment.text;
         continue;
       }
 
@@ -128,23 +134,25 @@ export function toTranscriptBlocks(
       continue;
     }
 
-    blocks.push({ text: segment.text, timestamp: segment.timestamp });
+    // A timecode opens a passage; the words arrive in the segments after it.
+    blocks.push({ text: "", timestamp: segment.timestamp });
   }
 
   return blocks;
 }
 
 /**
- * Builds a WebVTT caption track from a transcript.
+ * Builds a WebVTT caption track from transcript blocks.
  *
  * The transcript already carries the timecodes, so it doubles as the caption
  * track for the player: a listener who cannot see the screen, or who is
  * watching on a muted tab, gets the words at the right moment.
+ *
+ * This expects *blocks* rather than raw segments — a block's text is the
+ * passage, not the timecode that introduces it.
  */
-export function toVtt(
-  segments: { text: string; timestamp?: number }[]
-): string {
-  const timed = segments.filter((segment) => segment.timestamp !== undefined);
+export function toVtt(blocks: { text: string; timestamp?: number }[]): string {
+  const timed = blocks.filter((block) => block.timestamp !== undefined);
 
   if (timed.length === 0) {
     return "";
@@ -161,15 +169,15 @@ export function toVtt(
 
   const cues: string[] = [];
 
-  timed.forEach((segment, index) => {
-    const start = segment.timestamp ?? 0;
+  timed.forEach((block, index) => {
+    const start = block.timestamp ?? 0;
     const next = timed[index + 1];
     // A cue runs until the next one starts; the last one runs for a minute.
     const end = next?.timestamp ?? start + 60;
+    // A passage with no words still deserves a readable cue.
+    const text = block.text.trim() || formatTimestamp(start);
 
-    cues.push(
-      `${index + 1}\n${stamp(start)} --> ${stamp(end)}\n${segment.text}\n`
-    );
+    cues.push(`${index + 1}\n${stamp(start)} --> ${stamp(end)}\n${text}\n`);
   });
 
   return `WEBVTT\n\n${cues.join("\n")}`;
