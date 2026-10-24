@@ -42,18 +42,38 @@ export const chatModels: ChatModel[] = [
   },
   {
     description:
-      "Massive 120B parameter model with advanced reasoning and tool use (Free)",
-    id: "nvidia/nemotron-3-super-120b-a12b:free",
-    name: "NVIDIA Nemotron 3 Super 120B",
+      "Vision-language model with 1M context window and tool use (Free)",
+    id: "nvidia/nemotron-3.5-super-vl:free",
+    name: "NVIDIA Nemotron 3.5 Super VL",
     provider: "nvidia",
-    reasoningEffort: "medium",
   },
   {
     description:
-      "31B parameter open-weights model with vision and tool use (Free)",
-    id: "google/gemma-4-31b-it:free",
-    name: "Gemma 4 31B",
-    provider: "gemma",
+      "High-speed 1M token context instruction model with tool use (Free)",
+    id: "nvidia/nemotron-3.5-lightning:free",
+    name: "NVIDIA Nemotron 3.5 Lightning",
+    provider: "nvidia",
+  },
+  {
+    description:
+      "512k context window with multimodal vision and tool use (Free)",
+    id: "dots-studio/dots-3-note-preview:free",
+    name: "Dots Studio Dots3",
+    provider: "dots-studio",
+  },
+  {
+    description:
+      "262k context reasoning and versatile instruction model (Free)",
+    id: "poolside/laguna-s-2.1:free",
+    name: "Poolside Laguna S 2.1",
+    provider: "poolside",
+    reasoningEffort: "medium",
+  },
+  {
+    description: "Fast 262k context general instruction and tool model (Free)",
+    id: "recursive/flint-v1.0:free",
+    name: "Recursive Flint",
+    provider: "recursive",
   },
   {
     description:
@@ -68,28 +88,6 @@ export const chatModels: ChatModel[] = [
     name: "LiquidAI LFM 2.5",
     provider: "liquid",
   },
-  {
-    description:
-      "512k context window with multimodal vision and tool use (Free)",
-    id: "dots-studio/dots-3-note-preview:free",
-    name: "Dots Studio Dots3",
-    provider: "dots-studio",
-  },
-  {
-    description:
-      "1M token context reasoning model with multimodal capabilities (Free)",
-    id: "thinkingmachines/inkling:free",
-    name: "Thinking Machines Inkling",
-    provider: "thinkingmachines",
-    reasoningEffort: "medium",
-  },
-  {
-    description:
-      "Vision-language model with 1M context window and tool use (Free)",
-    id: "nvidia/nemotron-3.5-super-vl:free",
-    name: "NVIDIA Nemotron 3.5 Super VL",
-    provider: "nvidia",
-  },
 ];
 
 export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
@@ -103,18 +101,13 @@ export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
     tools: true,
     vision: true,
   },
-  "google/gemma-4-31b-it:free": {
-    reasoning: true,
-    tools: true,
-    vision: true,
-  },
   "liquid/lfm-2.5-2.6b:free": {
     reasoning: false,
     tools: true,
     vision: false,
   },
-  "nvidia/nemotron-3-super-120b-a12b:free": {
-    reasoning: true,
+  "nvidia/nemotron-3.5-lightning:free": {
+    reasoning: false,
     tools: true,
     vision: false,
   },
@@ -124,10 +117,15 @@ export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
     vision: true,
   },
   "openrouter/free": { reasoning: true, tools: true, vision: true },
-  "thinkingmachines/inkling:free": {
+  "poolside/laguna-s-2.1:free": {
     reasoning: true,
     tools: true,
-    vision: true,
+    vision: false,
+  },
+  "recursive/flint-v1.0:free": {
+    reasoning: false,
+    tools: true,
+    vision: false,
   },
 };
 

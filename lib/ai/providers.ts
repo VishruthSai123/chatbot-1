@@ -59,11 +59,14 @@ export function getLanguageModel(modelId?: string): LanguageModel {
 
   let targetId = modelId || DEFAULT_CHAT_MODEL;
 
-  // Gracefully map any legacy Gemini model references to default OpenRouter model
+  // Gracefully map any legacy model references to default OpenRouter model
   if (
     targetId.includes("gemini") ||
     targetId === "google/gemini-2.5-flash" ||
-    targetId === "google/gemini-2.5-pro"
+    targetId === "google/gemini-2.5-pro" ||
+    targetId === "google/gemma-4-31b-it:free" ||
+    targetId === "thinkingmachines/inkling:free" ||
+    targetId === "nvidia/nemotron-3-super-120b-a12b:free"
   ) {
     targetId = DEFAULT_CHAT_MODEL;
   }

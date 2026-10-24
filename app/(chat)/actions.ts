@@ -25,22 +25,31 @@ export async function generateTitleFromUserMessage({
 }: {
   message: UIMessage;
 }) {
-  const { text } = await generateText({
-    instructions: titlePrompt,
-    model: getTitleModel(),
-    prompt: getTextFromMessage(message),
-    ...(titleModel.gatewayOrder
-      ? {
-          providerOptions: {
-            gateway: { order: titleModel.gatewayOrder },
-          },
-        }
-      : {}),
-  });
-  return text
-    .replace(/^[#*"\s]+/, "")
-    .replace(/["]+$/, "")
-    .trim();
+  try {
+    const { text } = await generateText({
+      instructions: titlePrompt,
+      model: getTitleModel(),
+      prompt: getTextFromMessage(message),
+      ...(titleModel.gatewayOrder
+        ? {
+            providerOptions: {
+              gateway: { order: titleModel.gatewayOrder },
+            },
+          }
+        : {}),
+    });
+    return text
+      .replace(/^[#*"\s]+/, "")
+      .replace(/["]+$/, "")
+      .trim();
+  } catch (error) {
+    console.error("Failed to generate title from user message:", error);
+    const userText = getTextFromMessage(message);
+    if (userText) {
+      return userText.slice(0, 30).trim();
+    }
+    return "New chat";
+  }
 }
 
 export async function deleteTrailingMessages({ id }: { id: string }) {

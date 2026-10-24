@@ -238,7 +238,24 @@ export async function POST(request: Request) {
         persistUserMessage(),
       ]);
 
-      messagesFromDb = history.filter((row) => row.id !== message?.id);
+      const isValidDbMessage = (row: DBMessage) => {
+        if (!Array.isArray(row.parts) || row.parts.length === 0) {
+          return false;
+        }
+        if (row.role === "assistant") {
+          return (row.parts as Array<{ type?: string }>).some(
+            (p) =>
+              p.type === "text" ||
+              p.type?.startsWith("tool-") ||
+              p.type === "reasoning"
+          );
+        }
+        return true;
+      };
+
+      messagesFromDb = history.filter(
+        (row) => row.id !== message?.id && isValidDbMessage(row)
+      );
     } else if (message?.role === "user") {
       await saveChat({
         id,
@@ -317,7 +334,39 @@ export async function POST(request: Request) {
     const supportsTools = capabilities?.tools === true;
     const isGeminiModel = chatModel.includes("gemini");
 
-    const rawModelMessages = await convertToModelMessages(uiMessages);
+    const converted = await convertToModelMessages(uiMessages);
+
+    // Merge consecutive messages with the same role (e.g. consecutive user messages)
+    // so LLM providers that require strictly alternating roles do not reject the request
+    const rawModelMessages: typeof converted = [];
+    for (const msg of converted) {
+      if (
+        !msg.content ||
+        (Array.isArray(msg.content) && msg.content.length === 0) ||
+        (typeof msg.content === "string" && !msg.content.trim())
+      ) {
+        continue;
+      }
+      const prev = rawModelMessages.at(-1);
+      if (prev && prev.role === msg.role) {
+        if (msg.role === "user" && prev.role === "user") {
+          const prevParts = Array.isArray(prev.content)
+            ? prev.content
+            : [{ text: String(prev.content), type: "text" as const }];
+          const currentParts = Array.isArray(msg.content)
+            ? msg.content
+            : [{ text: String(msg.content), type: "text" as const }];
+          rawModelMessages[rawModelMessages.length - 1] = {
+            ...prev,
+            content: [...prevParts, ...currentParts],
+          } as (typeof rawModelMessages)[number];
+        } else {
+          rawModelMessages[rawModelMessages.length - 1] = msg;
+        }
+      } else {
+        rawModelMessages.push(msg);
+      }
+    }
 
     // If model does not support native vision/files, sanitize file parts into descriptive text
     // so OpenRouter text-only models do not fail with 400 Bad Request
@@ -348,6 +397,7 @@ export async function POST(request: Request) {
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
         const modelName = modelConfig?.name ?? chatModel;
+        let streamError: Error | unknown = null;
         let hasModelActivity = false;
         let healthCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -483,6 +533,7 @@ export async function POST(request: Request) {
           },
           onError({ error }) {
             console.error("streamText onError in route:", error);
+            streamError = error;
             stopWaitingStatus();
           },
           providerOptions: {
@@ -725,18 +776,43 @@ export async function POST(request: Request) {
         if (titlePromise) {
           try {
             const title = await titlePromise;
-            dataStream.write({ data: title, type: "data-chat-title" });
+            dataStream.write({
+              data: title,
+              transient: true,
+              type: "data-chat-title",
+            });
             updateChatTitleById({ chatId: id, title });
           } catch {
             /* non-fatal */
           }
         }
+
+        try {
+          await result.text;
+        } catch (err) {
+          if (streamError) {
+            throw streamError;
+          }
+          throw err;
+        }
       },
       generateId: generateUUID,
       onEnd: async ({ messages: finishedMessages }) => {
+        const validFinishedMessages = finishedMessages.filter((finishedMsg) => {
+          if (finishedMsg.role !== "assistant") {
+            return true;
+          }
+          return finishedMsg.parts?.some(
+            (p) =>
+              p.type === "text" ||
+              p.type?.startsWith("tool-") ||
+              p.type === "reasoning"
+          );
+        });
+
         if (isToolApprovalFlow) {
           await Promise.all(
-            finishedMessages.map(async (finishedMsg) => {
+            validFinishedMessages.map(async (finishedMsg) => {
               const existingMsg = uiMessages.find(
                 (m) => m.id === finishedMsg.id
               );
@@ -762,9 +838,9 @@ export async function POST(request: Request) {
               });
             })
           );
-        } else if (finishedMessages.length > 0) {
+        } else if (validFinishedMessages.length > 0) {
           await saveMessages({
-            messages: finishedMessages.map((currentMessage) => ({
+            messages: validFinishedMessages.map((currentMessage) => ({
               attachments: [],
               chatId: id,
               createdAt: new Date(),
@@ -786,6 +862,15 @@ export async function POST(request: Request) {
             error.message?.includes("User has not configured an API key"))
         ) {
           return "OpenRouter API key is missing or invalid. Please configure OPENROUTER_API_KEY in your environment variables.";
+        }
+        if (
+          error instanceof Error &&
+          (error.message?.includes("rate-limited upstream") ||
+            error.message?.includes("temporarily rate-limited") ||
+            error.message?.includes("Rate limit exceeded") ||
+            error.message?.includes("429"))
+        ) {
+          return "The selected model is temporarily rate-limited upstream. Please retry in a moment or switch to another free model.";
         }
         if (
           error instanceof Error &&
