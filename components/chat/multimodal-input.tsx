@@ -244,15 +244,16 @@ function PureMultimodalInput({
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
 
+    const messageText =
+      input.trim() ||
+      (attachments.length > 0
+        ? `Attached: ${attachments.map((a) => a.name).join(", ")}`
+        : "");
+
     sendMessage({
       parts: [
         ...attachments.map((attachment) => ({
           documentId: attachment.documentId,
-          // The AI SDK reads `filename` when it converts a file part for the
-          // provider, and drops everything else. Without it the model sees an
-          // anonymous file and cannot name it — which is why a request like
-          // "merge these two PDFs" used to come back asking for filenames the
-          // user had already attached.
           filename: attachment.name,
           mediaType: attachment.contentType,
           name: attachment.name,
@@ -260,7 +261,7 @@ function PureMultimodalInput({
           url: attachment.url,
         })),
         {
-          text: input,
+          text: messageText,
           type: "text",
         },
       ],
@@ -588,6 +589,7 @@ function PureMultimodalInput({
         )}
 
       <input
+        accept="image/*,application/pdf,.pdf,.doc,.docx,.txt,.md,.markdown,.csv,.tsv,.xlsx,.xlsm,.xls,.pptx,.ppt,.json,audio/*,video/*"
         className="pointer-events-none fixed -top-4 -left-4 size-0.5 opacity-0"
         multiple
         onChange={handleFileChange}
@@ -670,12 +672,15 @@ function PureMultimodalInput({
             <PromptInputSubmit
               className={cn(
                 "h-7 w-7 rounded-xl transition-all duration-200",
-                input.trim()
+                input.trim() || attachments.length > 0
                   ? "bg-foreground text-background hover:opacity-85 active:scale-95"
                   : "bg-muted text-muted-foreground/25 cursor-not-allowed"
               )}
               data-testid="send-button"
-              disabled={!input.trim() || uploadQueue.length > 0}
+              disabled={
+                (!input.trim() && attachments.length === 0) ||
+                uploadQueue.length > 0
+              }
               status={status}
               variant="secondary"
             >
@@ -746,21 +751,11 @@ const AttachmentPreviewItem = memo(PureAttachmentPreviewItem);
 function PureAttachmentsButton({
   fileInputRef,
   status,
-  selectedModelId,
 }: {
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
   status: UseChatHelpers<ChatMessage>["status"];
-  selectedModelId: string;
+  selectedModelId?: string;
 }) {
-  const { data: modelsResponse } = useSWR(
-    `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/models`,
-    (url: string) => fetch(url).then((r) => r.json()),
-    { dedupingInterval: 3_600_000, revalidateOnFocus: false }
-  );
-
-  const caps: Record<string, ModelCapabilities> | undefined =
-    modelsResponse?.capabilities ?? modelsResponse;
-  const hasVision = caps?.[selectedModelId]?.vision ?? false;
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
@@ -769,17 +764,21 @@ function PureAttachmentsButton({
     [fileInputRef]
   );
 
+  const isBusy = status === "submitted" || status === "streaming";
+
   return (
     <Button
       className={cn(
         "h-7 w-7 rounded-lg border border-border/40 p-1 transition-colors",
-        hasVision
-          ? "text-foreground hover:border-border hover:text-foreground"
-          : "text-muted-foreground/30 cursor-not-allowed"
+        isBusy
+          ? "text-muted-foreground/30 cursor-not-allowed"
+          : "text-foreground hover:border-border hover:text-foreground"
       )}
       data-testid="attachments-button"
-      disabled={status !== "ready" || !hasVision}
+      disabled={isBusy}
       onClick={handleClick}
+      title="Attach files (images, PDFs, documents, spreadsheets, audio)"
+      type="button"
       variant="ghost"
     >
       <PaperclipIcon size={14} style={{ height: 14, width: 14 }} />

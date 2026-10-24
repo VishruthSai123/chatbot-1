@@ -317,7 +317,33 @@ export async function POST(request: Request) {
     const supportsTools = capabilities?.tools === true;
     const isGeminiModel = chatModel.includes("gemini");
 
-    const modelMessages = await convertToModelMessages(uiMessages);
+    const rawModelMessages = await convertToModelMessages(uiMessages);
+
+    // If model does not support native vision/files, sanitize file parts into descriptive text
+    // so OpenRouter text-only models do not fail with 400 Bad Request
+    const modelMessages = capabilities?.vision
+      ? rawModelMessages
+      : (rawModelMessages.map((msg) => {
+          if (msg.role === "user" && Array.isArray(msg.content)) {
+            return {
+              ...msg,
+              content: msg.content.map((part) => {
+                if (part.type === "file") {
+                  const filename =
+                    (part as { filename?: string }).filename || "file";
+                  const mediaType =
+                    (part as { mediaType?: string }).mediaType || "attachment";
+                  return {
+                    text: `[Attached file: ${filename} (${mediaType})]`,
+                    type: "text" as const,
+                  };
+                }
+                return part;
+              }),
+            };
+          }
+          return msg;
+        }) as typeof rawModelMessages);
 
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
@@ -751,6 +777,16 @@ export async function POST(request: Request) {
       },
       onError: (error) => {
         console.error("createUIMessageStream onError:", error);
+        if (
+          error instanceof Error &&
+          (error.message?.includes("Missing Authentication header") ||
+            error.message?.includes("No cookie auth credentials found") ||
+            error.message?.includes("401 Unauthorized") ||
+            error.message?.includes('code":401') ||
+            error.message?.includes("User has not configured an API key"))
+        ) {
+          return "OpenRouter API key is missing or invalid. Please configure OPENROUTER_API_KEY in your environment variables.";
+        }
         if (
           error instanceof Error &&
           error.message?.includes(

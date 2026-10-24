@@ -1,15 +1,36 @@
+import { google } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { customProvider, type LanguageModel } from "ai";
 import { isTestEnvironment } from "../constants";
 import { DEFAULT_CHAT_MODEL, titleModel } from "./models";
 
-export const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  headers: {
-    "HTTP-Referer": "https://chatbot-1.vercel.app",
-    "X-Title": "SuperiorAI",
-  },
-});
+export function getOpenRouterProvider() {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  return createOpenRouter({
+    apiKey: apiKey || "missing-key",
+    headers: {
+      "HTTP-Referer": "https://chatbot-1.vercel.app",
+      "X-Title": "SuperiorAI",
+    },
+  });
+}
+
+// Proxied export so existing callers can use openrouter(modelId) directly
+export const openrouter = new Proxy(
+  {},
+  {
+    apply(_target, _thisArg, argArray) {
+      const provider = getOpenRouterProvider();
+      return (provider as unknown as (...args: unknown[]) => unknown)(
+        ...argArray
+      );
+    },
+    get(_target, prop) {
+      const provider = getOpenRouterProvider();
+      return (provider as unknown as Record<string, unknown>)[prop as string];
+    },
+  }
+) as unknown as ReturnType<typeof createOpenRouter>;
 
 export const myProvider = isTestEnvironment
   ? (() => {
@@ -44,12 +65,33 @@ export function getLanguageModel(modelId?: string): LanguageModel {
     targetId = DEFAULT_CHAT_MODEL;
   }
 
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (openRouterKey) {
+    return openrouter(targetId) as unknown as LanguageModel;
+  }
+
+  // Fallback to Google Gemini if OPENROUTER_API_KEY is not yet added to environment
+  const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  if (geminiKey) {
+    return google("gemini-2.5-flash") as unknown as LanguageModel;
+  }
+
   return openrouter(targetId) as unknown as LanguageModel;
 }
 
 export function getTitleModel(): LanguageModel {
   if (isTestEnvironment && myProvider) {
     return myProvider.languageModel("title-model") as unknown as LanguageModel;
+  }
+
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (openRouterKey) {
+    return openrouter(titleModel.id) as unknown as LanguageModel;
+  }
+
+  const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
+  if (geminiKey) {
+    return google("gemini-2.5-flash") as unknown as LanguageModel;
   }
 
   return openrouter(titleModel.id) as unknown as LanguageModel;

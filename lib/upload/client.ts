@@ -40,9 +40,6 @@ export class UploadError extends Error {
 
 const API_PATH = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/files/upload`;
 
-/** Statuses that mean "this deployment cannot place the bytes", not "your file is bad". */
-const FALLBACK_STATUSES = new Set([404, 405, 500, 501, 502, 503]);
-
 type UploadOptions = {
   chatId?: string;
 };
@@ -233,18 +230,16 @@ export async function uploadFile(
   try {
     return await uploadDirect(file, options.chatId);
   } catch (error) {
-    // Only a "we could not place the bytes" failure is worth retrying through the
-    // proxy, and only when the file is small enough for that transport. A refused
-    // file, or one too big for the proxy, must surface its real reason.
-    const canFallBack =
-      error instanceof UploadError &&
-      file.size <= SAFE_MULTIPART_BYTES &&
-      (error.status === undefined || FALLBACK_STATUSES.has(error.status));
-
-    if (!canFallBack) {
-      throw error;
+    // If the direct upload hop fails for any reason (CORS, network, signing 502, bucket),
+    // immediately fall back to the proxied server path if the file size fits within the payload limit.
+    if (file.size <= SAFE_MULTIPART_BYTES) {
+      try {
+        return await uploadProxied(file, options.chatId);
+      } catch (proxyError) {
+        throw proxyError instanceof UploadError ? proxyError : error;
+      }
     }
 
-    return await uploadProxied(file, options.chatId);
+    throw error;
   }
 }

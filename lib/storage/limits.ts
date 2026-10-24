@@ -50,19 +50,30 @@ export const ALLOWED_UPLOAD_MIME_TYPES = [
   "image/svg+xml",
   // Documents & PDFs
   "application/pdf",
+  "application/x-pdf",
+  "application/json",
   "text/plain",
   "text/markdown",
+  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   // Spreadsheets
   "text/csv",
+  "text/tab-separated-values",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
   // Presentations
+  "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   // Audio & Video
   "audio/mpeg",
+  "audio/mp3",
   "audio/wav",
+  "audio/x-wav",
   "audio/mp4",
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/flac",
   "audio/ogg",
   "audio/webm",
   "video/mp4",
@@ -71,6 +82,40 @@ export const ALLOWED_UPLOAD_MIME_TYPES = [
   // Generic fallback for binary files with valid extensions
   "application/octet-stream",
 ];
+
+const ALLOWED_DOCUMENT_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "svg",
+  "heic",
+  "pdf",
+  "doc",
+  "docx",
+  "txt",
+  "md",
+  "markdown",
+  "json",
+  "csv",
+  "tsv",
+  "tab",
+  "xlsx",
+  "xlsm",
+  "xls",
+  "pptx",
+  "ppt",
+  "mp3",
+  "wav",
+  "m4a",
+  "aac",
+  "ogg",
+  "flac",
+  "webm",
+  "mp4",
+  "mov",
+]);
 
 /**
  * What to configure on the storage bucket.
@@ -85,6 +130,8 @@ export const STORAGE_ALLOWED_MIME_TYPES = [
   ...ALLOWED_UPLOAD_MIME_TYPES,
   "image/*",
   "text/*",
+  "audio/*",
+  "video/*",
 ];
 
 export function formatBytes(bytes: number): string {
@@ -98,17 +145,28 @@ export function formatBytes(bytes: number): string {
   return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
 }
 
-export function isAllowedUploadType(type: string): boolean {
-  if (!type) {
+export function isAllowedUploadType(type: string, filename?: string): boolean {
+  if (!type && !filename) {
     // Some browsers report an empty type for unusual but valid files; the
     // extension still gets validated against the allowlist server-side.
     return true;
   }
-  return (
+  if (
     ALLOWED_UPLOAD_MIME_TYPES.includes(type) ||
     type.startsWith("image/") ||
-    type.startsWith("text/")
-  );
+    type.startsWith("text/") ||
+    type.startsWith("audio/") ||
+    type.startsWith("video/")
+  ) {
+    return true;
+  }
+  if (filename) {
+    const ext = filename.split(".").pop()?.toLowerCase();
+    if (ext && ALLOWED_DOCUMENT_EXTENSIONS.has(ext)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export type UploadCandidate = {
@@ -139,7 +197,7 @@ export function validateUpload(candidate: UploadCandidate): UploadValidation {
     };
   }
 
-  if (!isAllowedUploadType(candidate.type)) {
+  if (!isAllowedUploadType(candidate.type, candidate.name)) {
     return {
       message: `${label} is not a supported file type.`,
       ok: false,
