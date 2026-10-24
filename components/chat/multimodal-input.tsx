@@ -2,6 +2,7 @@
 
 import type { UseChatHelpers } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
+import { BorderBeam, type BorderBeamSize } from "border-beam";
 import equal from "fast-deep-equal";
 import {
   ArrowUpIcon,
@@ -154,6 +155,29 @@ function PureMultimodalInput({
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
+  const [isExpandedHeight, setIsExpandedHeight] = useState(false);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    const expanded =
+      textarea.scrollHeight > 105 || input.includes("\n") || input.length > 100;
+    setIsExpandedHeight(expanded);
+  }, [input]);
+
+  const hasAttachedFiles = attachments.length > 0 || uploadQueue.length > 0;
+  const isSendingOrGenerating =
+    status === "submitted" || status === "streaming";
+
+  // Adaptive beam size: "line" when files attached, expanded height, or while sending/generating; otherwise "md"
+  const beamSize: BorderBeamSize =
+    isSendingOrGenerating || hasAttachedFiles || isExpandedHeight
+      ? "line"
+      : "md";
+
+  const beamTheme = resolvedTheme === "light" ? "light" : "dark";
 
   const handleInput = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -609,86 +633,96 @@ function PureMultimodalInput({
         ) : null}
       </div>
 
-      <PromptInput
-        className="[&>div]:rounded-2xl [&>div]:border [&>div]:border-border/30 [&>div]:bg-card/70 [&>div]:shadow-[var(--shadow-composer)] [&>div]:transition-shadow [&>div]:duration-300 [&>div]:focus-within:shadow-[var(--shadow-composer-focus)]"
-        onSubmit={handlePromptSubmit}
+      <BorderBeam
+        active={true}
+        borderRadius={16}
+        className="w-full rounded-2xl shadow-[var(--shadow-composer)] transition-all duration-300 focus-within:shadow-[var(--shadow-composer-focus)]"
+        colorVariant="colorful"
+        size={beamSize}
+        strength={isSendingOrGenerating ? 0.75 : 0.7}
+        theme={beamTheme}
       >
-        {(attachments.length > 0 || uploadQueue.length > 0) && (
-          <div
-            className="flex w-full self-start flex-row gap-2 overflow-x-auto px-3 pt-3 no-scrollbar"
-            data-testid="attachments-preview"
-          >
-            {attachments.map((attachment) => (
-              <AttachmentPreviewItem
-                attachment={attachment}
-                fileInputRef={fileInputRef}
-                key={attachment.url}
-                setAttachments={setAttachments}
-              />
-            ))}
-
-            <ImageCollectionLauncher attachments={attachments} />
-
-            {uploadQueue.map((filename) => (
-              <PreviewAttachment
-                attachment={{
-                  contentType: "",
-                  name: filename,
-                  url: "",
-                }}
-                isUploading={true}
-                key={filename}
-              />
-            ))}
-          </div>
-        )}
-        <PromptInputTextarea
-          className="min-h-24 text-[13px] leading-relaxed px-4 pt-3.5 pb-1.5 placeholder:text-muted-foreground/35"
-          data-testid="multimodal-input"
-          onChange={handleInput}
-          onKeyDown={handleTextareaKeyDown}
-          placeholder={
-            editingMessage ? "Edit your message..." : "Ask anything..."
-          }
-          ref={textareaRef}
-          value={input}
-        />
-        <PromptInputFooter className="px-3 pb-3">
-          <PromptInputTools>
-            <AttachmentsButton
-              fileInputRef={fileInputRef}
-              selectedModelId={selectedModelId}
-              status={status}
-            />
-            <ModelSelectorCompact
-              onModelChange={onModelChange}
-              selectedModelId={selectedModelId}
-            />
-          </PromptInputTools>
-
-          {status === "submitted" ? (
-            <StopButton setMessages={setMessages} stop={stop} />
-          ) : (
-            <PromptInputSubmit
-              className={cn(
-                "h-7 w-7 rounded-xl transition-all duration-200",
-                input.trim() || attachments.length > 0
-                  ? "bg-foreground text-background hover:opacity-85 active:scale-95"
-                  : "bg-muted text-muted-foreground/25 cursor-not-allowed"
-              )}
-              data-testid="send-button"
-              disabled={
-                (!input.trim() && attachments.length === 0) ||
-                uploadQueue.length > 0
-              }
-              status={status}
-              variant="secondary"
+        <PromptInput
+          className="[&>div]:rounded-2xl [&>div]:border [&>div]:border-border/30 [&>div]:bg-card/70"
+          onSubmit={handlePromptSubmit}
+        >
+          {(attachments.length > 0 || uploadQueue.length > 0) && (
+            <div
+              className="flex w-full self-start flex-row gap-2 overflow-x-auto px-3 pt-3 no-scrollbar"
+              data-testid="attachments-preview"
             >
-              <ArrowUpIcon className="size-4" />
-            </PromptInputSubmit>
+              {attachments.map((attachment) => (
+                <AttachmentPreviewItem
+                  attachment={attachment}
+                  fileInputRef={fileInputRef}
+                  key={attachment.url}
+                  setAttachments={setAttachments}
+                />
+              ))}
+
+              <ImageCollectionLauncher attachments={attachments} />
+
+              {uploadQueue.map((filename) => (
+                <PreviewAttachment
+                  attachment={{
+                    contentType: "",
+                    name: filename,
+                    url: "",
+                  }}
+                  isUploading={true}
+                  key={filename}
+                />
+              ))}
+            </div>
           )}
-        </PromptInputFooter>
-      </PromptInput>
+          <PromptInputTextarea
+            className="min-h-24 text-[13px] leading-relaxed px-4 pt-3.5 pb-1.5 placeholder:text-muted-foreground/35"
+            data-testid="multimodal-input"
+            onChange={handleInput}
+            onKeyDown={handleTextareaKeyDown}
+            placeholder={
+              editingMessage ? "Edit your message..." : "Ask anything..."
+            }
+            ref={textareaRef}
+            value={input}
+          />
+          <PromptInputFooter className="px-3 pb-3">
+            <PromptInputTools>
+              <AttachmentsButton
+                fileInputRef={fileInputRef}
+                selectedModelId={selectedModelId}
+                status={status}
+              />
+              <ModelSelectorCompact
+                onModelChange={onModelChange}
+                selectedModelId={selectedModelId}
+              />
+            </PromptInputTools>
+
+            {status === "submitted" ? (
+              <StopButton setMessages={setMessages} stop={stop} />
+            ) : (
+              <PromptInputSubmit
+                className={cn(
+                  "h-7 w-7 rounded-xl transition-all duration-200",
+                  input.trim() || attachments.length > 0
+                    ? "bg-foreground text-background hover:opacity-85 active:scale-95"
+                    : "bg-muted text-muted-foreground/25 cursor-not-allowed"
+                )}
+                data-testid="send-button"
+                disabled={
+                  (!input.trim() && attachments.length === 0) ||
+                  uploadQueue.length > 0
+                }
+                status={status}
+                variant="secondary"
+              >
+                <ArrowUpIcon className="size-4" />
+              </PromptInputSubmit>
+            )}
+          </PromptInputFooter>
+        </PromptInput>
+      </BorderBeam>
     </div>
   );
 }
