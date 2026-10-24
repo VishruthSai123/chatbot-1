@@ -315,8 +315,7 @@ export async function POST(request: Request) {
     const capabilities = modelCapabilities[chatModel];
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
-    const isGoogleModel =
-      chatModel.startsWith("google/") || chatModel.startsWith("gemini");
+    const isGeminiModel = chatModel.includes("gemini");
 
     const modelMessages = await convertToModelMessages(uiMessages);
 
@@ -470,7 +469,7 @@ export async function POST(request: Request) {
             // Fast models: skip Gemini's "thinking" pass so the first token arrives
             // in ~1s instead of several seconds. The deterministic requirement
             // parser + prompt hints keep tool arguments accurate without it.
-            ...(isGoogleModel &&
+            ...(isGeminiModel &&
               !isReasoningModel && {
                 google: { thinkingConfig: { thinkingBudget: 0 } },
               }),

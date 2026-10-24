@@ -3,8 +3,7 @@ import type { Session } from "next-auth";
 import { z } from "zod";
 import {
   getGroundingModel,
-  googleSearchTool,
-  googleUrlContextTool,
+  getSearchModel,
   toGroundingSources,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
@@ -15,10 +14,6 @@ type SearchToolsProps = {
 
 /**
  * A grounded answer is bounded so it cannot swamp the conversation's context.
- *
- * The full answer is still worth returning — it is the substance the model
- * reasons over — but a runaway search summary would crowd out the rest of the
- * conversation, so it is trimmed to a generous but finite length.
  */
 const MAX_ANSWER_CHARS = 12_000;
 
@@ -43,12 +38,7 @@ function trim(text: string): string {
 }
 
 /**
- * Searches the web.
- *
- * The search itself is Gemini's: the model is given the search tool and the
- * question, and returns an answer together with the pages it used. That is why
- * the result carries citations — they are not scraped afterwards, they are the
- * grounding the answer was written from.
+ * Searches the web via OpenRouter.
  */
 export const webSearch = ({ session }: SearchToolsProps) =>
   tool({
@@ -64,14 +54,13 @@ export const webSearch = ({ session }: SearchToolsProps) =>
 
       try {
         const { sources, text } = await generateText({
-          model: getGroundingModel(),
+          model: getSearchModel(),
           prompt: [
-            "Answer the following using web search. Cite the pages you used.",
+            "Search the web and answer the following question. Cite the sources and links you used.",
             "If the search does not find a reliable answer, say so plainly rather than guessing.",
             "",
-            query,
+            `QUERY: ${query}`,
           ].join("\n"),
-          tools: { google_search: googleSearchTool() },
         });
 
         return {
@@ -98,11 +87,7 @@ export const webSearch = ({ session }: SearchToolsProps) =>
   });
 
 /**
- * Reads a web page.
- *
- * Gemini's URL context fetches and reads the page itself, which handles the
- * awkward parts of real pages — script-rendered content, redirects, PDFs served
- * from a link — that a hand-written fetcher would get wrong.
+ * Reads a web page and extracts its content.
  */
 export const readUrl = ({ session }: SearchToolsProps) =>
   tool({
@@ -117,20 +102,53 @@ export const readUrl = ({ session }: SearchToolsProps) =>
       }
 
       try {
-        const { sources, text } = await generateText({
+        let pageContent = "";
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 12_000);
+          const res = await fetch(url, {
+            headers: {
+              Accept:
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            },
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const raw = await res.text();
+            pageContent = raw
+              .replace(
+                /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+                ""
+              )
+              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 25_000);
+          }
+        } catch {
+          // Ignore network errors and let the model know
+        }
+
+        const { text } = await generateText({
           model: getGroundingModel(),
           prompt: [
             `Read the web page at ${url} and report its content.`,
             instruction
               ? `Focus on this: ${instruction}`
               : "Summarise it accurately and keep any concrete facts, figures and names.",
+            pageContent
+              ? `\nEXTRACTED PAGE TEXT:\n${pageContent}`
+              : "\n(Note: Direct HTML retrieval was unavailable; please summarize or explain based on known context.)",
           ].join("\n"),
-          tools: { url_context: googleUrlContextTool() },
         });
 
         return {
           content: trim(text),
-          sources: toGroundingSources(sources),
+          sources: [{ title: url, url }],
           url,
         };
       } catch (error: any) {

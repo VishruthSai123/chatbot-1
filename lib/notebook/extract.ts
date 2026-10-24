@@ -2,10 +2,7 @@ import "server-only";
 
 import { generateText } from "ai";
 
-import {
-  getGroundingModel,
-  googleUrlContextTool,
-} from "@/lib/ai/search/grounding";
+import { getGroundingModel } from "@/lib/ai/search/grounding";
 import { extractTextFromImage } from "@/lib/image/ocr";
 import { readMediaSessionForUrl } from "@/lib/media/session";
 import { fetchVideoTranscript } from "@/lib/media/transcript";
@@ -143,14 +140,40 @@ export async function extractUrl(
   }
 
   try {
+    let pageText = "";
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const raw = await res.text();
+        pageText = raw
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 30_000);
+      }
+    } catch {
+      // ignore network errors
+    }
+
     const { text } = await generateText({
       model: getGroundingModel(),
       prompt: [
         `Read the page at ${url}.`,
         "Return the full text content of the page, in reading order, with its headings.",
         "Do not summarise it and do not add commentary.",
+        pageText ? `\nPAGE CONTENT:\n${pageText}` : "",
       ].join("\n"),
-      tools: { url_context: googleUrlContextTool() },
     });
 
     const cleaned = text.trim();

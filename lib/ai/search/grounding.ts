@@ -1,6 +1,7 @@
 import "server-only";
 
-import { google } from "@ai-sdk/google";
+import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { getLanguageModel } from "@/lib/ai/providers";
 
 export type { GroundingSource } from "./sources";
 export {
@@ -11,54 +12,41 @@ export {
 } from "./sources";
 
 /**
- * Grounded generation with Gemini's built-in tools.
- *
- * Gemini 2 models can search the web and read a URL *inside the model call*.
- * That is worth being precise about, because it changes what this app needs:
- *
- * - **Web search** (`googleSearch`) is not a search API we have to call, parse,
- *   rank and pay for. Gemini does the retrieval and returns the pages it used as
- *   `sources`, which become citations.
- * - **URL reading** (`urlContext`) means a page can be summarised without us
- *   writing a fetcher, a readability parser or a headless browser.
- *
- * Both are Gemini-2-only, which is why the tools below always use a Gemini
- * model internally rather than the user's selected model: a search tool that
- * silently stops working when the user picks a different model would be a trap.
- * The answer is written by the *user's* model afterwards, so the voice still
- * matches what they chose.
+ * Grounded generation using OpenRouter models.
  */
 
 /** The model used for grounded calls. */
-export const GROUNDING_MODEL_ID = "gemini-2.5-flash";
+export const GROUNDING_MODEL_ID = DEFAULT_CHAT_MODEL;
 
 /**
- * The model that performs searches and page reads.
- *
- * Always Gemini, never the user's choice: grounding is a Gemini 2 feature, and
- * a search that only works for some users would be worse than one that is
- * consistently available.
+ * The model that performs grounded reasoning, quizzes, deliverables, and page synthesis.
  */
 export function getGroundingModel() {
-  return google(GROUNDING_MODEL_ID) as unknown as ReturnType<typeof google>;
+  return getLanguageModel(GROUNDING_MODEL_ID);
 }
 
 /**
- * The provider-defined search tool.
- *
- * The tool *name* matters: the provider matches on `"google_search"`, so the key
- * in the tools record is part of the contract, not a label.
+ * The model that performs online web search through OpenRouter.
  */
-export function googleSearchTool(args?: {
+export function getSearchModel() {
+  return getLanguageModel("openrouter/free:online");
+}
+
+/**
+ * Compatibility stub for provider-defined search tool.
+ */
+export function googleSearchTool(_args?: {
   searchTypes?: {
     imageSearch?: Record<string, never>;
     webSearch?: Record<string, never>;
   };
 }) {
-  return google.tools.googleSearch(args ?? {});
+  return undefined as any;
 }
 
-/** The provider-defined URL-reading tool. */
+/**
+ * Compatibility stub for provider-defined URL-reading tool.
+ */
 export function googleUrlContextTool() {
-  return google.tools.urlContext({});
+  return undefined as any;
 }

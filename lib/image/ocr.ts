@@ -1,9 +1,10 @@
 import "server-only";
 
 import { generateText } from "ai";
+import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { getLanguageModel } from "@/lib/ai/providers";
 
-const OCR_MODEL_ID = "google/gemini-2.5-flash";
+const OCR_MODEL_ID = DEFAULT_CHAT_MODEL;
 
 export interface OcrResult {
   model: string;
@@ -49,7 +50,7 @@ export async function extractTextFromImage(
   const cleaned = text.trim();
 
   return {
-    model: OCR_MODEL_ID.replace("google/", ""),
+    model: OCR_MODEL_ID,
     text: cleaned,
     wordCount: cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0,
   };

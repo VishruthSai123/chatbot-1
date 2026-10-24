@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL = "google/gemini-2.5-flash";
+export const DEFAULT_CHAT_MODEL = "openrouter/free";
 
 export const titleModel: {
   description: string;
@@ -7,10 +7,10 @@ export const titleModel: {
   provider: string;
   gatewayOrder?: string[];
 } = {
-  description: "Fast model for title generation",
-  id: "google/gemini-2.5-flash",
-  name: "Gemini 2.5 Flash",
-  provider: "google",
+  description: "Fast free model for title generation",
+  id: "openrouter/free",
+  name: "Free Models Router",
+  provider: "openrouter",
 };
 
 export type ModelCapabilities = {
@@ -28,90 +28,116 @@ export type ChatModel = {
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
 };
 
+/**
+ * Curated list of high-quality free models on OpenRouter.
+ * Google Gemini models are hidden from the selector per user configuration.
+ */
 export const chatModels: ChatModel[] = [
   {
-    description: "Fast multimodal model with tool use and 1M token context",
-    id: "google/gemini-2.5-flash",
-    name: "Gemini 2.5 Flash",
-    provider: "google",
+    description:
+      "Auto-routes to the best available free model with vision and tool use",
+    id: "openrouter/free",
+    name: "Free Models Router",
+    provider: "openrouter",
   },
   {
-    description: "Advanced reasoning multimodal model for complex tasks",
-    id: "google/gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    provider: "google",
+    description:
+      "Massive 120B parameter model with advanced reasoning and tool use (Free)",
+    id: "nvidia/nemotron-3-super-120b-a12b:free",
+    name: "NVIDIA Nemotron 3 Super 120B",
+    provider: "nvidia",
     reasoningEffort: "medium",
   },
   {
-    description: "Fast and capable model with tool use",
-    gatewayOrder: ["bedrock", "deepinfra"],
-    id: "deepseek/deepseek-v3.2",
-    name: "DeepSeek V3.2",
-    provider: "deepseek",
+    description:
+      "31B parameter open-weights model with vision and tool use (Free)",
+    id: "google/gemma-4-31b-it:free",
+    name: "Gemma 4 31B",
+    provider: "gemma",
+  },
+  {
+    description:
+      "Specialized code generation and technical tool execution model (Free)",
+    id: "cohere/north-mini-code:free",
+    name: "Cohere North Mini Code",
+    provider: "cohere",
+  },
+  {
+    description: "Ultra-fast lightweight instruction model (Free)",
+    id: "liquid/lfm-2.5-2.6b:free",
+    name: "LiquidAI LFM 2.5",
+    provider: "liquid",
+  },
+  {
+    description:
+      "512k context window with multimodal vision and tool use (Free)",
+    id: "dots-studio/dots-3-note-preview:free",
+    name: "Dots Studio Dots3",
+    provider: "dots-studio",
+  },
+  {
+    description:
+      "1M token context reasoning model with multimodal capabilities (Free)",
+    id: "thinkingmachines/inkling:free",
+    name: "Thinking Machines Inkling",
+    provider: "thinkingmachines",
+    reasoningEffort: "medium",
+  },
+  {
+    description:
+      "Vision-language model with 1M context window and tool use (Free)",
+    id: "nvidia/nemotron-3.5-super-vl:free",
+    name: "NVIDIA Nemotron 3.5 Super VL",
+    provider: "nvidia",
   },
 ];
+
+export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
+  "cohere/north-mini-code:free": {
+    reasoning: true,
+    tools: true,
+    vision: false,
+  },
+  "dots-studio/dots-3-note-preview:free": {
+    reasoning: true,
+    tools: true,
+    vision: true,
+  },
+  "google/gemma-4-31b-it:free": {
+    reasoning: true,
+    tools: true,
+    vision: true,
+  },
+  "liquid/lfm-2.5-2.6b:free": {
+    reasoning: false,
+    tools: true,
+    vision: false,
+  },
+  "nvidia/nemotron-3-super-120b-a12b:free": {
+    reasoning: true,
+    tools: true,
+    vision: false,
+  },
+  "nvidia/nemotron-3.5-super-vl:free": {
+    reasoning: true,
+    tools: true,
+    vision: true,
+  },
+  "openrouter/free": { reasoning: true, tools: true, vision: true },
+  "thinkingmachines/inkling:free": {
+    reasoning: true,
+    tools: true,
+    vision: true,
+  },
+};
 
 export async function getCapabilities(): Promise<
   Record<string, ModelCapabilities>
 > {
-  const results = await Promise.all(
-    chatModels.map(async (model) => {
-      if (model.provider === "google") {
-        return [
-          model.id,
-          {
-            reasoning: model.reasoningEffort !== undefined,
-            tools: true,
-            vision: true,
-          },
-        ];
-      }
-      try {
-        const res = await fetch(
-          `https://ai-gateway.vercel.sh/v1/models/${model.id}/endpoints`,
-          { next: { revalidate: 86_400 } }
-        );
-        if (!res.ok) {
-          return [model.id, { reasoning: false, tools: false, vision: false }];
-        }
-
-        const json = await res.json();
-        const endpoints = json.data?.endpoints ?? [];
-        const params = new Set(
-          endpoints.flatMap(
-            (e: { supported_parameters?: string[] }) =>
-              e.supported_parameters ?? []
-          )
-        );
-        const inputModalities = new Set(
-          json.data?.architecture?.input_modalities ?? []
-        );
-
-        return [
-          model.id,
-          {
-            reasoning: params.has("reasoning"),
-            tools: params.has("tools"),
-            vision: inputModalities.has("image"),
-          },
-        ];
-      } catch {
-        return [model.id, { reasoning: false, tools: false, vision: false }];
-      }
-    })
-  );
-
-  return Object.fromEntries(results);
+  return await Promise.resolve(modelCapabilitiesMap);
 }
 
 export const isDemo = process.env.IS_DEMO === "1";
-
-type GatewayModel = {
-  id: string;
-  name: string;
-  type?: string;
-  tags?: string[];
-};
 
 export type GatewayModelWithCapabilities = ChatModel & {
   capabilities: ModelCapabilities;
@@ -120,31 +146,16 @@ export type GatewayModelWithCapabilities = ChatModel & {
 export async function getAllGatewayModels(): Promise<
   GatewayModelWithCapabilities[]
 > {
-  try {
-    const res = await fetch("https://ai-gateway.vercel.sh/v1/models", {
-      next: { revalidate: 86_400 },
-    });
-    if (!res.ok) {
-      return [];
-    }
-
-    const json = await res.json();
-    return (json.data ?? [])
-      .filter((m: GatewayModel) => m.type === "language")
-      .map((m: GatewayModel) => ({
-        capabilities: {
-          reasoning: m.tags?.includes("reasoning") ?? false,
-          tools: m.tags?.includes("tool-use") ?? false,
-          vision: m.tags?.includes("vision") ?? false,
-        },
-        description: "",
-        id: m.id,
-        name: m.name,
-        provider: m.id.split("/")[0],
-      }));
-  } catch {
-    return [];
-  }
+  return await Promise.resolve(
+    chatModels.map((m) => ({
+      ...m,
+      capabilities: modelCapabilitiesMap[m.id] ?? {
+        reasoning: false,
+        tools: true,
+        vision: false,
+      },
+    }))
+  );
 }
 
 export function getActiveModels(): ChatModel[] {
@@ -166,66 +177,14 @@ export const modelsByProvider = chatModels.reduce(
 
 export type ModelAvailability = "healthy" | "impacted" | "unknown";
 
-type GatewayEndpoint = {
-  provider_name?: string;
-  status?: number;
-  uptime_last_15m?: number;
-  uptime_last_1h?: number;
-  latency_last_1h?: {
-    p50?: number;
-    p95?: number;
-  };
-};
-
-const PROVIDER_IMPACTED_UPTIME_THRESHOLD = 99;
-const PROVIDER_IMPACTED_P50_MS = 10_000;
-const PROVIDER_IMPACTED_P95_MS = 30_000;
-
-function isEndpointImpacted(endpoint: GatewayEndpoint) {
-  return (
-    (endpoint.status !== undefined && endpoint.status !== 0) ||
-    (endpoint.uptime_last_15m !== undefined &&
-      endpoint.uptime_last_15m < PROVIDER_IMPACTED_UPTIME_THRESHOLD) ||
-    (endpoint.uptime_last_1h !== undefined &&
-      endpoint.uptime_last_1h < PROVIDER_IMPACTED_UPTIME_THRESHOLD) ||
-    (endpoint.latency_last_1h?.p50 !== undefined &&
-      endpoint.latency_last_1h.p50 > PROVIDER_IMPACTED_P50_MS) ||
-    (endpoint.latency_last_1h?.p95 !== undefined &&
-      endpoint.latency_last_1h.p95 > PROVIDER_IMPACTED_P95_MS)
-  );
-}
-
 export async function getModelAvailability(
   modelId: string
 ): Promise<ModelAvailability> {
   const model = chatModels.find((item) => item.id === modelId);
 
   if (!model) {
-    return "unknown";
+    return await Promise.resolve("unknown");
   }
 
-  if (model.provider === "google") {
-    return "healthy";
-  }
-
-  try {
-    const res = await fetch(
-      `https://ai-gateway.vercel.sh/v1/models/${model.id}/endpoints`,
-      { next: { revalidate: 60 } }
-    );
-    if (!res.ok) {
-      return "unknown";
-    }
-
-    const json = await res.json();
-    const endpoints = (json.data?.endpoints ?? []) as GatewayEndpoint[];
-
-    if (endpoints.length === 0) {
-      return "unknown";
-    }
-
-    return endpoints.some(isEndpointImpacted) ? "impacted" : "healthy";
-  } catch {
-    return "unknown";
-  }
+  return await Promise.resolve("healthy");
 }

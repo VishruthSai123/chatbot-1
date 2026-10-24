@@ -9,8 +9,7 @@ import { z } from "zod";
 import {
   type GroundingSource,
   getGroundingModel,
-  googleSearchTool,
-  googleUrlContextTool,
+  getSearchModel,
   toGroundingSources,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
@@ -180,9 +179,8 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           queries.map(async (query) => {
             try {
               const { sources, text } = await generateText({
-                model: getGroundingModel(),
-                prompt: `Search the web and report what you find about: ${query}`,
-                tools: { google_search: googleSearchTool() },
+                model: getSearchModel(),
+                prompt: `Search the web and report what you find with citations about: ${query}`,
               });
 
               return {
@@ -241,14 +239,46 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           readings = await Promise.all(
             pagesToRead.map(async (source) => {
               try {
+                let pageContent = "";
+                try {
+                  const controller = new AbortController();
+                  const timer = setTimeout(() => controller.abort(), 10_000);
+                  const res = await fetch(source.url, {
+                    headers: {
+                      "User-Agent":
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    },
+                    signal: controller.signal,
+                  });
+                  clearTimeout(timer);
+                  if (res.ok) {
+                    const raw = await res.text();
+                    pageContent = raw
+                      .replace(
+                        /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+                        ""
+                      )
+                      .replace(
+                        /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi,
+                        ""
+                      )
+                      .replace(/<[^>]+>/g, " ")
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 15_000);
+                  }
+                } catch {
+                  // Fall through
+                }
+
                 const { text } = await generateText({
                   model: getGroundingModel(),
                   prompt: [
                     `Read the page at ${source.url}.`,
                     "Extract the facts it states that are relevant to the research, with the specifics: figures, dates, names and conditions.",
                     "Do not summarise the layout — report the substance.",
+                    pageContent ? `\nPAGE CONTENT:\n${pageContent}` : "",
                   ].join("\n"),
-                  tools: { url_context: googleUrlContextTool() },
                 });
 
                 return { source, text: text.slice(0, SNIPPET_CHARS) };
