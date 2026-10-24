@@ -17,7 +17,10 @@ export function getOpenRouterProvider() {
 
 // Proxied export so existing callers can use openrouter(modelId) directly
 export const openrouter = new Proxy(
-  {},
+  ((..._args: unknown[]) => {
+    // Proxy callable target placeholder
+    return null;
+  }) as unknown as ReturnType<typeof createOpenRouter>,
   {
     apply(_target, _thisArg, argArray) {
       const provider = getOpenRouterProvider();
@@ -30,7 +33,7 @@ export const openrouter = new Proxy(
       return (provider as unknown as Record<string, unknown>)[prop as string];
     },
   }
-) as unknown as ReturnType<typeof createOpenRouter>;
+);
 
 export const myProvider = isTestEnvironment
   ? (() => {
@@ -67,7 +70,8 @@ export function getLanguageModel(modelId?: string): LanguageModel {
 
   const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
   if (openRouterKey) {
-    return openrouter(targetId) as unknown as LanguageModel;
+    const provider = getOpenRouterProvider();
+    return provider(targetId) as unknown as LanguageModel;
   }
 
   // Fallback to Google Gemini if OPENROUTER_API_KEY is not yet added to environment
@@ -76,7 +80,8 @@ export function getLanguageModel(modelId?: string): LanguageModel {
     return google("gemini-2.5-flash") as unknown as LanguageModel;
   }
 
-  return openrouter(targetId) as unknown as LanguageModel;
+  const provider = getOpenRouterProvider();
+  return provider(targetId) as unknown as LanguageModel;
 }
 
 export function getTitleModel(): LanguageModel {
@@ -86,7 +91,8 @@ export function getTitleModel(): LanguageModel {
 
   const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
   if (openRouterKey) {
-    return openrouter(titleModel.id) as unknown as LanguageModel;
+    const provider = getOpenRouterProvider();
+    return provider(titleModel.id) as unknown as LanguageModel;
   }
 
   const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
@@ -94,5 +100,6 @@ export function getTitleModel(): LanguageModel {
     return google("gemini-2.5-flash") as unknown as LanguageModel;
   }
 
-  return openrouter(titleModel.id) as unknown as LanguageModel;
+  const provider = getOpenRouterProvider();
+  return provider(titleModel.id) as unknown as LanguageModel;
 }

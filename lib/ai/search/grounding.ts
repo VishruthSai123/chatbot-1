@@ -29,7 +29,7 @@ export function getGroundingModel() {
  * The model that performs online web search through OpenRouter.
  */
 export function getSearchModel() {
-  return getLanguageModel("openrouter/free:online");
+  return getLanguageModel(GROUNDING_MODEL_ID);
 }
 
 /**
