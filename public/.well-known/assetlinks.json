@@ -1,0 +1,22 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.tk.quicksearch",
+      "sha256_cert_fingerprints": [
+        "4F:A5:D7:FF:D5:08:1C:AC:E4:F8:90:66:D8:88:DF:E8:DA:6D:56:CC:25:AE:0D:85:05:05:32:FA:9E:8E:99:37"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.tk.quicksearch.debug",
+      "sha256_cert_fingerprints": [
+        "4F:A5:D7:FF:D5:08:1C:AC:E4:F8:90:66:D8:88:DF:E8:DA:6D:56:CC:25:AE:0D:85:05:05:32:FA:9E:8E:99:37"
+      ]
+    }
+  }
+]

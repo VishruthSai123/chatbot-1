@@ -1,13 +1,11 @@
 "use client";
 
 import { PanelLeftIcon } from "lucide-react";
-import Link from "next/link";
 import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import type { ChatMessage } from "@/lib/types";
 import { DownloadConversationButton } from "./download-conversation-button";
-import { VercelIcon } from "./icons";
 import { VisibilitySelector, type VisibilityType } from "./visibility-selector";
 
 function PureChatHeader({
@@ -30,6 +28,7 @@ function PureChatHeader({
   return (
     <header className="sticky top-0 flex h-14 items-center gap-2 bg-sidebar px-3">
       <Button
+        aria-label="Open the sidebar"
         className="md:hidden"
         onClick={toggleSidebar}
         size="icon-sm"
@@ -37,15 +36,6 @@ function PureChatHeader({
       >
         <PanelLeftIcon className="size-4" />
       </Button>
-
-      <Link
-        className="flex size-8 items-center justify-center rounded-lg md:hidden"
-        href="https://vercel.com/templates/next.js/chatbot"
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <VercelIcon size={14} />
-      </Link>
 
       {!isReadonly && (
         <VisibilitySelector
@@ -57,20 +47,6 @@ function PureChatHeader({
       <div className="ml-auto flex items-center gap-1">
         <DownloadConversationButton messages={messages} />
       </div>
-
-      <Button
-        asChild
-        className="hidden rounded-lg bg-foreground px-4 text-background hover:bg-foreground/90 md:flex"
-      >
-        <Link
-          href="https://vercel.com/templates/next.js/chatbot"
-          rel="noopener noreferrer"
-          target="_blank"
-        >
-          <VercelIcon size={16} />
-          Deploy with Vercel
-        </Link>
-      </Button>
     </header>
   );
 }
@@ -80,5 +56,6 @@ export const ChatHeader = memo(
   (prevProps, nextProps) =>
     prevProps.chatId === nextProps.chatId &&
     prevProps.selectedVisibilityType === nextProps.selectedVisibilityType &&
-    prevProps.isReadonly === nextProps.isReadonly
+    prevProps.isReadonly === nextProps.isReadonly &&
+    prevProps.messages === nextProps.messages
 );

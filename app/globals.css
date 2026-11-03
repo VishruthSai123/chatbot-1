@@ -523,3 +523,12 @@ textarea:focus-visible {
 [data-testid="artifact"] {
   isolation: isolate;
 }
+
+/* Android WebView shell: drop desktop-only promotions and keep native scrolling. */
+html[data-embed="android"] a[href*="vercel.com/templates/next.js/chatbot"],
+html[data-embed="android"] a[href*="vercel.com/d?to="] {
+  display: none;
+}
+html[data-embed="android"] body {
+  overscroll-behavior-y: none;
+}

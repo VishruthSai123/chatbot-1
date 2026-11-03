@@ -2,6 +2,25 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
 
+/**
+ * Paths that must stay public even without a session.
+ *
+ * `/.well-known/assetlinks.json` is fetched by Chrome's Digital Asset Links
+ * verifier (for TWA/App Links), and manifest/service-worker/icon requests come
+ * from install checks and browsers that do not carry the chat session. Sending
+ * them through guest login would turn them into redirects.
+ */
+const PUBLIC_PREFIXES = [
+  "/api/auth",
+  "/.well-known/",
+  "/manifest.webmanifest",
+  "/sw.js",
+  "/icons/",
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+] as const;
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -9,7 +28,7 @@ export async function proxy(request: NextRequest) {
     return new Response("pong", { status: 200 });
   }
 
-  if (pathname.startsWith("/api/auth")) {
+  if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next();
   }
 
@@ -22,7 +41,12 @@ export async function proxy(request: NextRequest) {
   const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
   if (!token) {
-    const redirectUrl = encodeURIComponent(new URL(request.url).pathname);
+    // Keep the query string: Android deep links (`?query=`, `?draft=`,
+    // `?share=`) arrive on a cold start before the guest cookie exists.
+    const requested = new URL(request.url);
+    const redirectUrl = encodeURIComponent(
+      `${requested.pathname}${requested.search}`
+    );
 
     return NextResponse.redirect(
       new URL(`${base}/api/auth/guest?redirectUrl=${redirectUrl}`, request.url)
