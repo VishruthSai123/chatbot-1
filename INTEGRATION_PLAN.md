@@ -565,3 +565,33 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 - Technically, the Bot tab must be an **embedded WebView**, not a TWA. A TWA is a separate browser Activity and would remove the native bottom nav.
 - Keep the web app TWA-installable and share-target-ready, but ship the in-app tab as WebView. This gives the best of both: native shell + web chat, without a dual-app feel.
 - The highest-value first slice is: bottom nav + Bot WebView + text/image share intake + `Ask SuperiorAI` top match + `new_chat` shortcut. That is a usable product; history sync, dynamic shortcuts, TWA, push, and OAuth can follow.
+
+---
+
+## 11. Implementation status (this workspace)
+
+### Android (quick-search/)
+
+- Added a two-scene bottom navigation bar: **Search | Bot** (MainSceneShell.kt).
+- Added RootDestination.Bot and the embedded WebView scene (ChatScene.kt, ChatWebViewStore.kt).
+- The WebView is owned above the destination and survives tab switches, so a streaming chat is not reloaded.
+- Added the **Ask SuperiorAI** row above the search result list (BotAskRow.kt); it opens the Bot with the current query.
+- Added Android share intake for text, images, and PDFs (ChatIntentParser.kt, ChatShare.kt), including a WebViewAssetLoader-style appassets bridge for images. Text-only shares use the existing live ?query= path; image shares use the new ?share= hand-off.
+- Added static launcher shortcuts **New chat** and **Ask SuperiorAI** (es/xml/shortcuts.xml).
+- Added App Links handling for https://chatbot-1-beige.vercel.app/chat/*.
+- Added WebView security defaults: HTTPS host allowlist, external links in Custom Tabs, file/content access off, mixed content blocked, SSL errors fail closed, WebMessage not exposed, file chooser via SAF.
+- Session cookies are persisted on activity pause.
+- Added English fallback strings to all 16 locales (parity passes).
+- Debug APK: quick-search/app/build/outputs/apk/standard/debug/app-standard-debug.apk`n
+### Web (root SuperiorAI)
+
+- proxy.ts: preserves query strings through guest bootstrap and keeps /.well-known, manifest, service worker, icons, robots, sitemap public.
+- use-active-chat.tsx: supports ?draft= (prefill), ?share=<token> (fetch shared files from https://appassets.androidplatform.net, upload via the normal attachment pipeline, then attach to the composer), and ?embed=android.
+- components/chat/shell.tsx: appends Android shared attachments to the composer.
+- public/.well-known/assetlinks.json: debug/local signing fingerprint for com.tk.quicksearch and com.tk.quicksearch.debug (add the Play App Signing fingerprint before publishing).
+- pp/globals.css: embed-mode cleanup for the WebView shell.
+
+### Remaining deployment step
+
+The Android **text share / Ask / Bot tab** paths work against the current live site. **Image/PDF sharing** needs this web change deployed to https://chatbot-1-beige.vercel.app (the ?share= handler). The ssetlinks.json needs the Play App Signing SHA-256 if App Links/TWA verification is required on Play-distributed builds.
+
