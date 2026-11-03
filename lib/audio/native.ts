@@ -54,17 +54,14 @@ export async function readAudioInfo(
 }
 
 /**
- * Transcribes an audio file with Gemini.
+ * Transcribes an audio file.
  *
- * Gemini's audio understanding is native to the model we already use, so there
- * is no transcription service, no API key and no per-minute cost.
+ * The model reads the audio directly, so there is no transcription service, no
+ * second key and no per-minute cost.
  *
- * The timestamps come from the prompt, not from the `audioTimestamp` provider
- * option. That option looks like the obvious way to do it, but it is a Vertex AI
- * field: the Gemini Developer API rejects it outright with "Unknown name
- * 'audioTimestamp' at 'generation_config'", which fails the whole request. Asking
- * the model to write the timecodes produces the same result — and the timestamps
- * are what the studio's caption track and seek links are built from.
+ * The timestamps come from the prompt, not from a provider option. Asking the
+ * model to write the timecodes inline produces exactly what the studio needs —
+ * the caption track and the seek links are both built from them.
  */
 export async function transcribeAudio({
   audioUrl,

@@ -8,7 +8,7 @@ Traditional AI wrappers outsource file operations to third-party paid APIs (e.g.
 3. **Network Latency & Downtime**: Vulnerable to third-party rate limits, outages, and format changes.
 
 ### The Workbench Native Rule
-> **All deterministic operations must run natively within our Next.js backend, Node.js runtime, or browser client using vetted, high-performance open-source libraries. External AI APIs (Google Gemini) are strictly reserved for tasks requiring semantic understanding, structured planning, or multimodal synthesis.**
+> **All deterministic operations must run natively within our Next.js backend, Node.js runtime, or browser client using vetted, high-performance open-source libraries. External AI APIs (OpenRouter free models) are strictly reserved for tasks requiring semantic understanding, structured planning, or multimodal synthesis.**
 
 ```
 +-------------------------------------------------------------------------------------------------------------+
@@ -22,7 +22,7 @@ Traditional AI wrappers outsource file operations to third-party paid APIs (e.g.
 |  (Renders minimal card)       (Mounts ONLY the active tool controls)                                        |
 |       │                               ▲                                                                     |
 |       ▼                               │ (Signed URLs / Lineage sync)                                        |
-|  [Gemini 2.5 Planner]                 │                                                                     |
+|  [OpenRouter Planner]                 │                                                                     |
 |  (Injected with active image context) │                                                                     |
 |       │                               │                                                                     |
 |       ▼                               │                                                                     |
@@ -32,7 +32,7 @@ Traditional AI wrappers outsource file operations to third-party paid APIs (e.g.
 |       ├───────────────────────────────┴───────────────────────────────┐                                     |
 |       ▼                                                               ▼                                     |
 |  [Deterministic Native Engines]                             [AI Semantic Engine]                            |
-|   - Images: `sharp` + native alpha matting                   - Gemini 2.5 Flash / Pro                        |
+|   - Images: `sharp` + native alpha matting                   - OpenRouter free models                        |
 |   - PDFs: `pdf-lib` + `pdf-parse` (pure JS)                  (Summarization, Intent, Audio Transcription)   |
 |   - Sheets: `papaparse` + `xlsx` (SheetJS)                                                                  |
 |   - Docs: `mammoth` + `diff-match-patch`                                                                    |

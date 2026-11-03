@@ -6,7 +6,7 @@ The Audio & Media Studio family provides local container metadata inspection, cl
 ### Native Stack
 - **Server Metadata Engine**: `music-metadata` (native pure-JavaScript audio/video container parser; extracts duration, codec, bitrate, channels, and sample rate without FFmpeg binary dependencies).
 - **Client Media Player**: HTML5 Audio / Web Audio API with synchronized waveform and timestamp seek.
-- **Multimodal AI Transcription**: Google Gemini 2.5 Flash (utilizing native audio understanding capability already configured via `@ai-sdk/google`).
+- **Multimodal AI Transcription**: the OpenRouter model's native audio understanding, through `generateText`.
 - **Storage**: Supabase Storage (`artifacts` private bucket).
 
 ---
@@ -56,7 +56,7 @@ export async function getMediaMetadata({
 ---
 
 ### 2.2 `media_transcribe` (Speech-to-Text with Timestamps)
-Transcribes uploaded audio files (MP3, WAV, M4A, OGG) using Gemini 2.5 Flash multimodal audio input.
+Transcribes uploaded audio files (MP3, WAV, M4A, OGG) using the OpenRouter model multimodal audio input.
 
 #### Native Implementation:
 ```typescript
@@ -91,7 +91,7 @@ Provide a timestamped breakdown in the following JSON format:
 Return only valid JSON.`;
 
   const { text } = await generateText({
-    model: getLanguageModel("gemini-2.5-flash"),
+    model: getLanguageModel(),
     messages: [
       {
         role: "user",

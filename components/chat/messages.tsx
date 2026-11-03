@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useDataStream } from "./data-stream-provider";
 import { Greeting } from "./greeting";
 import { PreviewMessage, ThinkingMessage } from "./message";
+import { SuggestedActions } from "./suggested-actions";
 
 type MessagesProps = {
   addToolApprovalResponse: UseChatHelpers<ChatMessage>["addToolApprovalResponse"];
@@ -22,6 +23,8 @@ type MessagesProps = {
   isLoading?: boolean;
   selectedModelId: string;
   onEditMessage?: (message: ChatMessage) => void;
+  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
+  onShowCapabilities?: (familyId?: string) => void;
 };
 
 function PureMessages({
@@ -37,6 +40,8 @@ function PureMessages({
   isLoading,
   selectedModelId: _selectedModelId,
   onEditMessage,
+  sendMessage,
+  onShowCapabilities,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -65,9 +70,24 @@ function PureMessages({
 
   return (
     <div className="relative flex-1 bg-background">
+      {/*
+        The empty state is one centred block: the greeting and the capability
+        map belong together, not one at the top of the pane and one pinned
+        above the composer.
+      */}
       {messages.length === 0 && !isLoading && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <Greeting />
+        // `m-auto` rather than `items-center`: a centred flex child that is
+        // taller than its container overflows past the top and cannot be
+        // scrolled back to, which clipped the greeting on a phone.
+        <div className="absolute inset-0 z-10 flex overflow-y-auto px-4 py-8">
+          <div className="m-auto flex w-full max-w-2xl flex-col gap-6">
+            <Greeting />
+            <SuggestedActions
+              chatId={chatId}
+              onShowCapabilities={onShowCapabilities}
+              sendMessage={sendMessage}
+            />
+          </div>
         </div>
       )}
       <div
@@ -78,7 +98,7 @@ function PureMessages({
         ref={messagesContainerRef}
         style={isArtifactVisible ? { scrollbarWidth: "none" } : undefined}
       >
-        <div className="mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 px-2 py-6 md:gap-7 md:px-4">
+        <div className="mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 px-3 py-6 md:gap-7 md:px-4 md:py-8">
           {messages.map((message, index) => (
             <PreviewMessage
               addToolApprovalResponse={addToolApprovalResponse}

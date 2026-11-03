@@ -9,6 +9,21 @@
 @plugin "@tailwindcss/typography";
 
 @theme inline {
+  /*
+   * One typeface, everywhere.
+   *
+   * The app is sans-only by design, so `font-mono` is pointed at the same
+   * family as `font-sans`. Every existing `font-mono` class — there are dozens
+   * of them, used for figures, timestamps and file sizes — therefore renders in
+   * the sans face without being touched individually.
+   */
+  --font-sans:
+    var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -394,9 +409,7 @@ textarea:focus-visible {
 }
 
 .cm-editor {
-  font-family:
-    "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", ui-monospace,
-    monospace !important;
+  font-family: var(--font-sans) !important;
   @apply bg-transparent! outline-hidden! text-[13px]! leading-[1.6]!;
 }
 

@@ -1,42 +1,32 @@
 # Search, Reading, and Capability Discovery
 
-## 1. Why this exists
+## 1. One provider, and what it can and cannot do
 
-The chat runs on OpenRouter. Search, URL reading and OCR do not.
+Everything runs on **OpenRouter free models**. There is no second provider and
+no fallback to one: `lib/ai/providers.ts` resolves every model through
+OpenRouter, and `@ai-sdk/google` is not a dependency.
 
-A model without a search tool cannot search: asked to "look up the latest
-release", it answers from its training data and invents the links. That is
-worse than saying nothing, because the answer looks current.
-
-So the grounded half of the app keeps its own Gemini model. Only the work that
-*needs* a tool goes through it:
-
-| Work | Model | Why |
-| --- | --- | --- |
-| Chat, drafting, quizzes, notebooks | OpenRouter (`openrouter/free` or the chosen model) | The conversation model |
-| Web search, deep research | Gemini 2.5 Flash + `google_search` | Live results with real citations |
-| Reading a URL | Gemini 2.5 Flash + `url_context` | Renders the page the way a browser does |
-| OCR | Gemini 2.5 Flash (vision) | A text-only model cannot read an image |
-
-`lib/ai/search/grounding.ts` is the single place that decides this.
+That has one important consequence. **None of these models can search the web.**
+A model asked to "look up the latest release" without a search tool answers
+from its training data and invents the links — which looks current and is
+wrong. So searching is not delegated to a model; it is done in the app.
 
 ## 2. The search path
 
-`lib/search/web.ts` tries two paths in order:
+`lib/search/web.ts` does three things:
 
-1. **Grounded search.** Gemini runs the query and returns an answer plus the
-   pages it used. Best quality: the citations are real and the synthesis
-   already knows what the sources said.
-2. **Keyless search.** DuckDuckGo's HTML endpoint returns result links, the top
-   three pages are read through the address checks below, and the chat model
-   answers from that evidence. Slower and plainer, but it needs no key and it
-   is still reading real, current pages.
+1. **Find pages.** `lib/search/duckduckgo.ts` queries DuckDuckGo's HTML
+   endpoint. It needs no key and no account. The result page is parsed by
+   `lib/search/duckduckgo-parse.ts` (pure, unit-tested): result links are
+   unwrapped from DuckDuckGo's redirect, duplicates and internal links are
+   dropped, and titles and snippets are reduced to text.
+2. **Read them.** The top three pages are fetched through the address checks
+   below, and their text is extracted.
+3. **Answer from them.** The model is given the question and the page text,
+   and told to cite the URLs it used and to say plainly when the evidence does
+   not answer the question.
 
-A grounded call that fails — an exhausted key, a quota limit, a transient
-error — falls through to the keyless path. The tool returns a `via` field so
-the caller can be honest about which path answered.
-
-`research` uses the same function, so a deep-research run behaves the same way.
+`research` uses the same function, so a deep-research run behaves identically.
 
 ## 3. The address boundary
 
@@ -57,7 +47,14 @@ pass the same check before it is followed.
 `htmlToText` in `lib/net/html.ts` turns the page into the words a model should
 read: scripts, styles, templates and comments are noise.
 
-## 4. Capability discovery
+## 4. Images
+
+OCR goes to the vision model (`getVisionModel()` in
+`lib/ai/search/grounding.ts`), which defaults to `openrouter/free` and can be
+pointed at a specific model with `OPENROUTER_VISION_MODEL`. A text-only model
+is never asked to read a picture.
+
+## 5. Capability discovery
 
 The app has eight families of tools. A blank composer cannot communicate that,
 and four generic prompts ("write an essay about Silicon Valley") actively
@@ -67,20 +64,23 @@ misrepresent it.
 three real example prompts per family. It is the single source for:
 
 - the **empty state** (`components/chat/suggested-actions.tsx`) — a grid of
-  eight tiles, each opening the panel on that family;
+  eight tiles, centred with the greeting;
 - the **capabilities panel** (`components/chat/capabilities-dialog.tsx`) — the
   map, opened by the ✨ button beside the composer or `/capabilities`;
-- the four starter prompts shown under the grid — real tasks that work with no
+- the starter prompts shown under the grid — real tasks that work with no
   attachment and no setup.
 
 Every example is a prompt, not a category name. Clicking one puts it in the
 composer, where the user can edit it before sending.
 
-## 5. The audio card
+## 6. Layout rules
 
-Audio had a studio but no card, so `audioInfo`, `audioTranscribe` and
-`audioOpen` produced no visible feedback in the conversation.
-
-`components/chat/audio-tool-card.tsx` is the missing surface: the file's
-details (duration, format, bitrate, sample rate, channels), a transcript
-preview with an expand control, and a way into the Audio Studio.
+- **Sans only.** `--font-mono` is pointed at the same family as `--font-sans`
+  in `globals.css`, so a `font-mono` class cannot introduce a second face.
+- **One empty state.** The greeting, the capability grid and the starter
+  prompts are a single centred block; the composer sits at the bottom.
+- **No fixed widths without a fluid base.** Cards are `w-full max-w-[…]`, so
+  they shrink on a phone and stay readable on a desktop.
+- **Centred overflow uses `m-auto`,** not `items-center`: a centred flex child
+  taller than its container overflows past the top and cannot be scrolled
+  back to.

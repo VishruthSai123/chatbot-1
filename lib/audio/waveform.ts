@@ -186,7 +186,7 @@ export function toVtt(blocks: { text: string; timestamp?: number }[]): string {
 /**
  * Finds timestamps in a transcript.
  *
- * Gemini's audio understanding writes them inline — "so the first quarter
+ * The transcription writes them inline — "so the first quarter
  * [00:01:23] showed…" — and this pulls them out so the studio can turn each
  * one into a link that seeks the player.
  */

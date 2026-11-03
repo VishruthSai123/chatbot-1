@@ -15,8 +15,8 @@ import { memo, useCallback } from "react";
 
 import { capabilities, starterPrompts } from "@/lib/capabilities";
 import type { ChatMessage } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Suggestion } from "../ai-elements/suggestion";
-import type { VisibilityType } from "./visibility-selector";
 
 /**
  * The empty state.
@@ -42,7 +42,6 @@ const ICONS = {
 type SuggestedActionsProps = {
   chatId: string;
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
-  selectedVisibilityType: VisibilityType;
   onShowCapabilities?: (familyId?: string) => void;
 };
 
@@ -96,7 +95,10 @@ function PureSuggestedActions({
               <span className="text-[12px] font-medium leading-tight text-foreground/90">
                 {capability.name}
               </span>
-              <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground/60">
+              {/* The one-line description is what makes a tile meaningful on a
+                  wide screen; on a phone the icon and the name have to carry it,
+                  or the empty state becomes taller than the pane. */}
+              <span className="hidden line-clamp-2 text-[10px] leading-snug text-muted-foreground/60 sm:block">
                 {capability.description}
               </span>
             </button>
@@ -104,10 +106,17 @@ function PureSuggestedActions({
         })}
       </div>
 
-      <div className="flex w-full gap-2 overflow-x-auto pb-1 no-scrollbar sm:grid sm:grid-cols-2 sm:overflow-visible">
-        {starterPrompts.map((suggestion) => (
+      {/*
+        Two prompts on a phone, four from sm up. A horizontal scroller looked
+        like a clipped row of buttons; a column reads as a list of choices.
+      */}
+      <div className="grid w-full grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {starterPrompts.map((suggestion, index) => (
           <Suggestion
-            className="h-auto min-w-[200px] shrink-0 whitespace-nowrap rounded-xl border border-border/40 bg-transparent px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground/70 transition-all duration-200 hover:bg-card/50 hover:text-foreground sm:min-w-0 sm:shrink sm:whitespace-normal"
+            className={cn(
+              "h-auto w-full whitespace-normal rounded-xl border border-border/40 bg-transparent px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground/70 transition-all duration-200 hover:bg-card/50 hover:text-foreground",
+              index >= 2 && "hidden sm:flex"
+            )}
             key={suggestion}
             onClick={handleSuggestionClick}
             suggestion={suggestion}
@@ -124,9 +133,6 @@ export const SuggestedActions = memo(
   PureSuggestedActions,
   (prevProps, nextProps) => {
     if (prevProps.chatId !== nextProps.chatId) {
-      return false;
-    }
-    if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType) {
       return false;
     }
     if (prevProps.onShowCapabilities !== nextProps.onShowCapabilities) {

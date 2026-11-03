@@ -2,13 +2,7 @@ import { generateText, tool } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
 
-import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
-import { getLanguageModel } from "@/lib/ai/providers";
-import {
-  getGroundingModel,
-  googleUrlContextTool,
-  hasGrounding,
-} from "@/lib/ai/search/grounding";
+import { getGroundingModel } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
 import { fetchPageText } from "@/lib/net/page";
 import { searchWeb } from "@/lib/search/web";
@@ -109,47 +103,12 @@ export const readUrl = ({ session }: SearchToolsProps) =>
         };
       }
 
-      const task = [
-        `Read the web page at ${url} and report its content.`,
-        instruction
-          ? `Focus on this: ${instruction}`
-          : "Summarise it accurately and keep any concrete facts, figures and names.",
-        "Do not invent anything that is not on the page.",
-      ].join("\n");
-
-      // ── Preferred: Gemini reads the page itself ─────────────────────────
-      if (hasGrounding()) {
-        try {
-          const { text } = await generateText({
-            model: getGroundingModel(),
-            prompt: task,
-            tools: { url_context: googleUrlContextTool() },
-          });
-
-          const content = trim(text.trim());
-
-          if (content) {
-            return {
-              content,
-              sources: [{ title: url, url }],
-              url,
-            };
-          }
-        } catch (error) {
-          console.warn(
-            "URL context failed, falling back to a direct fetch:",
-            error
-          );
-        }
-      }
-
-      // ── Fallback: fetch it ourselves, safely ────────────────────────────
       try {
+        // The page is fetched here, through the address checks, and the model
+        // is given its text. No provider tool is involved.
         const page = await fetchPageText(url);
         const { text } = await generateText({
-          // The chat model, not the grounding one: this path is reached
-          // precisely when the grounded model is unavailable.
-          model: getLanguageModel(DEFAULT_CHAT_MODEL),
+          model: getGroundingModel(),
           prompt: [
             `Read the web page at ${page.url} and report its content.`,
             instruction

@@ -409,7 +409,18 @@ function PureArtifact({
       ? currentVersionIndex === documents.length - 1
       : true;
 
-  const { width: windowWidth, height: windowHeight } = useWindowSize();
+  /**
+   * `initializeWithValue: false` matters here.
+   *
+   * The default reads `window.innerWidth` during the first client render, so
+   * the server (which has no window) renders the desktop layout and the client
+   * renders the mobile one — a hydration mismatch that React reports and then
+   * recovers from by throwing the tree away. Starting at zero and measuring in
+   * an effect keeps the two in step.
+   */
+  const { width: windowWidth, height: windowHeight } = useWindowSize({
+    initializeWithValue: false,
+  });
   const isMobile = windowWidth ? windowWidth < 768 : false;
 
   const artifactDefinition = artifactDefinitions.find(

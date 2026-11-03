@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -20,16 +20,16 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * One family for the whole app.
+ *
+ * The design is sans-only: `--font-mono` is pointed at this same family in
+ * `globals.css`, so a stray `font-mono` class cannot introduce a second face.
+ */
 const geist = Geist({
   display: "swap",
   subsets: ["latin"],
   variable: "--font-geist",
-});
-
-const geistMono = Geist_Mono({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-geist-mono",
 });
 
 export default function RootLayout({
@@ -39,7 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      className={`${geist.variable} ${geistMono.variable}`}
+      className={`${geist.variable} font-sans`}
       lang="en"
       suppressHydrationWarning
     >

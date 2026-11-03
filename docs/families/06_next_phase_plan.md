@@ -4,14 +4,14 @@
 
 | Capability | Status | Consequence |
 |---|---|---|
-| `googleSearch` tool | ✅ native in `@ai-sdk/google` v4, **Gemini 2+ only** | Web search is ~free — no Brave/Tavily/Exa, no extra key, no scraping infra. **But it only works on Gemini 2 models** (default `gemini-2.5-flash`); a user on DeepSeek gets no grounding, so the feature must be model-aware. |
-| `urlContext` tool | ✅ native, Gemini 2+ | "Read this URL" needs no fetcher, no headless browser, no proxy. |
+| `googleSearch` tool | ❌ no longer used | Search is done natively: DuckDuckGo for the result links, the app's own fetcher for the pages, the model only for synthesis. No key, no scraping service. |
+| `urlContext` tool | ❌ no longer used | "Read this URL" is a direct fetch through the address checks in `lib/net/page.ts`. |
 | PDF as model input | ✅ `application/pdf` is a supported media type | The model can read a PDF *directly*. Server-side parsing is only needed for the *studio* (thumbnails, page ops), not for Q&A. |
 | Audio as model input | ✅ incl. `audioTimestamp` | Transcription with timestamps is native. No Whisper, no AssemblyAI. |
 | Function budget | 9 of 12 used | 3 free. A dedicated downloader function fits. |
 | Storage | Supabase, private, signed URLs | Every new family follows the `*-ref:` envelope pattern (`image-ref:`, `pdf-ref:`, `sheet-ref:`). |
 
-**The big consequence:** most of what looks expensive is actually free, because Gemini already does the hard part. The parts that are *not* free are the ones that need native binaries (MP3 encoding, video downloading).
+**The big consequence:** most of what looks expensive is actually free, because the model already does the hard part. The parts that are *not* free are the ones that need native binaries (MP3 encoding, video downloading).
 
 ---
 
@@ -19,7 +19,7 @@
 
 **Goal:** open a `.docx`/`.md`/`.txt` in a studio; read, diff, summarise, outline it.
 
-**Native stack:** `mammoth` (DOCX → semantic HTML/Markdown), `diff-match-patch` (already installed) for side-by-side diff, `shiki` for code-block highlighting, Gemini for summarisation.
+**Native stack:** `mammoth` (DOCX → semantic HTML/Markdown), `diff-match-patch` (already installed) for side-by-side diff, `shiki` for code-block highlighting, the OpenRouter model for summarisation.
 
 **Deliverables**
 - `lib/doc/` engine: `parseDocx` (mammoth → sanitised HTML + plain text), `parseMarkdown`, `extractOutline` (heading tree), `diffDocuments` (word- and line-level), `readingStats` (words, sentences, read time, speak time)
@@ -35,15 +35,15 @@
 
 **Goal:** open an audio/video file; see a waveform, seek, and get a timestamped transcript.
 
-**Native stack:** `music-metadata` (pure-JS container parser: duration, codec, bitrate, channels, sample rate), Web Audio `decodeAudioData` in the browser for waveform peaks, Gemini `audioTimestamp` for transcription.
+**Native stack:** `music-metadata` (pure-JS container parser: duration, codec, bitrate, channels, sample rate), Web Audio `decodeAudioData` in the browser for waveform peaks, the model's audio understanding for transcription.
 
 **Deliverables**
-- `lib/audio/` engine: `readAudioInfo` (music-metadata), `buildPeaks` (client-side), `transcribe` (Gemini, timestamped)
+- `lib/audio/` engine: `readAudioInfo` (music-metadata), `buildPeaks` (client-side), `transcribe` (timestamped)
 - `audio-ref:` envelope; new artifact kind `audio`
 - Tools: `audioInfo`, `audioTranscribe`, `audioClip` (client-side, exports a WAV slice)
 - Studio: waveform canvas with click-to-seek, transport controls, transcript panel with click-to-jump timestamps, metadata readout
 
-**Risks:** waveform peaks for a 90-minute file means decoding the whole file in the browser — needs downsampling and a size cap. Gemini's audio input has a per-request size ceiling; long files need chunking.
+**Risks:** waveform peaks for a 90-minute file means decoding the whole file in the browser — needs downsampling and a size cap. The model's audio input has a per-request size ceiling; long files need chunking.
 
 ---
 
@@ -72,16 +72,16 @@
 
 **Goal:** a *Notebook* = a named set of sources (files, URLs, videos, web pages) + a grounded chat over them + generated artefacts (summary, study guide, FAQ, quiz, timeline) + **"quiz me"** interactive mode.
 
-**Why this is cheap here:** grounding, web search and URL reading are all native Gemini tools (table above). The only real work is *chunking + retrieval + citation plumbing*.
+**Why this is cheap here:** grounding, web search and URL reading are all native model tools (table above). The only real work is *chunking + retrieval + citation plumbing*.
 
 **The retrieval design I recommend — progressive, no new infrastructure**
-- **Tier 1 (fits):** if the notebook's total text fits in the model context (Gemini 2.5 Flash = **1M tokens**), put it all in context and cite by source. For a handful of sources this is *better* than retrieval, and it costs nothing extra.
+- **Tier 1 (fits):** if the notebook's total text fits in the model context (the OpenRouter model = **1M tokens**), put it all in context and cite by source. For a handful of sources this is *better* than retrieval, and it costs nothing extra.
 - **Tier 2 (doesn't fit):** chunk (heading-aware for md/docx, page-aware for PDF), rank with a local **BM25** index — hand-rolled, zero infra, zero per-token cost, instant — retrieve top-k, answer with citations.
-- **Tier 3 (optional v2):** hybrid with `pgvector` + Gemini embeddings for semantic recall. Needs the Supabase extension enabled and costs embeddings per chunk. Only worth it once Tier 2 shows real recall failures.
+- **Tier 3 (optional v2):** hybrid with `pgvector` + embeddings for semantic recall. Needs the Supabase extension enabled and costs embeddings per chunk. Only worth it once Tier 2 shows real recall failures.
 
 **Deep research:** a multi-step agent loop — search → read → note → search again → synthesise. The repo already has `WaitingStatusData` phases; I'd add `researching` / `reading sources` so the UI shows *what it's doing*, not a spinner. `isStepCount(5)` becomes a real step budget.
 
-**Quiz me (the feature you named):** generate MCQ + short-answer from the notebook → ask Q1 → grade the user's answer with Gemini (with the source passage) → Q2 → … → final score + a "weakest topics" breakdown. This is a genuinely delightful feature and it reuses the whole notebook stack.
+**Quiz me (the feature you named):** generate MCQ + short-answer from the notebook → ask Q1 → grade the user's answer with the model (with the source passage) → Q2 → … → final score + a "weakest topics" breakdown. This is a genuinely delightful feature and it reuses the whole notebook stack.
 
 **Deliverables**
 - `lib/notebook/` engine: sources model, chunker, BM25 index, citation assembly

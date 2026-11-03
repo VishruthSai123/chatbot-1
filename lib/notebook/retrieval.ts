@@ -27,7 +27,7 @@ const CHARS_PER_TOKEN = 4;
 /**
  * How much of the model's context a notebook may take.
  *
- * Gemini 2.5 Flash has a very large window, but the conversation around it
+ * The model has a very large window, but the conversation around it
  * needs room too, and a notebook that fills the context leaves nothing for the
  * answer. A quarter of the window is generous for a notebook and leaves the
  * conversation plenty of space.

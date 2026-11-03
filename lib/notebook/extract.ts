@@ -2,13 +2,7 @@ import "server-only";
 
 import { generateText } from "ai";
 
-import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
-import { getLanguageModel } from "@/lib/ai/providers";
-import {
-  getGroundingModel,
-  googleUrlContextTool,
-  hasGrounding,
-} from "@/lib/ai/search/grounding";
+import { getGroundingModel } from "@/lib/ai/search/grounding";
 import { extractTextFromImage } from "@/lib/image/ocr";
 import { readMediaSessionForUrl } from "@/lib/media/session";
 import { fetchVideoTranscript } from "@/lib/media/transcript";
@@ -117,7 +111,7 @@ async function extractImage(
 }
 
 /**
- * Reads a web page with Gemini's URL context.
+ * Reads a web page.
  *
  * Using the model to read the page rather than fetching it ourselves is what
  * makes this work on real pages: script-rendered content, redirects and pages
@@ -152,32 +146,12 @@ export async function extractUrl(
     "Do not summarise it and do not add commentary.",
   ].join("\n");
 
-  // ── Preferred: Gemini reads the page itself ───────────────────────────────
-  if (hasGrounding()) {
-    try {
-      const { text } = await generateText({
-        model: getGroundingModel(),
-        prompt: instruction,
-        tools: { url_context: googleUrlContextTool() },
-      });
-
-      const cleaned = text.trim();
-
-      if (cleaned) {
-        return { sections: [{ label: url, text: cleaned }], title: url };
-      }
-    } catch (error) {
-      console.warn("Notebook URL context failed, falling back:", error);
-    }
-  }
-
-  // ── Fallback: fetch it ourselves, through the address checks ─────────────
+  // The page is fetched here, through the address checks, and the model is
+  // given its text. No provider tool is involved.
   try {
     const page = await fetchPageText(url);
     const { text } = await generateText({
-      // The chat model, not the grounding one: this path is reached precisely
-      // when the grounded model is unavailable.
-      model: getLanguageModel(DEFAULT_CHAT_MODEL),
+      model: getGroundingModel(),
       prompt: [instruction, "", "PAGE CONTENT:", page.text].join("\n"),
     });
 

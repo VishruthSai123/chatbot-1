@@ -1,7 +1,6 @@
 "use client";
 
 import type { UseChatHelpers } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
 import { BorderBeam, type BorderBeamSize } from "border-beam";
 import equal from "fast-deep-equal";
 import {
@@ -60,7 +59,6 @@ import {
 } from "../ai-elements/prompt-input";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { CapabilitiesDialog } from "./capabilities-dialog";
 import { PaperclipIcon, StopIcon } from "./icons";
 import { ImageCollectionLauncher } from "./image/image-collection-launcher";
 import { MediaSessionDialog } from "./media-session-dialog";
@@ -70,8 +68,6 @@ import {
   SlashCommandMenu,
   slashCommands,
 } from "./slash-commands";
-import { SuggestedActions } from "./suggested-actions";
-import type { VisibilityType } from "./visibility-selector";
 
 function setCookie(name: string, value: string) {
   const maxAge = 60 * 60 * 24 * 365;
@@ -87,16 +83,14 @@ function PureMultimodalInput({
   stop,
   attachments,
   setAttachments,
-  messages,
   setMessages,
   sendMessage,
   className,
-  selectedVisibilityType,
   selectedModelId,
   onModelChange,
   editingMessage,
   onCancelEdit,
-  isLoading,
+  onShowCapabilities,
 }: {
   chatId: string;
   input: string;
@@ -105,18 +99,16 @@ function PureMultimodalInput({
   stop: () => void;
   attachments: Attachment[];
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  messages: UIMessage[];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
   sendMessage:
     | UseChatHelpers<ChatMessage>["sendMessage"]
     | (() => Promise<void>);
   className?: string;
-  selectedVisibilityType: VisibilityType;
   selectedModelId: string;
   onModelChange?: (modelId: string) => void;
   editingMessage?: ChatMessage | null;
   onCancelEdit?: () => void;
-  isLoading?: boolean;
+  onShowCapabilities?: (familyId?: string) => void;
 }) {
   const router = useRouter();
   const { setTheme, resolvedTheme } = useTheme();
@@ -157,10 +149,6 @@ function PureMultimodalInput({
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
-  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
-  const [capabilitiesFamily, setCapabilitiesFamily] = useState<
-    string | undefined
-  >(undefined);
   const [isExpandedHeight, setIsExpandedHeight] = useState(false);
 
   useEffect(() => {
@@ -229,7 +217,7 @@ function PureMultimodalInput({
           setMediaSessionOpen(true);
           break;
         case "capabilities":
-          setCapabilitiesOpen(true);
+          onShowCapabilities?.();
           break;
         case "delete":
           toast("Delete this chat?", {
@@ -267,7 +255,15 @@ function PureMultimodalInput({
           break;
       }
     },
-    [chatId, resolvedTheme, router, setInput, setMessages, setTheme]
+    [
+      chatId,
+      onShowCapabilities,
+      resolvedTheme,
+      router,
+      setInput,
+      setMessages,
+      setTheme,
+    ]
   );
 
   const submitForm = useCallback(() => {
@@ -584,15 +580,6 @@ function PureMultimodalInput({
         onOpenChange={setMediaSessionOpen}
         open={mediaSessionOpen}
       />
-      <CapabilitiesDialog
-        initialFamily={capabilitiesFamily}
-        onOpenChange={setCapabilitiesOpen}
-        onUseExample={(text) => {
-          setInput(text);
-          textareaRef.current?.focus();
-        }}
-        open={capabilitiesOpen}
-      />
       {draggingFiles ? (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border/80 bg-card/90 px-8 py-6 shadow-lg">
@@ -617,22 +604,6 @@ function PureMultimodalInput({
           </button>
         </div>
       ) : null}
-
-      {!editingMessage &&
-        !isLoading &&
-        messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
-          <SuggestedActions
-            chatId={chatId}
-            onShowCapabilities={(familyId) => {
-              setCapabilitiesFamily(familyId);
-              setCapabilitiesOpen(true);
-            }}
-            selectedVisibilityType={selectedVisibilityType}
-            sendMessage={sendMessage}
-          />
-        )}
 
       <input
         accept="image/*,application/pdf,.pdf,.doc,.docx,.txt,.md,.markdown,.csv,.tsv,.xlsx,.xlsm,.xls,.pptx,.ppt,.json,audio/*,video/*"
@@ -724,10 +695,7 @@ function PureMultimodalInput({
                   <button
                     className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
                     data-testid="capabilities-button"
-                    onClick={() => {
-                      setCapabilitiesFamily(undefined);
-                      setCapabilitiesOpen(true);
-                    }}
+                    onClick={() => onShowCapabilities?.()}
                     type="button"
                   >
                     <SparklesIcon className="size-3.5" />
@@ -777,19 +745,10 @@ export const MultimodalInput = memo(
     if (!equal(prevProps.attachments, nextProps.attachments)) {
       return false;
     }
-    if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType) {
-      return false;
-    }
     if (prevProps.selectedModelId !== nextProps.selectedModelId) {
       return false;
     }
     if (prevProps.editingMessage !== nextProps.editingMessage) {
-      return false;
-    }
-    if (prevProps.isLoading !== nextProps.isLoading) {
-      return false;
-    }
-    if (prevProps.messages.length !== nextProps.messages.length) {
       return false;
     }
 
@@ -991,7 +950,7 @@ function PureModelSelectorCompact({
     <ModelSelector onOpenChange={setOpen} open={open}>
       <ModelSelectorTrigger asChild>
         <Button
-          className="h-7 max-w-[200px] justify-between gap-1.5 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+          className="h-7 max-w-[170px] justify-between gap-1.5 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:text-foreground sm:max-w-[200px]"
           data-testid="model-selector"
           variant="ghost"
         >

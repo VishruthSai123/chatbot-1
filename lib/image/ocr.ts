@@ -2,9 +2,7 @@ import "server-only";
 
 import { generateText } from "ai";
 
-import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
-import { getLanguageModel } from "@/lib/ai/providers";
-import { getVisionModel, groundingModelId } from "@/lib/ai/search/grounding";
+import { getVisionModel } from "@/lib/ai/search/grounding";
 
 export interface OcrResult {
   model: string;
@@ -26,9 +24,9 @@ Rules:
  * Extract text (OCR) from an image.
  *
  * This is a *vision* task, so it goes to the vision model rather than to
- * whatever model the conversation happens to be using: a text-only model
- * cannot read an image at all, and silently returning "no text detected" is
- * worse than saying the feature is unavailable.
+ * whatever model the conversation happens to be using. Both are free
+ * OpenRouter models; the vision one is chosen so a text-only model can never
+ * be asked to read a picture.
  *
  * Purely native to our own pipeline — no external OCR SaaS.
  */
@@ -36,45 +34,27 @@ export async function extractTextFromImage(
   inputBuffer: Buffer,
   mimeType = "image/png"
 ): Promise<OcrResult> {
-  const messages = [
-    {
-      content: [
-        {
-          text: "Extract all text from this image and return it as Markdown.",
-          type: "text" as const,
-        },
-        { image: inputBuffer, mediaType: mimeType, type: "image" as const },
-      ],
-      role: "user" as const,
-    },
-  ];
-
-  let text: string;
-  let model = groundingModelId();
-
-  try {
-    ({ text } = await generateText({
-      instructions: OCR_INSTRUCTION,
-      messages,
-      model: getVisionModel(),
-    }));
-  } catch (error) {
-    // An exhausted Gemini key should not take OCR down with it: the chat
-    // model may be able to see the image too.
-    console.warn("Gemini OCR failed, trying the chat model:", error);
-
-    model = DEFAULT_CHAT_MODEL;
-    ({ text } = await generateText({
-      instructions: OCR_INSTRUCTION,
-      messages,
-      model: getLanguageModel(DEFAULT_CHAT_MODEL),
-    }));
-  }
+  const { text } = await generateText({
+    instructions: OCR_INSTRUCTION,
+    messages: [
+      {
+        content: [
+          {
+            text: "Extract all text from this image and return it as Markdown.",
+            type: "text",
+          },
+          { image: inputBuffer, mediaType: mimeType, type: "image" },
+        ],
+        role: "user",
+      },
+    ],
+    model: getVisionModel(),
+  });
 
   const cleaned = text.trim();
 
   return {
-    model,
+    model: "openrouter",
     text: cleaned,
     wordCount: cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0,
   };

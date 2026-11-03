@@ -7,7 +7,7 @@ The Document & Text Studio family provides document parsing, structured text ext
 - **Server DOCX Parser**: `mammoth` (native Node.js library converting `.docx` to semantic HTML / Markdown).
 - **Server Diff Engine**: `diff-match-patch` (native algorithmic Myers-diff for character, word, and line comparisons).
 - **Client Document Studio**: Rich text renderer with code highlighting (`shiki`), side-by-side diff view, and reading statistics.
-- **AI Semantic Engine**: Google Gemini 2.5 Flash / Pro (used strictly for semantic summarization and text synthesis).
+- **AI Semantic Engine**: Google OpenRouter free models (used strictly for semantic summarization and text synthesis).
 
 ---
 
@@ -80,7 +80,7 @@ export function computeDocumentDiff({
 ---
 
 ### 2.3 `doc_summarize` (Semantic AI Summarization)
-Generates an executive summary or key bullet takeaways grounded strictly in the extracted document text using Gemini 2.5 Flash.
+Generates an executive summary or key bullet takeaways grounded strictly in the extracted document text using the OpenRouter model.
 
 ```typescript
 import { generateText } from "ai";
@@ -98,7 +98,7 @@ export async function summarizeDocument({
   const prompt = `You are a precise document analyst. Analyze the following document text and provide a ${length} ${format}. Focus only on facts directly stated in the text.\n\nDocument Text:\n${documentText.slice(0, 100000)}`;
 
   const { text } = await generateText({
-    model: getLanguageModel("gemini-2.5-flash"),
+    model: getLanguageModel(),
     prompt,
   });
 

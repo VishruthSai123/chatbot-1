@@ -9,15 +9,12 @@ import {
 /*
  * A keyless web search.
  *
- * Grounded Gemini search is the better path — it returns a synthesised answer
- * and the pages it used — but it needs a key with quota. When that is not
- * available, the app still has to be able to answer "what happened today"
- * with real results rather than from memory.
- *
- * DuckDuckGo's HTML endpoint returns ordinary result links with no key and no
- * account. It is scraped defensively: a short timeout, a bounded number of
- * results, and a plain failure when it does not answer. The pages themselves
- * are then read through the same address checks as every other fetch.
+ * The free models this app runs on cannot search — none of them has a search
+ * tool — so the searching is done here instead of being delegated. DuckDuckGo's
+ * HTML endpoint returns ordinary result links with no key and no account. It is
+ * scraped defensively: a short timeout, a bounded number of results, and a plain
+ * failure when it does not answer. The pages themselves are then read through
+ * the same address checks as every other fetch.
  */
 
 /** Where the keyless search lives. */

@@ -13,6 +13,25 @@ export const titleModel: {
   provider: "openrouter",
 };
 
+/**
+ * The model that reads images.
+ *
+ * `openrouter/free` routes to a free model with vision when an image is in the
+ * request. A deployment that wants a specific vision model can set
+ * `OPENROUTER_VISION_MODEL` without changing the conversation's model.
+ */
+export const visionModel: {
+  description: string;
+  id: string;
+  name: string;
+  provider: string;
+} = {
+  description: "Free vision model for reading images",
+  id: process.env.OPENROUTER_VISION_MODEL?.trim() || "openrouter/free",
+  name: "Free Models Router",
+  provider: "openrouter",
+};
+
 export type ModelCapabilities = {
   tools: boolean;
   vision: boolean;
@@ -30,7 +49,7 @@ export type ChatModel = {
 
 /**
  * Curated list of high-quality free models on OpenRouter.
- * Google Gemini models are hidden from the selector per user configuration.
+ * Every model in the selector is a free OpenRouter model.
  */
 export const chatModels: ChatModel[] = [
   {

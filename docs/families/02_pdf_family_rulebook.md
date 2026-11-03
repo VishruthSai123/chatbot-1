@@ -181,8 +181,8 @@ The Right Pane dynamically mounts `<PdfStudioCanvas />` when an artifact has `ki
 ### Step 1: User Request
 - User attaches two PDFs in chat and prompts: *"Merge these two documents, but rotate page 2 of the second document by 90 degrees."*
 
-### Step 2: Gemini Tool Planning
-- Gemini planner identifies the operations and emits a structured two-step task:
+### Step 2: Model Tool Planning
+- The planner identifies the operations and emits a structured two-step task:
   1. `pdf_rotate_pages({ artifactId: "pdf_b", pages: [2], rotation: 90 })`
   2. `pdf_merge({ artifactIds: ["pdf_a", "pdf_b_rotated"], outputFilename: "merged_contract.pdf" })`
 

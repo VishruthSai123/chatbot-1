@@ -20,6 +20,7 @@ import {
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Artifact } from "./artifact";
+import { CapabilitiesDialog } from "./capabilities-dialog";
 import { ChatHeader } from "./chat-header";
 import { DataStreamHandler } from "./data-stream-handler";
 import { submitEditedMessage } from "./message-editor";
@@ -52,8 +53,22 @@ export function ChatShell() {
     null
   );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  const [capabilitiesFamily, setCapabilitiesFamily] = useState<
+    string | undefined
+  >(undefined);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
   const { setArtifact } = useArtifact();
+
+  /**
+   * The capability panel lives here rather than in the composer: it is opened
+   * from two places — the empty state and the button beside the composer — and
+   * an example it hands back has to land in the composer's input.
+   */
+  const showCapabilities = useCallback((familyId?: string) => {
+    setCapabilitiesFamily(familyId);
+    setCapabilitiesOpen(true);
+  }, []);
 
   const stopRef = useRef(stop);
   stopRef.current = stop;
@@ -116,7 +131,9 @@ export function ChatShell() {
         <div
           className={cn(
             "flex min-w-0 flex-col bg-sidebar transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            isArtifactVisible ? "w-[40%]" : "w-full"
+            // On a phone the artifact is a full-screen overlay, so the chat
+            // stays full width behind it; the split only applies from md up.
+            isArtifactVisible ? "w-full md:w-[40%]" : "w-full"
           )}
         >
           <ChatHeader
@@ -134,26 +151,26 @@ export function ChatShell() {
               isReadonly={isReadonly}
               messages={messages}
               onEditMessage={handleEditMessage}
+              onShowCapabilities={showCapabilities}
               regenerate={regenerate}
               selectedModelId={currentModelId}
+              sendMessage={sendMessage}
               setMessages={setMessages}
               status={status}
               votes={votes}
             />
 
-            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 pb-3 md:px-4 md:pb-4">
+            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-3 pb-3 md:px-4 md:pb-4">
               {!isReadonly && (
                 <MultimodalInput
                   attachments={attachments}
                   chatId={chatId}
                   editingMessage={editingMessage}
                   input={input}
-                  isLoading={isLoading}
-                  messages={messages}
                   onCancelEdit={handleCancelEdit}
                   onModelChange={setCurrentModelId}
+                  onShowCapabilities={showCapabilities}
                   selectedModelId={currentModelId}
-                  selectedVisibilityType={visibilityType}
                   sendMessage={
                     editingMessage ? handleSendEditedMessage : sendMessage
                   }
@@ -167,6 +184,20 @@ export function ChatShell() {
             </div>
           </div>
         </div>
+
+        <CapabilitiesDialog
+          initialFamily={capabilitiesFamily}
+          onOpenChange={setCapabilitiesOpen}
+          onUseExample={(text) => {
+            setInput(text);
+            document
+              .querySelector<HTMLTextAreaElement>(
+                '[data-testid="multimodal-input"]'
+              )
+              ?.focus();
+          }}
+          open={capabilitiesOpen}
+        />
 
         <Artifact
           addToolApprovalResponse={addToolApprovalResponse}
