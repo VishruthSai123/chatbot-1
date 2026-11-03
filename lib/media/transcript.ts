@@ -4,8 +4,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { binaryPath } from "./download";
+import { proxyArgsFromEnv } from "./proxy";
 import { cuesToTimestampedTranscript, parseVtt } from "./vtt";
 
 /**
@@ -119,6 +119,7 @@ export async function fetchVideoTranscript({
       "--no-warnings",
       "--no-playlist",
       "--skip-download",
+      ...proxyArgsFromEnv(),
       ...session,
       url,
     ]);
@@ -148,6 +149,7 @@ export async function fetchVideoTranscript({
       "vtt/srt/best",
       "-o",
       join(directory, "%(id)s.%(ext)s"),
+      ...proxyArgsFromEnv(),
       ...session,
       url,
     ]).catch(() => null);

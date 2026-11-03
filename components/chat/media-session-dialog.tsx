@@ -158,9 +158,9 @@ export function MediaSessionDialog({
         <DialogHeader>
           <DialogTitle>Media sessions</DialogTitle>
           <DialogDescription>
-            Instagram and Facebook only show their videos to a signed-in
-            visitor, and YouTube asks servers to prove they are not bots.
-            Connect your own session to download your own content.
+            Optional. Some platforms refuse to serve a video to a server. If a
+            download is refused, connecting your own session lets the app use
+            your access to your own content.
           </DialogDescription>
         </DialogHeader>
 

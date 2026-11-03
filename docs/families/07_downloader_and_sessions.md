@@ -90,7 +90,20 @@ from a serverless function it often answers "Sign in to confirm you're not a
 bot". The user's own YouTube session is the reliable way through, so `youtube`
 is one of the platforms a session can be stored for.
 
-Three smaller things help:
+### The fix that does not involve the user
+
+Asking every user for their Google session is a bad trade: most will not do it,
+and the ones who do are handing a session cookie to an app. The industry answer
+is that **the deployment routes its requests through an address YouTube treats
+as ordinary** — a residential or dedicated proxy. The public download sites do
+exactly this, at their own cost, instead of asking.
+
+So `YTDLP_PROXY` (or the platform's `HTTPS_PROXY`) is honoured on every yt-dlp
+call, and it is the first thing the error suggests. Cookies remain available for
+a personal deployment, or for a user who wants to download their own content
+from a platform that refuses anonymous requests.
+
+### Three smaller things help
 
 - **Client rotation.** YouTube decides whether a request looks human partly by
   which player client it claims to be, and the clients that pass change over

@@ -12,6 +12,7 @@ import {
   formatExpression,
   hasCombinedFormat,
 } from "@/lib/media/format";
+import { proxyArgsFromEnv } from "@/lib/media/proxy";
 import {
   detectPlatform,
   isAllowedMediaUrl,
@@ -199,6 +200,16 @@ function retryArgs(): string[] {
 }
 
 /**
+ * Whether the deployment can route around an address-based block.
+ *
+ * Used only to word an error honestly: with a proxy configured, a failure is
+ * about the video, not the address.
+ */
+export function hasProxy(): boolean {
+  return proxyArgsFromEnv().length > 0;
+}
+
+/**
  * Extractor arguments, when the deployment sets any.
  *
  * YouTube's bot check depends on which player client yt-dlp impersonates, and
@@ -378,6 +389,7 @@ export async function downloadMedia({
         "--no-playlist",
         "--no-progress",
         ...retryArgs(),
+        ...proxyArgsFromEnv(),
         ...session,
       ],
       deadline,
@@ -389,7 +401,7 @@ export async function downloadMedia({
       throw new Error(
         sessionHint(url, cookies) ??
           (isBotCheck(info.stderr)
-            ? "YouTube still bot-checked this download even with your session. The session has probably expired — reconnect it with /media."
+            ? "YouTube still blocked this download even with your session. The session has probably expired — reconnect it with /media — or the deployment needs YTDLP_PROXY."
             : undefined) ??
           firstUsefulLine(info.stderr) ??
           "That link could not be read. It may be private, deleted, or unsupported."
@@ -438,6 +450,7 @@ export async function downloadMedia({
         "-o",
         join(directory, "%(format_id)s.%(ext)s"),
         ...retryArgs(),
+        ...proxyArgsFromEnv(),
         ...session,
       ],
       deadline,
@@ -449,7 +462,7 @@ export async function downloadMedia({
       throw new Error(
         sessionHint(url, cookies) ??
           (isBotCheck(download.stderr)
-            ? "YouTube still bot-checked this download even with your session. The session has probably expired — reconnect it with /media."
+            ? "YouTube still blocked this download even with your session. The session has probably expired — reconnect it with /media — or the deployment needs YTDLP_PROXY."
             : undefined) ??
           firstUsefulLine(download.stderr) ??
           "The download failed."
@@ -571,7 +584,9 @@ function sessionHint(url: string, cookies?: string): string | undefined {
   const platform = detectPlatform(url);
 
   if (platform === "youtube") {
-    return "YouTube is asking this server to prove it is not a bot, which it does for datacenter addresses. Connect your own YouTube session with /media, then try again.";
+    return hasProxy()
+      ? "YouTube blocked this download even through the proxy. Connect your own YouTube session with /media, then try again."
+      : "YouTube blocks downloads from this server's address. The deployment can fix that once for everyone by setting YTDLP_PROXY; until then, you can connect your own YouTube session with /media.";
   }
 
   const name = platform === "instagram" ? "Instagram" : "Facebook";
