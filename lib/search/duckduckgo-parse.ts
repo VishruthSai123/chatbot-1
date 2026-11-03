@@ -117,3 +117,50 @@ export function parseDuckDuckGoResults(
 
   return hits;
 }
+
+/**
+ * Parses the results out of DuckDuckGo's *Lite* page.
+ *
+ * Lite is a different endpoint with a different shape — a table of anchors
+ * carrying `result-link`, each followed by a `result-snippet` cell. It exists
+ * because the two endpoints are blocked independently: when the HTML one
+ * answers 403, this one sometimes still answers.
+ */
+export function parseDuckDuckGoLite(html: string, maxResults = 6): SearchHit[] {
+  const hits: SearchHit[] = [];
+  const seen = new Set<string>();
+
+  // Both quote styles appear in the wild.
+  const anchorPattern =
+    /<a[^>]*class=['"]result-link['"][^>]*>([\s\S]*?)<\/a>/gi;
+  let match = anchorPattern.exec(html);
+
+  while (match !== null && hits.length < maxResults) {
+    const tag = /<a[^>]*>/i.exec(match[0])?.[0] ?? "";
+    const href = /href=['"]([^'"]+)['"]/i.exec(tag)?.[1];
+
+    if (href) {
+      const url = unwrapUrl(href);
+
+      if (url && isResultUrl(url) && !seen.has(url)) {
+        // The snippet is the next cell after the link.
+        const rest = html.slice(anchorPattern.lastIndex);
+        const snippet =
+          /<td[^>]*class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/i.exec(
+            rest
+          );
+
+        seen.add(url);
+        hits.push({
+          snippet: snippet ? htmlToText(snippet[1]) : "",
+          title: htmlToText(match[1]) || url,
+          url,
+        });
+      }
+    }
+
+    match = anchorPattern.exec(html);
+  }
+
+  return hits;
+}

@@ -82,3 +82,19 @@ shared `/api/tools/media` route — a `GET` lists what is connected, a `POST`
 connects or disconnects — so it costs no extra serverless function.
 
 The user connects one from the chat with `/media`.
+
+### YouTube
+
+YouTube serves most videos anonymously, but it bot-checks datacenter addresses:
+from a serverless function it often answers "Sign in to confirm you're not a
+bot". The user's own YouTube session is the reliable way through, so `youtube`
+is one of the platforms a session can be stored for.
+
+Two smaller things help:
+
+- every download is retried (`--retries 3`, `--fragment-retries 3`,
+  `--extractor-retries 2`), because datacenter addresses see more transient
+  failures;
+- `YTDLP_EXTRACTOR_ARGS` lets a deployment tune the player client without a
+  code change, e.g. `youtube:player_client=tv`. Which clients work changes over
+  time, so hard-coding one would be wrong within months.

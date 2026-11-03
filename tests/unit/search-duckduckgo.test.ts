@@ -2,9 +2,40 @@ import { expect, test } from "@playwright/test";
 
 import {
   isResultUrl,
+  parseDuckDuckGoLite,
   parseDuckDuckGoResults,
   unwrapUrl,
 } from "../../lib/search/duckduckgo-parse";
+
+/**
+ * A Lite result page, whose shape is a table of links and snippets.
+ */
+const LITE_PAGE = `
+<table>
+  <tr>
+    <td valign="top">1.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Freleases&amp;rut=abc" class='result-link'>Releases &middot; vercel/next.js - GitHub</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>
+      The React Framework. Contribute to vercel/next.js development.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">2.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="https://nextjs.org/blog" class='result-link'>Next.js Blog</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>News &amp; updates.</td>
+  </tr>
+</table>
+`;
 
 /**
  * A result page shaped like DuckDuckGo's.
@@ -122,5 +153,34 @@ test.describe("deciding what is a result", () => {
     expect(isResultUrl("https://duckduckgo.com/y.js")).toBe(false);
     expect(isResultUrl("javascript:alert(1)")).toBe(false);
     expect(isResultUrl("not a url")).toBe(false);
+  });
+});
+
+test.describe("parsing a Lite result page", () => {
+  test("reads the results out of it", () => {
+    const hits = parseDuckDuckGoLite(LITE_PAGE);
+
+    expect(hits).toHaveLength(2);
+    expect(hits[0].url).toBe("https://github.com/vercel/next.js/releases");
+    expect(hits[1].url).toBe("https://nextjs.org/blog");
+  });
+
+  test("pairs each snippet with its result", () => {
+    const hits = parseDuckDuckGoLite(LITE_PAGE);
+
+    expect(hits[0].snippet).toContain("The React Framework");
+    expect(hits[1].snippet).toBe("News & updates.");
+  });
+
+  test("strips markup and entities out of a title", () => {
+    const [first] = parseDuckDuckGoLite(LITE_PAGE);
+
+    expect(first.title).not.toContain("<");
+    expect(first.title).toContain("vercel/next.js");
+  });
+
+  test("respects the cap and survives an empty page", () => {
+    expect(parseDuckDuckGoLite(LITE_PAGE, 1)).toHaveLength(1);
+    expect(parseDuckDuckGoLite("")).toEqual([]);
   });
 });

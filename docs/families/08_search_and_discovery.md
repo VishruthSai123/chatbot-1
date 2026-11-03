@@ -15,10 +15,23 @@ wrong. So searching is not delegated to a model; it is done in the app.
 
 `lib/search/web.ts` does three things:
 
-1. **Find pages.** `lib/search/duckduckgo.ts` queries DuckDuckGo's HTML
-   endpoint. It needs no key and no account. The result page is parsed by
-   `lib/search/duckduckgo-parse.ts` (pure, unit-tested): result links are
-   unwrapped from DuckDuckGo's redirect, duplicates and internal links are
+1. **Find pages.** `lib/search/engines.ts` tries providers in order and stops at
+   the first that answers:
+
+   | Provider | Needs | Why |
+   | --- | --- | --- |
+   | Brave | `BRAVE_SEARCH_API_KEY` | Built to be called from a server — the reliable option |
+   | Tavily | `TAVILY_API_KEY` | Retrieval-oriented, clean result text |
+   | DuckDuckGo HTML | nothing | Works from residential addresses |
+   | DuckDuckGo Lite | nothing | A different endpoint, blocked independently |
+
+   The keyless endpoints treat datacenter addresses with suspicion — a
+   serverless function is one — so they can answer `403`. That is why the keyed
+   providers come first: without a key, search works or not depending on where
+   the function runs, and the error says so rather than showing a bare 403.
+
+   Result pages are parsed by `lib/search/duckduckgo-parse.ts` (pure,
+   unit-tested): redirect links are unwrapped, duplicates and internal links are
    dropped, and titles and snippets are reduced to text.
 2. **Read them.** The top three pages are fetched through the address checks
    below, and their text is extracted.

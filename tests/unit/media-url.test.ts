@@ -133,13 +133,15 @@ test.describe("knowing which videos are worth reading", () => {
 });
 
 test.describe("knowing which platforms need a session", () => {
-  test("Instagram and Facebook do", () => {
+  test("Instagram, Facebook and YouTube do", () => {
     expect(needsSession("https://www.instagram.com/reel/abc/")).toBe(true);
     expect(needsSession("https://www.facebook.com/watch/?v=123")).toBe(true);
+    // YouTube serves most videos anonymously, but bot-checks datacenter
+    // addresses — which is what the deployment runs on.
+    expect(needsSession("https://www.youtube.com/watch?v=abc")).toBe(true);
   });
 
   test("the rest do not", () => {
-    expect(needsSession("https://www.youtube.com/watch?v=abc")).toBe(false);
     expect(needsSession("https://www.tiktok.com/@user/video/123")).toBe(false);
     expect(needsSession("https://example.com/article")).toBe(false);
   });

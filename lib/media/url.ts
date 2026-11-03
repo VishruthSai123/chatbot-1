@@ -254,7 +254,13 @@ export function isVideoUrl(url: string): boolean {
 export function needsSession(url: string): boolean {
   const platform = detectPlatform(url);
 
-  return platform === "instagram" || platform === "facebook";
+  return (
+    platform === "instagram" ||
+    platform === "facebook" ||
+    // YouTube serves most videos anonymously, but it bot-checks datacenter
+    // addresses — which is exactly what a serverless function runs on.
+    platform === "youtube"
+  );
 }
 
 /**

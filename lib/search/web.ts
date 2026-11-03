@@ -8,7 +8,7 @@ import {
   today,
 } from "@/lib/ai/search/grounding";
 import { fetchPageText } from "@/lib/net/page";
-import { duckDuckGoSearch } from "@/lib/search/duckduckgo";
+import { searchProviders } from "@/lib/search/engines";
 
 /*
  * Searching the web.
@@ -63,7 +63,7 @@ function searchPrompt(query: string): string {
  * Searches the web and answers from the pages it finds.
  */
 export async function searchWeb(query: string): Promise<WebSearchResult> {
-  const hits = await duckDuckGoSearch(query);
+  const hits = await searchProviders(query);
 
   if (hits.length === 0) {
     throw new Error(

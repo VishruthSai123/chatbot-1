@@ -36,8 +36,14 @@ import {
  * - They are used for that user's own downloads and nothing else.
  */
 
-/** The platforms a session can be stored for. */
-export const SESSION_PLATFORMS = ["facebook", "instagram"] as const;
+/**
+ * The platforms a session can be stored for.
+ *
+ * YouTube is here because it bot-checks datacenter addresses: from a
+ * serverless function it often answers "Sign in to confirm you're not a bot".
+ * The user's own session is the reliable way through.
+ */
+export const SESSION_PLATFORMS = ["facebook", "instagram", "youtube"] as const;
 
 export type SessionPlatform = (typeof SESSION_PLATFORMS)[number];
 

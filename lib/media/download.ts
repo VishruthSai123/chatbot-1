@@ -180,6 +180,47 @@ async function assertResolvesToPublicAddress(url: string): Promise<void> {
 }
 
 /**
+ * Retry settings.
+ *
+ * A datacenter address gets transient 403s and dropped fragments far more often
+ * than a home connection, so a download is given a few chances before it is
+ * reported as failed.
+ */
+function retryArgs(): string[] {
+  return [
+    "--retries",
+    "3",
+    "--fragment-retries",
+    "3",
+    "--extractor-retries",
+    "2",
+  ];
+}
+
+/**
+ * Extractor arguments, when the deployment sets any.
+ *
+ * YouTube's bot check depends on which player client yt-dlp impersonates, and
+ * which clients work changes over time. Rather than hard-code a client that may
+ * be wrong next month, the deployment can set `YTDLP_EXTRACTOR_ARGS` — for
+ * example `youtube:player_client=tv` — without a code change.
+ */
+function extractorArgs(): string[] {
+  const configured = process.env.YTDLP_EXTRACTOR_ARGS?.trim();
+
+  if (!configured) {
+    return [];
+  }
+
+  // The variable may hold several extractor arguments, separated by ";".
+  return configured
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .flatMap((part) => ["--extractor-args", part]);
+}
+
+/**
  * Writes a cookie file for yt-dlp to use.
  *
  * The user's session is a credential, so it goes into a file that is removed
@@ -245,6 +286,8 @@ export async function downloadMedia({
       "--no-warnings",
       "--no-playlist",
       "--no-progress",
+      ...retryArgs(),
+      ...extractorArgs(),
       ...session,
       url,
     ]);
@@ -297,6 +340,8 @@ export async function downloadMedia({
       // a sound are told apart when they arrive in separate files.
       "-o",
       join(directory, "%(format_id)s.%(ext)s"),
+      ...retryArgs(),
+      ...extractorArgs(),
       ...session,
       url,
     ]);
@@ -439,5 +484,11 @@ function sessionHint(url: string, cookies?: string): string | undefined {
 
   const platform = detectPlatform(url);
 
-  return `${platform === "instagram" ? "Instagram" : "Facebook"} only serves its videos to a signed-in visitor. Connect your session from the media sessions panel, then try again.`;
+  if (platform === "youtube") {
+    return "YouTube is asking this server to prove it is not a bot, which it does for datacenter addresses. Connect your own YouTube session with /media, then try again.";
+  }
+
+  const name = platform === "instagram" ? "Instagram" : "Facebook";
+
+  return `${name} only serves its videos to a signed-in visitor. Connect your session from the media sessions panel, then try again.`;
 }

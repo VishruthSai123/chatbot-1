@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 const PLATFORM_LABELS: Record<string, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
+  youtube: "YouTube",
 };
 
 type SessionsResponse = {
@@ -158,7 +159,8 @@ export function MediaSessionDialog({
           <DialogTitle>Media sessions</DialogTitle>
           <DialogDescription>
             Instagram and Facebook only show their videos to a signed-in
-            visitor. Connect your own session to download your own content.
+            visitor, and YouTube asks servers to prove they are not bots.
+            Connect your own session to download your own content.
           </DialogDescription>
         </DialogHeader>
 
