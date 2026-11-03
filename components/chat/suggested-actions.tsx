@@ -6,14 +6,16 @@ import {
   DownloadIcon,
   FileTextIcon,
   ImageIcon,
+  Loader2Icon,
   MicIcon,
   NotebookPenIcon,
   SearchIcon,
   TableIcon,
 } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 
 import { capabilities, starterPrompts } from "@/lib/capabilities";
+import { type SampleFile, samples } from "@/lib/samples";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Suggestion } from "../ai-elements/suggestion";
@@ -43,13 +45,17 @@ type SuggestedActionsProps = {
   chatId: string;
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   onShowCapabilities?: (familyId?: string) => void;
+  onTrySample?: (sample: SampleFile) => Promise<void>;
 };
 
 function PureSuggestedActions({
   chatId,
   sendMessage,
   onShowCapabilities,
+  onTrySample,
 }: SuggestedActionsProps) {
+  const [busySample, setBusySample] = useState<string | null>(null);
+
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       window.history.pushState(
@@ -63,6 +69,26 @@ function PureSuggestedActions({
       });
     },
     [chatId, sendMessage]
+  );
+
+  const handleSample = useCallback(
+    async (sample: SampleFile) => {
+      if (!onTrySample) {
+        return;
+      }
+
+      setBusySample(sample.filename);
+
+      try {
+        await onTrySample(sample);
+      } catch {
+        // The upload helper already reports its own failures; nothing useful
+        // to add here beyond not leaving the button spinning.
+      } finally {
+        setBusySample(null);
+      }
+    },
+    [onTrySample]
   );
 
   return (
@@ -107,6 +133,34 @@ function PureSuggestedActions({
       </div>
 
       {/*
+        Samples exist so the first click can do something. A new user has no
+        PDF, no photo and no recording, so every tile above would otherwise
+        dead-end at "attach a file".
+      */}
+      {onTrySample ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">
+            Try a sample
+          </span>
+          {samples.map((sample) => (
+            <button
+              aria-label={`Try the sample ${sample.label}`}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-border/50 bg-card/40 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-border hover:bg-card/80 hover:text-foreground disabled:opacity-50"
+              disabled={busySample !== null}
+              key={sample.filename}
+              onClick={() => handleSample(sample)}
+              type="button"
+            >
+              {busySample === sample.filename ? (
+                <Loader2Icon className="size-3 animate-spin" />
+              ) : null}
+              {sample.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/*
         Two prompts on a phone, four from sm up. A horizontal scroller looked
         like a clipped row of buttons; a column reads as a list of choices.
       */}
@@ -136,6 +190,9 @@ export const SuggestedActions = memo(
       return false;
     }
     if (prevProps.onShowCapabilities !== nextProps.onShowCapabilities) {
+      return false;
+    }
+    if (prevProps.onTrySample !== nextProps.onTrySample) {
       return false;
     }
 

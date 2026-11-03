@@ -31,3 +31,6 @@ tsconfig.tsbuildinfo
 
 # yt-dlp binary, fetched at build time by scripts/fetch-ytdlp.mjs
 /.ytdlp/
+
+# A separate repository cloned into the workspace; not part of this app.
+quick-search/

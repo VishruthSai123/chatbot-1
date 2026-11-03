@@ -7,6 +7,7 @@ import {
   CircleCheck,
   CircleX,
   Copy,
+  Download,
   FileText,
   NotebookPen,
 } from "lucide-react";
@@ -335,6 +336,49 @@ export function NotebookToolCard({
     }
   }, [body]);
 
+  /**
+   * Saves the answer, with its sources, as Markdown.
+   *
+   * A generated study guide or summary is worth keeping, and a file is the only
+   * form that survives the chat.
+   */
+  const handleSave = useCallback(() => {
+    if (!body) {
+      return;
+    }
+
+    const sourceLines = citations
+      .map(
+        (citation, index) =>
+          `- ${citation.label ?? citation.title ?? `Source ${citation.index ?? index + 1}`}`
+      )
+      .join("\n");
+
+    const markdown = [
+      `# ${output?.title ?? config.label}`,
+      "",
+      body,
+      ...(sourceLines ? ["", "## Sources", "", sourceLines] : []),
+      "",
+    ].join("\n");
+
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const base =
+      (output?.title ?? config.label)
+        .replace(/[^\w\s.-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/^[.-]+/, "")
+        .slice(0, 60) || "notebook";
+
+    link.download = `${base}.md`;
+    link.href = url;
+    link.click();
+
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }, [body, citations, config.label, output?.title]);
+
   return (
     <div className="flex w-full max-w-[480px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90">
       {/* Header */}
@@ -357,18 +401,32 @@ export function NotebookToolCard({
         </div>
 
         {body ? (
-          <button
-            aria-label="Copy"
-            className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-            onClick={handleCopy}
-            type="button"
-          >
-            {hasCopied ? (
-              <Check className="size-3.5 text-emerald-500" />
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-          </button>
+          <div className="flex items-center gap-0.5">
+            {/*
+              A generated answer is worth keeping. Saving it as Markdown means
+              a study guide or a summary leaves the chat with its citations.
+            */}
+            <button
+              aria-label="Save as Markdown"
+              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+              onClick={handleSave}
+              type="button"
+            >
+              <Download className="size-3.5" />
+            </button>
+            <button
+              aria-label="Copy"
+              className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+              onClick={handleCopy}
+              type="button"
+            >
+              {hasCopied ? (
+                <Check className="size-3.5 text-emerald-500" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </button>
+          </div>
         ) : null}
       </div>
 

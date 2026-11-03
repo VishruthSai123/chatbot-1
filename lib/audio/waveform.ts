@@ -184,6 +184,43 @@ export function toVtt(blocks: { text: string; timestamp?: number }[]): string {
 }
 
 /**
+ * Builds an SRT caption track from transcript blocks.
+ *
+ * SRT is the format most video editors and players import, and it differs from
+ * WebVTT in two ways that matter: there is no header, and the decimal separator
+ * is a comma rather than a full stop.
+ */
+export function toSrt(blocks: { text: string; timestamp?: number }[]): string {
+  const timed = blocks.filter((block) => block.timestamp !== undefined);
+
+  if (timed.length === 0) {
+    return "";
+  }
+
+  const stamp = (seconds: number) => {
+    const total = Math.max(0, seconds);
+    const hours = String(Math.floor(total / 3600)).padStart(2, "0");
+    const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+    const rest = String(Math.floor(total % 60)).padStart(2, "0");
+
+    return `${hours}:${minutes}:${rest},000`;
+  };
+
+  const cues: string[] = [];
+
+  timed.forEach((block, index) => {
+    const start = block.timestamp ?? 0;
+    const next = timed[index + 1];
+    const end = next?.timestamp ?? start + 60;
+    const text = block.text.trim() || formatTimestamp(start);
+
+    cues.push(`${index + 1}\n${stamp(start)} --> ${stamp(end)}\n${text}\n`);
+  });
+
+  return `${cues.join("\n")}`;
+}
+
+/**
  * Finds timestamps in a transcript.
  *
  * The transcription writes them inline — "so the first quarter

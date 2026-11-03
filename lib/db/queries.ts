@@ -8,6 +8,7 @@ import {
   eq,
   gt,
   gte,
+  ilike,
   inArray,
   lt,
   type SQL,
@@ -440,6 +441,61 @@ export async function getDocumentsById({ id }: { id: string }) {
       .orderBy(asc(document.createdAt));
 
     return documents;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * A user's documents, newest first.
+ *
+ * This is the Library: everything the tools have produced, without the file
+ * bodies. `content` is deliberately not selected — a document descriptor can
+ * carry a whole document's text, and a list of fifty of them would be megabytes
+ * for a screen that only needs titles.
+ */
+export async function getDocumentsForUser({
+  kind,
+  limit = 50,
+  offset = 0,
+  query,
+  userId,
+}: {
+  kind?:
+    | "audio"
+    | "code"
+    | "doc"
+    | "image"
+    | "notebook"
+    | "pdf"
+    | "sheet"
+    | "text";
+  limit?: number;
+  offset?: number;
+  query?: string;
+  userId: string;
+}): Promise<
+  { createdAt: Date; id: string; kind: string | null; title: string }[]
+> {
+  try {
+    return await db
+      .select({
+        createdAt: document.createdAt,
+        id: document.id,
+        kind: document.kind,
+        title: document.title,
+      })
+      .from(document)
+      .where(
+        and(
+          eq(document.userId, userId),
+          kind ? eq(document.kind, kind) : undefined,
+          query ? ilike(document.title, `%${query}%`) : undefined
+        )
+      )
+      .orderBy(desc(document.createdAt))
+      .limit(limit)
+      .offset(offset);
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

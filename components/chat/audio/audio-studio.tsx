@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Captions,
   Download,
   FileAudio,
   Loader2,
@@ -20,6 +21,7 @@ import {
   extractTimestamps,
   formatTimestamp,
   normalisePeaks,
+  toSrt,
   toTranscriptBlocks,
   toVtt,
 } from "@/lib/audio/waveform";
@@ -267,22 +269,60 @@ export const AudioStudio = memo(function InnerAudioStudio({
           </div>
         </div>
 
-        {mediaUrl ? (
-          <button
-            className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-            onClick={() => {
-              const source = `/api/tools/audio/file?documentId=${encodeURIComponent(
-                documentId ?? ""
-              )}`;
+        <div className="flex items-center gap-1.5">
+          {/*
+            Captions are the other half of a transcript: the studio already
+            builds a WebVTT track for the player, so exporting it — and the SRT
+            that most editors want — costs nothing.
+          */}
+          {transcript ? (
+            <>
+              <button
+                aria-label="Download captions as WebVTT"
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() =>
+                  downloadText(
+                    ref?.title ?? "captions",
+                    "vtt",
+                    toVtt(blocks) || "WEBVTT\n"
+                  )
+                }
+                type="button"
+              >
+                <Captions className="size-3" />
+                VTT
+              </button>
+              <button
+                aria-label="Download captions as SRT"
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() =>
+                  downloadText(ref?.title ?? "captions", "srt", toSrt(blocks))
+                }
+                type="button"
+              >
+                <Captions className="size-3" />
+                SRT
+              </button>
+            </>
+          ) : null}
 
-              window.open(source, "_blank", "noopener");
-            }}
-            type="button"
-          >
-            <Download className="size-3" />
-            Download
-          </button>
-        ) : null}
+          {mediaUrl ? (
+            <button
+              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => {
+                const source = `/api/tools/audio/file?documentId=${encodeURIComponent(
+                  documentId ?? ""
+                )}`;
+
+                window.open(source, "_blank", "noopener");
+              }}
+              type="button"
+            >
+              <Download className="size-3" />
+              Download
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {/* Waveform + transport */}
@@ -394,3 +434,34 @@ export const AudioStudio = memo(function InnerAudioStudio({
     </div>
   );
 });
+
+/**
+ * Saves a caption track as a file.
+ *
+ * Built in the browser from the transcript that is already on screen, so
+ * nothing is uploaded and no endpoint is needed.
+ */
+function downloadText(name: string, extension: "srt" | "vtt", text: string) {
+  if (!text.trim()) {
+    return;
+  }
+
+  const blob = new Blob([text], {
+    type:
+      extension === "vtt" ? "text/vtt;charset=utf-8" : "application/x-subrip",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const base =
+    name
+      .replace(/[^\w\s.-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/^[.-]+/, "")
+      .slice(0, 60) || "captions";
+
+  link.download = `${base}.${extension}`;
+  link.href = url;
+  link.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

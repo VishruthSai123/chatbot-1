@@ -17,7 +17,9 @@ import {
   useArtifact,
   useArtifactSelector,
 } from "@/hooks/use-artifact";
+import type { SampleFile } from "@/lib/samples";
 import type { Attachment, ChatMessage } from "@/lib/types";
+import { uploadFile } from "@/lib/upload/client";
 import { cn } from "@/lib/utils";
 import { Artifact } from "./artifact";
 import { CapabilitiesDialog } from "./capabilities-dialog";
@@ -69,6 +71,56 @@ export function ChatShell() {
     setCapabilitiesFamily(familyId);
     setCapabilitiesOpen(true);
   }, []);
+
+  /**
+   * Runs a sample through the real pipeline.
+   *
+   * The file is fetched, uploaded like any attachment, and sent with the
+   * prompt that demonstrates it — so "try it" exercises exactly the same path
+   * a user's own file would.
+   */
+  const handleTrySample = useCallback(
+    async (sample: SampleFile) => {
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+      try {
+        const response = await fetch(`${basePath}${sample.href}`);
+
+        if (!response.ok) {
+          throw new Error("The sample file could not be loaded.");
+        }
+
+        const blob = await response.blob();
+        const file = new File([blob], sample.filename, {
+          type: sample.mediaType,
+        });
+        const uploaded = await uploadFile(file, { chatId });
+
+        window.history.pushState({}, "", `${basePath}/chat/${chatId}`);
+        setCapabilitiesOpen(false);
+
+        // Built as a variable rather than inline: the file part carries
+        // `documentId`, which the SDK's type does not name but the app reads.
+        const filePart = {
+          documentId: uploaded.documentId,
+          filename: uploaded.name,
+          mediaType: uploaded.contentType,
+          name: uploaded.name,
+          type: "file" as const,
+          url: uploaded.url,
+        };
+
+        sendMessage({
+          parts: [filePart, { text: sample.prompt, type: "text" as const }],
+          role: "user",
+        });
+      } catch (error: any) {
+        console.error("Sample failed:", error);
+        throw error;
+      }
+    },
+    [chatId, sendMessage]
+  );
 
   const stopRef = useRef(stop);
   stopRef.current = stop;
@@ -139,6 +191,7 @@ export function ChatShell() {
           <ChatHeader
             chatId={chatId}
             isReadonly={isReadonly}
+            messages={messages}
             selectedVisibilityType={visibilityType}
           />
 
@@ -152,6 +205,7 @@ export function ChatShell() {
               messages={messages}
               onEditMessage={handleEditMessage}
               onShowCapabilities={showCapabilities}
+              onTrySample={handleTrySample}
               regenerate={regenerate}
               selectedModelId={currentModelId}
               sendMessage={sendMessage}
@@ -188,6 +242,7 @@ export function ChatShell() {
         <CapabilitiesDialog
           initialFamily={capabilitiesFamily}
           onOpenChange={setCapabilitiesOpen}
+          onTrySample={handleTrySample}
           onUseExample={(text) => {
             setInput(text);
             document

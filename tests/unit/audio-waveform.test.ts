@@ -5,6 +5,7 @@ import {
   extractTimestamps,
   formatTimestamp,
   normalisePeaks,
+  toSrt,
   toTranscriptBlocks,
   toVtt,
 } from "../../lib/audio/waveform";
@@ -167,6 +168,32 @@ test.describe("caption track", () => {
 
   test("a transcript with no timecodes makes no track", () => {
     expect(toVtt(toTranscriptBlocks(extractTimestamps("No markers.")))).toBe(
+      ""
+    );
+  });
+});
+
+test.describe("the SRT track", () => {
+  test("uses the SRT timestamp form, with a comma", () => {
+    const srt = toSrt(
+      toTranscriptBlocks(extractTimestamps("[00:01] Hello there. [00:05] Bye."))
+    );
+
+    expect(srt).toContain("00:00:01,000 --> 00:00:05,000");
+    expect(srt).not.toContain("WEBVTT");
+  });
+
+  test("numbers the cues from one", () => {
+    const srt = toSrt(
+      toTranscriptBlocks(extractTimestamps("[00:01] One. [00:05] Two."))
+    );
+
+    expect(srt.startsWith("1\n")).toBe(true);
+    expect(srt).toContain("\n2\n");
+  });
+
+  test("a transcript with no timecodes makes no track", () => {
+    expect(toSrt(toTranscriptBlocks(extractTimestamps("No markers.")))).toBe(
       ""
     );
   });

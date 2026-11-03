@@ -3,6 +3,7 @@ import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { useMessages } from "@/hooks/use-messages";
 import type { Vote } from "@/lib/db/schema";
+import type { SampleFile } from "@/lib/samples";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useDataStream } from "./data-stream-provider";
@@ -25,6 +26,7 @@ type MessagesProps = {
   onEditMessage?: (message: ChatMessage) => void;
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   onShowCapabilities?: (familyId?: string) => void;
+  onTrySample?: (sample: SampleFile) => Promise<void>;
 };
 
 function PureMessages({
@@ -42,6 +44,7 @@ function PureMessages({
   onEditMessage,
   sendMessage,
   onShowCapabilities,
+  onTrySample,
 }: MessagesProps) {
   const {
     containerRef: messagesContainerRef,
@@ -85,6 +88,7 @@ function PureMessages({
             <SuggestedActions
               chatId={chatId}
               onShowCapabilities={onShowCapabilities}
+              onTrySample={onTrySample}
               sendMessage={sendMessage}
             />
           </div>

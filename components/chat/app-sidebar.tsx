@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  LibraryIcon,
   MessageSquareIcon,
   PanelLeftIcon,
   PenSquareIcon,
@@ -129,6 +130,18 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   >
                     <PenSquareIcon className="size-4" />
                     <span className="font-medium">New chat</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    className="rounded-lg text-sidebar-foreground/40 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    tooltip="Library"
+                  >
+                    <Link href="/library" onClick={closeMobile}>
+                      <LibraryIcon className="size-4" />
+                      <span className="text-[13px]">Library</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 {user ? (

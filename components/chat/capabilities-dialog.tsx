@@ -5,12 +5,13 @@ import {
   DownloadIcon,
   FileTextIcon,
   ImageIcon,
+  Loader2Icon,
   MicIcon,
   NotebookPenIcon,
   SearchIcon,
   TableIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   Dialog,
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { type Capability, capabilities } from "@/lib/capabilities";
+import { type SampleFile, sampleFor } from "@/lib/samples";
 import { cn } from "@/lib/utils";
 
 /**
@@ -47,17 +49,41 @@ const ICONS = {
 export function CapabilitiesDialog({
   initialFamily,
   onOpenChange,
+  onTrySample,
   onUseExample,
   open,
 }: {
   /** The family to open on, when the panel was opened from its tile. */
   initialFamily?: string;
   onOpenChange?: (open: boolean) => void;
+  /** Runs a sample file through the real pipeline. */
+  onTrySample?: (sample: SampleFile) => Promise<void>;
   /** Puts an example into the composer. */
   onUseExample?: (text: string) => void;
   open: boolean;
 }) {
   const [selected, setSelected] = useState<string | undefined>(initialFamily);
+  const [busy, setBusy] = useState(false);
+
+  const handleSample = useCallback(
+    async (sample: SampleFile) => {
+      if (!onTrySample) {
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        await onTrySample(sample);
+        onOpenChange?.(false);
+      } catch {
+        // The upload helper reports its own failures.
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onOpenChange, onTrySample]
+  );
 
   // The tile that opened the panel decides which family is shown; with no
   // tile, the first family is shown rather than an empty half-panel.
@@ -118,6 +144,22 @@ export function CapabilitiesDialog({
                   </button>
                 ))}
               </div>
+
+              {sampleFor(active.id) && onTrySample ? (
+                <button
+                  className="mt-2.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border/60 bg-card px-2 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  disabled={Boolean(busy)}
+                  onClick={() =>
+                    handleSample(sampleFor(active.id) as SampleFile)
+                  }
+                  type="button"
+                >
+                  {busy ? (
+                    <Loader2Icon className="size-3 animate-spin" />
+                  ) : null}
+                  Try it with a sample file
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

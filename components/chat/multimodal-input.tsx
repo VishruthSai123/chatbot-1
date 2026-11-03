@@ -7,6 +7,7 @@ import {
   ArrowUpIcon,
   BrainIcon,
   EyeIcon,
+  EyeOffIcon,
   LockIcon,
   SparklesIcon,
   WrenchIcon,
@@ -43,6 +44,7 @@ import {
   chatModels,
   DEFAULT_CHAT_MODEL,
   type ModelCapabilities,
+  modelCapabilitiesMap,
 } from "@/lib/ai/models";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import {
@@ -113,6 +115,15 @@ function PureMultimodalInput({
   const router = useRouter();
   const { setTheme, resolvedTheme } = useTheme();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const selectedModelName =
+    chatModels.find((model) => model.id === selectedModelId)?.name ??
+    selectedModelId;
+  const modelSeesImages = modelCapabilitiesMap[selectedModelId]?.vision ?? true;
+  const hasImageAttachment = attachments.some((attachment) =>
+    attachment.contentType?.startsWith("image/")
+  );
+  const visionWarning = hasImageAttachment && !modelSeesImages;
   const { width } = useWindowSize();
   const hasAutoFocused = useRef(false);
   useEffect(() => {
@@ -625,6 +636,29 @@ function PureMultimodalInput({
           />
         ) : null}
       </div>
+
+      {/*
+        An image attached to a model that cannot see is a silent failure: the
+        request either errors or the model answers as if nothing was attached.
+        Saying so before the send is the whole fix.
+      */}
+      {visionWarning ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-snug text-amber-700 dark:text-amber-300">
+          <EyeOffIcon className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {selectedModelName} cannot see images.
+          </span>
+          {onModelChange ? (
+            <button
+              className="cursor-pointer rounded-md border border-amber-500/40 px-2 py-0.5 font-medium transition-colors hover:bg-amber-500/10"
+              onClick={() => onModelChange(DEFAULT_CHAT_MODEL)}
+              type="button"
+            >
+              Switch to a vision model
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <BorderBeam
         active={true}

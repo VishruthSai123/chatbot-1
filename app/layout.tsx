@@ -1,19 +1,35 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import "./globals.css";
 import { SessionProvider } from "next-auth/react";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const metadata: Metadata = {
-  description: "Next.js chatbot template using the AI SDK.",
-  metadataBase: new URL("https://chat.vercel.ai"),
-  title: "Next.js Chatbot Template",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SuperiorAI",
+  },
+  applicationName: "SuperiorAI",
+  description:
+    "A workbench for images, PDFs, spreadsheets, documents, audio, notebooks and research.",
+  icons: {
+    apple: `${basePath}/icons/apple-touch-icon.png`,
+    icon: `${basePath}/icons/icon-192.png`,
+  },
+  metadataBase: new URL("https://chatbot-1-beige.vercel.app"),
+  title: "SuperiorAI",
 };
 
 export const viewport: Viewport = {
-  maximumScale: 1,
+  // No `maximumScale`: blocking pinch-zoom is an accessibility failure, and a
+  // chat app with code and documents in it is exactly where people zoom.
+  initialScale: 1,
   themeColor: [
     { color: "hsl(0 0% 100%)", media: "(prefers-color-scheme: light)" },
     { color: "hsl(240deg 10% 3.92%)", media: "(prefers-color-scheme: dark)" },
@@ -54,6 +70,7 @@ export default function RootLayout({
             basePath={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/auth`}
           >
             <TooltipProvider>{children}</TooltipProvider>
+            <ServiceWorkerRegistrar />
           </SessionProvider>
         </ThemeProvider>
       </body>
