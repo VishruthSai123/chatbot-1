@@ -231,8 +231,21 @@ function extractorArgs(): string[] {
  */
 const YOUTUBE_CLIENTS = ["tv", "web_safari", "android_vr"];
 
-/** How long a retry may take, so a rotation cannot run past the route's budget. */
+/** How long a retry may take. */
 const RETRY_TIMEOUT_MS = 45_000;
+
+/**
+ * The most time the whole download may spend inside yt-dlp.
+ *
+ * The route that calls this has a 120-second budget, and the file still has to
+ * be stored afterwards. Rotating clients without a deadline could easily run
+ * past that and have the function killed mid-download — a worse outcome than a
+ * clean error, because the user sees nothing at all.
+ */
+const YTDLP_BUDGET_MS = 100_000;
+
+/** Below this, a retry is not worth starting. */
+const MIN_RETRY_MS = 15_000;
 
 /**
  * Runs yt-dlp, rotating YouTube player clients when the bot check fires.
@@ -240,18 +253,28 @@ const RETRY_TIMEOUT_MS = 45_000;
  * This is the difference between "YouTube does not work from this server" and
  * "YouTube works unless it is having a bad day": a bot check on one client is
  * retried on the next before the user is told anything.
+ *
+ * `deadline` is shared across the whole download, so the rotation can never
+ * spend more time than the route has.
  */
 async function runYtDlpResilient({
   args,
+  deadline,
   platform,
   url,
 }: {
   /** Everything except the extractor arguments and the URL. */
   args: string[];
+  deadline: number;
   platform: string;
   url: string;
 }): Promise<{ code: number; stderr: string; stdout: string }> {
-  const first = await runYtDlp([...args, ...extractorArgs(), url]);
+  const remaining = () => deadline - Date.now();
+
+  const first = await runYtDlp(
+    [...args, ...extractorArgs(), url],
+    Math.max(MIN_RETRY_MS, Math.min(DOWNLOAD_TIMEOUT_MS, remaining()))
+  );
 
   if (first.code === 0 || platform !== "youtube" || !isBotCheck(first.stderr)) {
     return first;
@@ -260,10 +283,15 @@ async function runYtDlpResilient({
   console.warn("YouTube bot-checked the download; rotating player clients.");
 
   for (const client of YOUTUBE_CLIENTS) {
+    if (remaining() < MIN_RETRY_MS) {
+      console.warn("No time left to rotate YouTube player clients.");
+      break;
+    }
+
     // biome-ignore lint/performance/noAwaitInLoops: each client is a fallback for the last, so they must be tried in order
     const attempt = await runYtDlp(
       [...args, "--extractor-args", `youtube:player_client=${client}`, url],
-      RETRY_TIMEOUT_MS
+      Math.min(RETRY_TIMEOUT_MS, remaining())
     );
 
     if (attempt.code === 0) {
@@ -341,6 +369,8 @@ export async function downloadMedia({
       : undefined;
     const session = cookieFile ? ["--cookies", cookieFile] : [];
 
+    const deadline = Date.now() + YTDLP_BUDGET_MS;
+
     const info = await runYtDlpResilient({
       args: [
         "--dump-single-json",
@@ -350,6 +380,7 @@ export async function downloadMedia({
         ...retryArgs(),
         ...session,
       ],
+      deadline,
       platform: detectPlatform(url),
       url,
     });
@@ -409,6 +440,7 @@ export async function downloadMedia({
         ...retryArgs(),
         ...session,
       ],
+      deadline,
       platform: detectPlatform(url),
       url,
     });
