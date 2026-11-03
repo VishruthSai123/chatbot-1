@@ -469,6 +469,7 @@ export async function getDocumentsForUser({
     | "notebook"
     | "pdf"
     | "sheet"
+    | "slides"
     | "text";
   limit?: number;
   offset?: number;

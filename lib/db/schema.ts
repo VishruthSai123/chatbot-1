@@ -86,6 +86,7 @@ export const document = pgTable(
         "notebook",
         "doc",
         "audio",
+        "slides",
       ],
     })
       .notNull()

@@ -23,6 +23,7 @@ const documentSchema = z.object({
     "notebook",
     "doc",
     "audio",
+    "slides",
   ]),
   title: z.string(),
 });
@@ -35,6 +36,7 @@ const KINDS = [
   "notebook",
   "pdf",
   "sheet",
+  "slides",
   "text",
 ] as const;
 

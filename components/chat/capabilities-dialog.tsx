@@ -8,6 +8,7 @@ import {
   Loader2Icon,
   MicIcon,
   NotebookPenIcon,
+  PresentationIcon,
   SearchIcon,
   TableIcon,
 } from "lucide-react";
@@ -42,6 +43,7 @@ const ICONS = {
   "file-text": FileTextIcon,
   image: ImageIcon,
   notebook: NotebookPenIcon,
+  presentation: PresentationIcon,
   search: SearchIcon,
   table: TableIcon,
 } as const;

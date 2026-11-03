@@ -20,6 +20,7 @@ import { imageArtifact } from "@/artifacts/image/client";
 import { notebookArtifact } from "@/artifacts/notebook/client";
 import { pdfArtifact } from "@/artifacts/pdf/client";
 import { sheetArtifact } from "@/artifacts/sheet/client";
+import { slidesArtifact } from "@/artifacts/slides/client";
 import { textArtifact } from "@/artifacts/text/client";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document, Vote } from "@/lib/db/schema";
@@ -42,6 +43,7 @@ export const artifactDefinitions = [
   notebookArtifact,
   docArtifact,
   audioArtifact,
+  slidesArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
 export type ImageToolMode =

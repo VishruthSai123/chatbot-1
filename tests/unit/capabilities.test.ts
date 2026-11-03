@@ -4,7 +4,7 @@ import { capabilities, starterPrompts } from "../../lib/capabilities";
 
 test.describe("the capability catalogue", () => {
   test("names every family the app has", () => {
-    expect(capabilities).toHaveLength(8);
+    expect(capabilities).toHaveLength(9);
 
     const names = capabilities.map((item) => item.name);
 
@@ -16,6 +16,7 @@ test.describe("the capability catalogue", () => {
       "Audio & video",
       "Notebooks",
       "Research",
+      "Slides",
       "Downloads",
     ]);
   });

@@ -75,6 +75,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "postgres": "^3.4.9",
+    "pptxgenjs": "^4.0.1",
     "prosemirror-example-setup": "^1.2.3",
     "prosemirror-inputrules": "^1.5.1",
     "prosemirror-markdown": "^1.13.4",

@@ -25,7 +25,8 @@ export type Capability = {
     | "audio"
     | "notebook"
     | "search"
-    | "download";
+    | "download"
+    | "presentation";
 };
 
 export const capabilities: Capability[] = [
@@ -105,6 +106,17 @@ export const capabilities: Capability[] = [
     icon: "search",
     id: "research",
     name: "Research",
+  },
+  {
+    description: "Generate a deck you can preview, restyle and download.",
+    examples: [
+      "Make a 10-slide deck about our Q4 results",
+      "Turn this report into a presentation",
+      "Create a pitch deck for a coffee subscription",
+    ],
+    icon: "presentation",
+    id: "slides",
+    name: "Slides",
   },
   {
     description: "Save video and audio from a link.",

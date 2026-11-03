@@ -80,6 +80,7 @@ import {
   sheetRemoveDuplicates,
   sheetSummaryStats,
 } from "@/lib/ai/tools/sheet-tools";
+import { slidesCreate, slidesEdit } from "@/lib/ai/tools/slides-tools";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { readUrl, webSearch } from "@/lib/ai/tools/web-search";
 import { isProductionEnvironment } from "@/lib/constants";
@@ -512,6 +513,8 @@ export async function POST(request: Request) {
                   "audioTranscribe",
                   "audioOpen",
                   "downloadMedia",
+                  "slidesCreate",
+                  "slidesEdit",
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
@@ -757,6 +760,8 @@ export async function POST(request: Request) {
               activeSheet,
               session,
             }),
+            slidesCreate: slidesCreate({ session }),
+            slidesEdit: slidesEdit({ session }),
             updateDocument: updateDocument({
               dataStream,
               modelId: chatModel,
