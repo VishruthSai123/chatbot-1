@@ -18,6 +18,7 @@ import {
   isPublicAddress,
   needsSession,
 } from "@/lib/media/url";
+import { firstUsefulLine, isBotCheck } from "@/lib/media/ytdlp-errors";
 
 /**
  * Driving yt-dlp.
@@ -221,6 +222,65 @@ function extractorArgs(): string[] {
 }
 
 /**
+ * The player clients to try when YouTube bot-checks the server.
+ *
+ * YouTube decides whether a request looks human partly by which client it
+ * claims to be. The clients that pass change over time — `tv` has been the most
+ * reliable, `web_safari` and `android_vr` often work when it does not — so the
+ * downloader tries a few in turn instead of hard-coding one.
+ */
+const YOUTUBE_CLIENTS = ["tv", "web_safari", "android_vr"];
+
+/** How long a retry may take, so a rotation cannot run past the route's budget. */
+const RETRY_TIMEOUT_MS = 45_000;
+
+/**
+ * Runs yt-dlp, rotating YouTube player clients when the bot check fires.
+ *
+ * This is the difference between "YouTube does not work from this server" and
+ * "YouTube works unless it is having a bad day": a bot check on one client is
+ * retried on the next before the user is told anything.
+ */
+async function runYtDlpResilient({
+  args,
+  platform,
+  url,
+}: {
+  /** Everything except the extractor arguments and the URL. */
+  args: string[];
+  platform: string;
+  url: string;
+}): Promise<{ code: number; stderr: string; stdout: string }> {
+  const first = await runYtDlp([...args, ...extractorArgs(), url]);
+
+  if (first.code === 0 || platform !== "youtube" || !isBotCheck(first.stderr)) {
+    return first;
+  }
+
+  console.warn("YouTube bot-checked the download; rotating player clients.");
+
+  for (const client of YOUTUBE_CLIENTS) {
+    // biome-ignore lint/performance/noAwaitInLoops: each client is a fallback for the last, so they must be tried in order
+    const attempt = await runYtDlp(
+      [...args, "--extractor-args", `youtube:player_client=${client}`, url],
+      RETRY_TIMEOUT_MS
+    );
+
+    if (attempt.code === 0) {
+      console.log(`YouTube accepted the ${client} client.`);
+      return attempt;
+    }
+
+    if (!isBotCheck(attempt.stderr)) {
+      // A different failure — rotating again would not help.
+      return attempt;
+    }
+  }
+
+  return first;
+}
+
+/**
  * Writes a cookie file for yt-dlp to use.
  *
  * The user's session is a credential, so it goes into a file that is removed
@@ -281,20 +341,25 @@ export async function downloadMedia({
       : undefined;
     const session = cookieFile ? ["--cookies", cookieFile] : [];
 
-    const info = await runYtDlp([
-      "--dump-single-json",
-      "--no-warnings",
-      "--no-playlist",
-      "--no-progress",
-      ...retryArgs(),
-      ...extractorArgs(),
-      ...session,
+    const info = await runYtDlpResilient({
+      args: [
+        "--dump-single-json",
+        "--no-warnings",
+        "--no-playlist",
+        "--no-progress",
+        ...retryArgs(),
+        ...session,
+      ],
+      platform: detectPlatform(url),
       url,
-    ]);
+    });
 
     if (info.code !== 0) {
       throw new Error(
         sessionHint(url, cookies) ??
+          (isBotCheck(info.stderr)
+            ? "YouTube still bot-checked this download even with your session. The session has probably expired — reconnect it with /media."
+            : undefined) ??
           firstUsefulLine(info.stderr) ??
           "That link could not be read. It may be private, deleted, or unsupported."
       );
@@ -322,33 +387,40 @@ export async function downloadMedia({
       : [];
     const combined = hasCombinedFormat(formats);
 
-    const download = await runYtDlp([
-      "--no-playlist",
-      "--no-warnings",
-      "--no-progress",
-      "--max-filesize",
-      `${MAX_BYTES}`,
-      // No FFmpeg in this deployment, so the container is left exactly as the
-      // platform served it. Without this, yt-dlp tries to "fix" an m4a and fails
-      // with "ffprobe and ffmpeg not found".
-      "--fixup",
-      "never",
-      "-f",
-      formatExpression({ combined, format, quality }),
-      // The name carries the format it came from, so the file can be matched
-      // back to the platform's own description of it. That is how a picture and
-      // a sound are told apart when they arrive in separate files.
-      "-o",
-      join(directory, "%(format_id)s.%(ext)s"),
-      ...retryArgs(),
-      ...extractorArgs(),
-      ...session,
+    const download = await runYtDlpResilient({
+      args: [
+        "--no-playlist",
+        "--no-warnings",
+        "--no-progress",
+        "--max-filesize",
+        `${MAX_BYTES}`,
+        // No FFmpeg in this deployment, so the container is left exactly as the
+        // platform served it. Without this, yt-dlp tries to "fix" an m4a and
+        // fails with "ffprobe and ffmpeg not found".
+        "--fixup",
+        "never",
+        "-f",
+        formatExpression({ combined, format, quality }),
+        // The name carries the format it came from, so the file can be matched
+        // back to the platform's own description of it. That is how a picture
+        // and a sound are told apart when they arrive in separate files.
+        "-o",
+        join(directory, "%(format_id)s.%(ext)s"),
+        ...retryArgs(),
+        ...session,
+      ],
+      platform: detectPlatform(url),
       url,
-    ]);
+    });
 
     if (download.code !== 0) {
       throw new Error(
-        firstUsefulLine(download.stderr) || "The download failed."
+        sessionHint(url, cookies) ??
+          (isBotCheck(download.stderr)
+            ? "YouTube still bot-checked this download even with your session. The session has probably expired — reconnect it with /media."
+            : undefined) ??
+          firstUsefulLine(download.stderr) ??
+          "The download failed."
       );
     }
 
@@ -449,24 +521,6 @@ async function fetchThumbnail(
     // so a failure here is not worth reporting to the user.
     console.debug("Could not fetch the thumbnail:", cause);
   }
-}
-
-/**
- * The first line of yt-dlp's error output that is worth showing a user.
- */
-function firstUsefulLine(stderr: string): string | undefined {
-  const lines = stderr
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.length > 0 &&
-        !line.startsWith("[") &&
-        !line.startsWith("WARNING") &&
-        !line.startsWith("ERROR: unable to download")
-    );
-
-  return lines[0];
 }
 
 /**

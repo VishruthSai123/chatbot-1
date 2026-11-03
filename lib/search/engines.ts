@@ -149,6 +149,41 @@ async function tavilySearch(query: string, key: string): Promise<SearchHit[]> {
     }));
 }
 
+/**
+ * Serper.
+ *
+ * A Google Search API: it returns the organic results Google would have shown,
+ * which is exactly the shape the rest of this file expects. It is built for
+ * servers, so it does not care that the caller is a datacenter address.
+ */
+async function serperSearch(query: string, key: string): Promise<SearchHit[]> {
+  const { body, status } = await fetchText("https://google.serper.dev/search", {
+    body: JSON.stringify({ num: MAX_RESULTS, q: query }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": key,
+    },
+    method: "POST",
+  });
+
+  if (status !== 200) {
+    throw new Error(`Serper answered ${status}.`);
+  }
+
+  const data = JSON.parse(body) as {
+    organic?: { link?: string; snippet?: string; title?: string }[];
+  };
+
+  return (data.organic ?? [])
+    .filter((result) => result.link)
+    .slice(0, MAX_RESULTS)
+    .map((result) => ({
+      snippet: result.snippet ?? "",
+      title: result.title ?? result.link ?? "",
+      url: result.link as string,
+    }));
+}
+
 /** DuckDuckGo's full HTML endpoint. */
 async function duckDuckGoHtml(query: string): Promise<SearchHit[]> {
   const { body, status } = await fetchText(
@@ -192,10 +227,18 @@ async function duckDuckGoLite(query: string): Promise<SearchHit[]> {
 export async function searchProviders(query: string): Promise<SearchHit[]> {
   const attempts: Attempt[] = [];
 
+  const serperKey = process.env.SERPER_API_KEY?.trim();
   const braveKey = process.env.BRAVE_SEARCH_API_KEY?.trim();
   const tavilyKey = process.env.TAVILY_API_KEY?.trim();
 
   const providers: { name: string; run: () => Promise<SearchHit[]> }[] = [];
+
+  if (serperKey) {
+    providers.push({
+      name: "Serper",
+      run: () => serperSearch(query, serperKey),
+    });
+  }
 
   if (braveKey) {
     providers.push({
@@ -242,7 +285,7 @@ export async function searchProviders(query: string): Promise<SearchHit[]> {
 
   throw new Error(
     blocked
-      ? "Search is blocked from this server's address. Add a BRAVE_SEARCH_API_KEY or TAVILY_API_KEY to enable reliable search."
+      ? "Search is blocked from this server's address. Add a SERPER_API_KEY (or BRAVE_SEARCH_API_KEY / TAVILY_API_KEY) to enable reliable search."
       : `Search failed: ${attempts
           .map((attempt) => `${attempt.name} (${attempt.error})`)
           .join(", ")}`

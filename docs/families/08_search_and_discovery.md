@@ -20,7 +20,8 @@ wrong. So searching is not delegated to a model; it is done in the app.
 
    | Provider | Needs | Why |
    | --- | --- | --- |
-   | Brave | `BRAVE_SEARCH_API_KEY` | Built to be called from a server — the reliable option |
+   | Serper | `SERPER_API_KEY` | Google results from an API built for servers |
+   | Brave | `BRAVE_SEARCH_API_KEY` | Server-first, generous free tier |
    | Tavily | `TAVILY_API_KEY` | Retrieval-oriented, clean result text |
    | DuckDuckGo HTML | nothing | Works from residential addresses |
    | DuckDuckGo Lite | nothing | A different endpoint, blocked independently |
