@@ -15,6 +15,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "../ai-elements/tool";
+import { AudioToolCard, type AudioToolType } from "./audio-tool-card";
 import { useDataStream } from "./data-stream-provider";
 import { DocToolCard, type DocToolType } from "./doc-tool-card";
 import { DocumentToolResult } from "./document";
@@ -483,6 +484,63 @@ const PurePreviewMessage = ({
             duration={1.2}
           >
             {`${DOC_TOOL_LABELS[type]}...`}
+          </Shimmer>
+        </div>
+      );
+    }
+
+    const AUDIO_TOOL_LABELS: Record<string, string> = {
+      "tool-audioInfo": "Reading the audio…",
+      "tool-audioOpen": "Opening the audio…",
+      "tool-audioTranscribe": "Transcribing…",
+    };
+
+    if (type && type in AUDIO_TOOL_LABELS) {
+      const { toolCallId, output } = part as {
+        toolCallId: string;
+        output?: any;
+      };
+
+      const { state, errorText } = part as {
+        state?: string;
+        errorText?: string;
+      };
+
+      if (state === "output-error" || errorText) {
+        return (
+          <div
+            className="w-[min(100%,450px)] rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            key={toolCallId}
+          >
+            {errorText || "The audio operation could not be completed."}
+          </div>
+        );
+      }
+
+      if (output) {
+        return (
+          <AudioToolCard
+            isReadonly={isReadonly}
+            key={toolCallId}
+            output={output}
+            toolCallId={toolCallId}
+            toolType={type as AudioToolType}
+          />
+        );
+      }
+
+      return (
+        <div
+          className="w-[min(100%,450px)] flex items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
+          key={toolCallId}
+        >
+          <Loader2 className="size-3.5 animate-spin text-sky-400 shrink-0" />
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            {AUDIO_TOOL_LABELS[type]}
           </Shimmer>
         </div>
       );

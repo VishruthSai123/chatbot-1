@@ -12,11 +12,12 @@ export const Greeting = () => (
     </motion.div>
     <motion.div
       animate={{ opacity: 1, y: 0 }}
-      className="mt-3 text-center text-muted-foreground/80 text-sm"
+      className="mt-3 max-w-lg text-center text-muted-foreground/80 text-sm"
       initial={{ opacity: 0, y: 10 }}
       transition={{ delay: 0.5, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
-      Ask a question, write code, or explore ideas.
+      Edit images, work with PDFs, sheets, documents and audio, build notebooks,
+      or research the web — just ask in your own words.
     </motion.div>
   </div>
 );

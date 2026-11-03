@@ -1,21 +1,56 @@
 "use client";
 
 import type { UseChatHelpers } from "@ai-sdk/react";
-import { motion } from "framer-motion";
+import {
+  BookOpenIcon,
+  DownloadIcon,
+  FileTextIcon,
+  ImageIcon,
+  MicIcon,
+  NotebookPenIcon,
+  SearchIcon,
+  TableIcon,
+} from "lucide-react";
 import { memo, useCallback } from "react";
-import { suggestions } from "@/lib/constants";
+
+import { capabilities, starterPrompts } from "@/lib/capabilities";
 import type { ChatMessage } from "@/lib/types";
 import { Suggestion } from "../ai-elements/suggestion";
 import type { VisibilityType } from "./visibility-selector";
+
+/**
+ * The empty state.
+ *
+ * A blank chat used to offer four generic prompts, which told a user nothing
+ * about what the app can do. This offers the *map* instead: the eight families
+ * of tools, each a click away from examples. The four prompts underneath are
+ * real tasks that work without an attachment, so the first click teaches
+ * something.
+ */
+
+const ICONS = {
+  audio: MicIcon,
+  "book-open": BookOpenIcon,
+  download: DownloadIcon,
+  "file-text": FileTextIcon,
+  image: ImageIcon,
+  notebook: NotebookPenIcon,
+  search: SearchIcon,
+  table: TableIcon,
+} as const;
 
 type SuggestedActionsProps = {
   chatId: string;
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   selectedVisibilityType: VisibilityType;
+  onShowCapabilities?: (familyId?: string) => void;
 };
 
-function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
-  const suggestedActions = suggestions;
+function PureSuggestedActions({
+  chatId,
+  sendMessage,
+  onShowCapabilities,
+}: SuggestedActionsProps) {
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       window.history.pushState(
@@ -32,37 +67,55 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
   );
 
   return (
-    <div
-      className="flex w-full gap-2.5 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible"
-      data-testid="suggested-actions"
-      style={{
-        msOverflowStyle: "none",
-        scrollbarWidth: "none",
-        WebkitOverflowScrolling: "touch",
-      }}
-    >
-      {suggestedActions.map((suggestedAction, index) => (
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          className="min-w-[200px] shrink-0 sm:min-w-0 sm:shrink"
-          exit={{ opacity: 0, y: 16 }}
-          initial={{ opacity: 0, y: 16 }}
-          key={suggestedAction}
-          transition={{
-            delay: 0.06 * index,
-            duration: 0.4,
-            ease: [0.22, 1, 0.36, 1],
-          }}
+    <div className="flex w-full flex-col gap-3" data-testid="suggested-actions">
+      <div className="flex items-center justify-between gap-2 px-0.5">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50">
+          What this can do
+        </p>
+        <button
+          className="cursor-pointer text-[11px] text-muted-foreground/60 transition-colors hover:text-foreground"
+          onClick={() => onShowCapabilities?.()}
+          type="button"
         >
+          See all →
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {capabilities.map((capability) => {
+          const Icon = ICONS[capability.icon];
+
+          return (
+            <button
+              className="group flex cursor-pointer flex-col items-start gap-1.5 rounded-xl border border-border/50 bg-card/30 px-3 py-2.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:bg-card/70"
+              key={capability.id}
+              onClick={() => onShowCapabilities?.(capability.id)}
+              type="button"
+            >
+              <Icon className="size-4 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
+              <span className="text-[12px] font-medium leading-tight text-foreground/90">
+                {capability.name}
+              </span>
+              <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground/60">
+                {capability.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex w-full gap-2 overflow-x-auto pb-1 no-scrollbar sm:grid sm:grid-cols-2 sm:overflow-visible">
+        {starterPrompts.map((suggestion) => (
           <Suggestion
-            className="h-auto w-full whitespace-nowrap rounded-xl border border-border/50 bg-card/30 px-4 py-3 text-left text-[12px] leading-relaxed text-muted-foreground transition-all duration-200 sm:whitespace-normal sm:p-4 sm:text-[13px] hover:-translate-y-0.5 hover:bg-card/60 hover:text-foreground hover:shadow-[var(--shadow-card)]"
+            className="h-auto min-w-[200px] shrink-0 whitespace-nowrap rounded-xl border border-border/40 bg-transparent px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground/70 transition-all duration-200 hover:bg-card/50 hover:text-foreground sm:min-w-0 sm:shrink sm:whitespace-normal"
+            key={suggestion}
             onClick={handleSuggestionClick}
-            suggestion={suggestedAction}
+            suggestion={suggestion}
           >
-            {suggestedAction}
+            {suggestion}
           </Suggestion>
-        </motion.div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
@@ -74,6 +127,9 @@ export const SuggestedActions = memo(
       return false;
     }
     if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType) {
+      return false;
+    }
+    if (prevProps.onShowCapabilities !== nextProps.onShowCapabilities) {
       return false;
     }
 

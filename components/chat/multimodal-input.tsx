@@ -9,6 +9,7 @@ import {
   BrainIcon,
   EyeIcon,
   LockIcon,
+  SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -59,6 +60,7 @@ import {
 } from "../ai-elements/prompt-input";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { CapabilitiesDialog } from "./capabilities-dialog";
 import { PaperclipIcon, StopIcon } from "./icons";
 import { ImageCollectionLauncher } from "./image/image-collection-launcher";
 import { MediaSessionDialog } from "./media-session-dialog";
@@ -155,6 +157,10 @@ function PureMultimodalInput({
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  const [capabilitiesFamily, setCapabilitiesFamily] = useState<
+    string | undefined
+  >(undefined);
   const [isExpandedHeight, setIsExpandedHeight] = useState(false);
 
   useEffect(() => {
@@ -221,6 +227,9 @@ function PureMultimodalInput({
           break;
         case "media":
           setMediaSessionOpen(true);
+          break;
+        case "capabilities":
+          setCapabilitiesOpen(true);
           break;
         case "delete":
           toast("Delete this chat?", {
@@ -575,6 +584,15 @@ function PureMultimodalInput({
         onOpenChange={setMediaSessionOpen}
         open={mediaSessionOpen}
       />
+      <CapabilitiesDialog
+        initialFamily={capabilitiesFamily}
+        onOpenChange={setCapabilitiesOpen}
+        onUseExample={(text) => {
+          setInput(text);
+          textareaRef.current?.focus();
+        }}
+        open={capabilitiesOpen}
+      />
       {draggingFiles ? (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border/80 bg-card/90 px-8 py-6 shadow-lg">
@@ -607,6 +625,10 @@ function PureMultimodalInput({
         uploadQueue.length === 0 && (
           <SuggestedActions
             chatId={chatId}
+            onShowCapabilities={(familyId) => {
+              setCapabilitiesFamily(familyId);
+              setCapabilitiesOpen(true);
+            }}
             selectedVisibilityType={selectedVisibilityType}
             sendMessage={sendMessage}
           />
@@ -697,6 +719,22 @@ function PureMultimodalInput({
                 onModelChange={onModelChange}
                 selectedModelId={selectedModelId}
               />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+                    data-testid="capabilities-button"
+                    onClick={() => {
+                      setCapabilitiesFamily(undefined);
+                      setCapabilitiesOpen(true);
+                    }}
+                    type="button"
+                  >
+                    <SparklesIcon className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">What can this do?</TooltipContent>
+              </Tooltip>
             </PromptInputTools>
 
             {status === "submitted" ? (

@@ -7,6 +7,7 @@ import {
   PaletteIcon,
   PenLineIcon,
   PenSquareIcon,
+  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -57,6 +58,12 @@ export const slashCommands: SlashCommand[] = [
     description: "Connect an Instagram or Facebook session",
     icon: <KeyRoundIcon className="size-3.5" />,
     name: "media",
+  },
+  {
+    action: "capabilities",
+    description: "See everything the app can do",
+    icon: <SparklesIcon className="size-3.5" />,
+    name: "capabilities",
   },
   {
     action: "delete",

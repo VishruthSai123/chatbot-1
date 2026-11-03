@@ -272,6 +272,14 @@ export async function extractPdfText(pdfBuffer: Buffer): Promise<{
   text: string;
   totalPages: number;
 }> {
+  // Ensure the worker message handler is loaded in-process so pdfjs does not
+  // attempt to dynamically import a non-existent worker file in serverless chunks.
+  if (
+    typeof (globalThis as Record<string, unknown>).pdfjsWorker === "undefined"
+  ) {
+    await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  }
+
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   const loadingTask = pdfjs.getDocument({

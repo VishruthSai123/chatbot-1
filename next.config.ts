@@ -69,6 +69,7 @@ const nextConfig: NextConfig = {
     "/api/chat": [
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
     ],
     // The yt-dlp binary is fetched by scripts/fetch-ytdlp.mjs into .ytdlp/ at
     // build time. It is a native executable outside node_modules, so it needs to
@@ -77,6 +78,7 @@ const nextConfig: NextConfig = {
     "/api/tools/**": [
       "./node_modules/.pnpm/@imgly+background-removal-node@*/node_modules/@imgly/background-removal-node/dist/**",
       "./node_modules/.pnpm/onnxruntime-node@*/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/**",
     ],
   },
   poweredByHeader: false,
@@ -87,6 +89,7 @@ const nextConfig: NextConfig = {
     "@img/sharp-linux-x64",
     "@imgly/background-removal-node",
     "onnxruntime-node",
+    "pdfjs-dist",
   ],
 };
 

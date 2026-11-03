@@ -2,11 +2,18 @@ import "server-only";
 
 import { generateText } from "ai";
 
-import { getGroundingModel } from "@/lib/ai/search/grounding";
+import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { getLanguageModel } from "@/lib/ai/providers";
+import {
+  getGroundingModel,
+  googleUrlContextTool,
+  hasGrounding,
+} from "@/lib/ai/search/grounding";
 import { extractTextFromImage } from "@/lib/image/ocr";
 import { readMediaSessionForUrl } from "@/lib/media/session";
 import { fetchVideoTranscript } from "@/lib/media/transcript";
 import { isVideoUrl } from "@/lib/media/url";
+import { fetchPageText } from "@/lib/net/page";
 import { extractPdfText } from "@/lib/pdf/native";
 import { readSheetFile } from "@/lib/sheet/native";
 import type { NotebookChunk } from "./chunk";
@@ -139,41 +146,39 @@ export async function extractUrl(
     }
   }
 
-  try {
-    let pageText = "";
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12_000);
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const raw = await res.text();
-        pageText = raw
-          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 30_000);
-      }
-    } catch {
-      // ignore network errors
-    }
+  const instruction = [
+    `Read the page at ${url}.`,
+    "Return the full text content of the page, in reading order, with its headings.",
+    "Do not summarise it and do not add commentary.",
+  ].join("\n");
 
+  // ── Preferred: Gemini reads the page itself ───────────────────────────────
+  if (hasGrounding()) {
+    try {
+      const { text } = await generateText({
+        model: getGroundingModel(),
+        prompt: instruction,
+        tools: { url_context: googleUrlContextTool() },
+      });
+
+      const cleaned = text.trim();
+
+      if (cleaned) {
+        return { sections: [{ label: url, text: cleaned }], title: url };
+      }
+    } catch (error) {
+      console.warn("Notebook URL context failed, falling back:", error);
+    }
+  }
+
+  // ── Fallback: fetch it ourselves, through the address checks ─────────────
+  try {
+    const page = await fetchPageText(url);
     const { text } = await generateText({
-      model: getGroundingModel(),
-      prompt: [
-        `Read the page at ${url}.`,
-        "Return the full text content of the page, in reading order, with its headings.",
-        "Do not summarise it and do not add commentary.",
-        pageText ? `\nPAGE CONTENT:\n${pageText}` : "",
-      ].join("\n"),
+      // The chat model, not the grounding one: this path is reached precisely
+      // when the grounded model is unavailable.
+      model: getLanguageModel(DEFAULT_CHAT_MODEL),
+      prompt: [instruction, "", "PAGE CONTENT:", page.text].join("\n"),
     });
 
     const cleaned = text.trim();

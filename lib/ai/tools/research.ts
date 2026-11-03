@@ -9,12 +9,12 @@ import { z } from "zod";
 import {
   type GroundingSource,
   getGroundingModel,
-  getSearchModel,
-  toGroundingSources,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
+import { fetchPageText } from "@/lib/net/page";
 import type { ResearchRun } from "@/lib/research/ref";
 import { findResearchRun, saveResearchRun } from "@/lib/research/store";
+import { searchWeb } from "@/lib/search/web";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
 
 type ResearchToolsProps = {
@@ -178,15 +178,12 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
         const searchResults = await Promise.all(
           queries.map(async (query) => {
             try {
-              const { sources, text } = await generateText({
-                model: getSearchModel(),
-                prompt: `Search the web and report what you find with citations about: ${query}`,
-              });
+              const result = await searchWeb(query);
 
               return {
                 query,
-                snippet: text.slice(0, SNIPPET_CHARS),
-                sources: toGroundingSources(sources),
+                snippet: result.answer.slice(0, SNIPPET_CHARS),
+                sources: result.sources,
               };
             } catch (error) {
               console.warn("Research search failed:", error);
@@ -239,36 +236,21 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           readings = await Promise.all(
             pagesToRead.map(async (source) => {
               try {
+                /**
+                 * The page is fetched through the shared address checks, so a
+                 * source that redirects inward cannot reach the deployment's
+                 * own network.
+                 */
                 let pageContent = "";
+
                 try {
-                  const controller = new AbortController();
-                  const timer = setTimeout(() => controller.abort(), 10_000);
-                  const res = await fetch(source.url, {
-                    headers: {
-                      "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    },
-                    signal: controller.signal,
+                  const page = await fetchPageText(source.url, {
+                    maxChars: 15_000,
                   });
-                  clearTimeout(timer);
-                  if (res.ok) {
-                    const raw = await res.text();
-                    pageContent = raw
-                      .replace(
-                        /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-                        ""
-                      )
-                      .replace(
-                        /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi,
-                        ""
-                      )
-                      .replace(/<[^>]+>/g, " ")
-                      .replace(/\s+/g, " ")
-                      .trim()
-                      .slice(0, 15_000);
-                  }
-                } catch {
-                  // Fall through
+
+                  pageContent = page.text;
+                } catch (error) {
+                  console.warn("Research page fetch failed:", error);
                 }
 
                 const { text } = await generateText({
@@ -277,6 +259,7 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
                     `Read the page at ${source.url}.`,
                     "Extract the facts it states that are relevant to the research, with the specifics: figures, dates, names and conditions.",
                     "Do not summarise the layout — report the substance.",
+                    "Do not invent anything that is not on the page.",
                     pageContent ? `\nPAGE CONTENT:\n${pageContent}` : "",
                   ].join("\n"),
                 });

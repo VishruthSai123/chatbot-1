@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
-import { suggestions } from "@/lib/constants";
+import { starterPrompts } from "@/lib/capabilities";
 import { SparklesIcon } from "./icons";
 
 function PreviewSuggestionButton({
@@ -57,12 +57,12 @@ export function Preview() {
             What can I help with?
           </h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Ask a question, write code, or explore ideas.
+            Images, PDFs, sheets, documents, audio, notebooks and research.
           </p>
         </div>
 
         <div className="grid w-full max-w-md grid-cols-2 gap-2">
-          {suggestions.map((suggestion) => (
+          {starterPrompts.map((suggestion) => (
             <PreviewSuggestionButton
               key={suggestion}
               onAction={handleAction}

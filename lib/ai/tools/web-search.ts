@@ -1,12 +1,17 @@
 import { generateText, tool } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
+
+import { DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { getLanguageModel } from "@/lib/ai/providers";
 import {
   getGroundingModel,
-  getSearchModel,
-  toGroundingSources,
+  googleUrlContextTool,
+  hasGrounding,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
+import { fetchPageText } from "@/lib/net/page";
+import { searchWeb } from "@/lib/search/web";
 
 type SearchToolsProps = {
   session: Session;
@@ -38,7 +43,12 @@ function trim(text: string): string {
 }
 
 /**
- * Searches the web via OpenRouter.
+ * Searches the web through Gemini's grounded search.
+ *
+ * The tool is provider-executed: Gemini runs the query itself and returns both
+ * the answer and the pages it used, so the citations are real rather than
+ * recalled. That is the whole point — a model asked to "search" without a
+ * search tool answers from training data and invents the links.
  */
 export const webSearch = ({ session }: SearchToolsProps) =>
   tool({
@@ -53,20 +63,13 @@ export const webSearch = ({ session }: SearchToolsProps) =>
       }
 
       try {
-        const { sources, text } = await generateText({
-          model: getSearchModel(),
-          prompt: [
-            "Search the web and answer the following question. Cite the sources and links you used.",
-            "If the search does not find a reliable answer, say so plainly rather than guessing.",
-            "",
-            `QUERY: ${query}`,
-          ].join("\n"),
-        });
+        const result = await searchWeb(query);
 
         return {
-          answer: trim(text),
+          answer: trim(result.answer),
           query,
-          sources: toGroundingSources(sources),
+          sources: result.sources,
+          via: result.via,
         };
       } catch (error: any) {
         console.error("webSearch failed:", error);
@@ -88,6 +91,11 @@ export const webSearch = ({ session }: SearchToolsProps) =>
 
 /**
  * Reads a web page and extracts its content.
+ *
+ * Gemini's URL context is tried first: it renders the page the way a browser
+ * would, so a page built by JavaScript is readable. If that is unavailable, the
+ * page is fetched directly — through the same address checks the downloader
+ * uses, so a URL cannot point the server at its own network.
  */
 export const readUrl = ({ session }: SearchToolsProps) =>
   tool({
@@ -101,53 +109,61 @@ export const readUrl = ({ session }: SearchToolsProps) =>
         };
       }
 
-      try {
-        let pageContent = "";
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 12_000);
-          const res = await fetch(url, {
-            headers: {
-              Accept:
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            },
-            signal: controller.signal,
-          });
-          clearTimeout(timer);
-          if (res.ok) {
-            const raw = await res.text();
-            pageContent = raw
-              .replace(
-                /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-                ""
-              )
-              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-              .replace(/<[^>]+>/g, " ")
-              .replace(/\s+/g, " ")
-              .trim()
-              .slice(0, 25_000);
-          }
-        } catch {
-          // Ignore network errors and let the model know
-        }
+      const task = [
+        `Read the web page at ${url} and report its content.`,
+        instruction
+          ? `Focus on this: ${instruction}`
+          : "Summarise it accurately and keep any concrete facts, figures and names.",
+        "Do not invent anything that is not on the page.",
+      ].join("\n");
 
+      // ── Preferred: Gemini reads the page itself ─────────────────────────
+      if (hasGrounding()) {
+        try {
+          const { text } = await generateText({
+            model: getGroundingModel(),
+            prompt: task,
+            tools: { url_context: googleUrlContextTool() },
+          });
+
+          const content = trim(text.trim());
+
+          if (content) {
+            return {
+              content,
+              sources: [{ title: url, url }],
+              url,
+            };
+          }
+        } catch (error) {
+          console.warn(
+            "URL context failed, falling back to a direct fetch:",
+            error
+          );
+        }
+      }
+
+      // ── Fallback: fetch it ourselves, safely ────────────────────────────
+      try {
+        const page = await fetchPageText(url);
         const { text } = await generateText({
-          model: getGroundingModel(),
+          // The chat model, not the grounding one: this path is reached
+          // precisely when the grounded model is unavailable.
+          model: getLanguageModel(DEFAULT_CHAT_MODEL),
           prompt: [
-            `Read the web page at ${url} and report its content.`,
+            `Read the web page at ${page.url} and report its content.`,
             instruction
               ? `Focus on this: ${instruction}`
               : "Summarise it accurately and keep any concrete facts, figures and names.",
-            pageContent
-              ? `\nEXTRACTED PAGE TEXT:\n${pageContent}`
-              : "\n(Note: Direct HTML retrieval was unavailable; please summarize or explain based on known context.)",
+            "Do not invent anything that is not on the page.",
+            "",
+            "EXTRACTED PAGE TEXT:",
+            page.text,
           ].join("\n"),
         });
 
         return {
-          content: trim(text),
+          content: trim(text.trim()),
           sources: [{ title: url, url }],
           url,
         };
@@ -164,10 +180,9 @@ export const readUrl = ({ session }: SearchToolsProps) =>
         .string()
         .max(500)
         .optional()
-        .describe("What to focus on, e.g. 'the pricing table'."),
-      url: z
-        .string()
-        .url()
-        .describe("The full http(s) URL of the page to read."),
+        .describe(
+          "What to look for on the page, when the user asked for something specific."
+        ),
+      url: z.string().min(4).describe("The full URL of the page to read."),
     }),
   });
