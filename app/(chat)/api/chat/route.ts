@@ -83,6 +83,7 @@ import {
 import { slidesCreate, slidesEdit } from "@/lib/ai/tools/slides-tools";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { readUrl, webSearch } from "@/lib/ai/tools/web-search";
+import { makeAttachmentsReadable } from "@/lib/attachments/readable";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
   createStreamId,
@@ -335,7 +336,21 @@ export async function POST(request: Request) {
     const supportsTools = capabilities?.tools === true;
     const isGeminiModel = chatModel.includes("gemini");
 
-    const converted = await convertToModelMessages(uiMessages);
+    /**
+     * Attachments are converted before the provider sees them.
+     *
+     * A PDF, DOCX, spreadsheet or deck is a container, not text; sending it
+     * as a file part only works on providers that happen to accept that type.
+     * This turns every attachment into text (or an image the model can see),
+     * so "summarise this" works for every file the upload accepts.
+     */
+    const readableMessages = await makeAttachmentsReadable({
+      messages: uiMessages,
+      userId: session.user.id,
+      vision: capabilities?.vision === true,
+    });
+
+    const converted = await convertToModelMessages(readableMessages);
 
     // Merge consecutive messages with the same role (e.g. consecutive user messages)
     // so LLM providers that require strictly alternating roles do not reject the request

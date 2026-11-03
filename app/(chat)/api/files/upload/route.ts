@@ -238,18 +238,31 @@ async function persistDocArtifact({
   storageKey: string;
   userId: string;
 }): Promise<string | undefined> {
+  let parsed: Awaited<ReturnType<typeof parseDocument>> | undefined;
+
   try {
     const buffer = await downloadArtifact(storageKey);
-    const parsed = await parseDocument({ buffer, filename });
 
+    parsed = await parseDocument({ buffer, filename });
+  } catch (error) {
+    /**
+     * The file is already in storage, so the upload itself succeeded. A parse
+     * failure must not lose the attachment: the document is still created with
+     * its storage key, which is what the chat reader and the studio need. They
+     * report the specific problem; this only records the file.
+     */
+    console.warn("Could not parse the uploaded document:", error);
+  }
+
+  try {
     const saved = await saveDocument({
       content: encodeDocRef({
         filename,
-        format: parsed.format,
-        outline: parsed.outline,
-        stats: parsed.stats,
+        format: parsed?.format ?? "txt",
+        outline: parsed?.outline ?? [],
+        stats: parsed?.stats,
         storageKey,
-        text: parsed.text.slice(0, 200_000),
+        text: parsed?.text.slice(0, 200_000) ?? "",
         title: filename,
       }),
       id: generateUUID(),
@@ -260,8 +273,6 @@ async function persistDocArtifact({
 
     return saved?.[0]?.id;
   } catch (error) {
-    // The file is already in storage and downloadable; failing to index it must
-    // not turn a successful upload into an error.
     console.warn("Non-fatal: failed to persist uploaded document:", error);
   }
 }

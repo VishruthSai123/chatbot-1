@@ -114,9 +114,39 @@ export async function parseDocument({
     return await parseDocx(buffer);
   }
 
+  if (name.endsWith(".pptx")) {
+    return await parsePresentation(buffer);
+  }
+
   if (name.endsWith(".md") || name.endsWith(".markdown")) {
     return parseText(buffer, "md");
   }
 
+  /**
+   * A binary that is not one of the formats above must not be read as text:
+   * decoding a `.doc` or a `.ppt` as UTF-8 produces thousands of replacement
+   * characters, which is worse than saying the file cannot be read.
+   */
+  if (/\.(doc|ppt|xls|rtf|odt|odp|ods)$/.test(name)) {
+    throw new Error(
+      `"${filename}" is an older Office format that cannot be read directly. Save it as .docx, .pptx or .xlsx and attach that.`
+    );
+  }
+
   return parseText(buffer, "txt");
+}
+
+/** Reads a PPTX into text, an outline and statistics. */
+export async function parsePresentation(
+  buffer: Buffer
+): Promise<ParsedDocument> {
+  const { extractPptxText } = await import("./pptx");
+  const { text } = await extractPptxText(buffer);
+
+  return {
+    format: "txt",
+    outline: extractOutline(text) as DocOutlineNode[],
+    stats: readingStats(text),
+    text,
+  };
 }

@@ -7,6 +7,7 @@ import { extractTextFromImage } from "@/lib/image/ocr";
 import { readMediaSessionForUrl } from "@/lib/media/session";
 import { fetchVideoTranscript } from "@/lib/media/transcript";
 import { isVideoUrl } from "@/lib/media/url";
+import { htmlToText } from "@/lib/net/html";
 import { fetchPageText } from "@/lib/net/page";
 import { extractPdfText } from "@/lib/pdf/native";
 import { readSheetFile } from "@/lib/sheet/native";
@@ -66,6 +67,25 @@ async function extractDocx(buffer: Buffer): Promise<ExtractedSection[]> {
   const { value } = await mammoth.extractRawText({ buffer });
 
   return value.trim() ? [{ text: value }] : [];
+}
+
+/** Reads a presentation, one section per slide. */
+async function extractPresentation(
+  buffer: Buffer
+): Promise<ExtractedSection[]> {
+  const { extractPptxText } = await import("@/lib/doc/pptx");
+  const { text, slideCount } = await extractPptxText(buffer);
+
+  if (!text.trim()) {
+    return [];
+  }
+
+  return [
+    {
+      label: `Presentation (${slideCount} slides)`,
+      text,
+    },
+  ];
 }
 
 /** Reads a PDF, one section per page, so a citation can name the page. */
@@ -190,9 +210,15 @@ export async function extractFile({
   const type = (mediaType ?? "").toLowerCase();
 
   try {
-    // A PDF is a ZIP container; the magic bytes are more reliable than a label.
+    /**
+     * A PDF starts with `%PDF` — not with `PK`.
+     *
+     * `PK` is the ZIP magic, which every OOXML file also has, so checking it
+     * here made every PPTX, DOCX and XLSX look like a PDF and fail with
+     * "Invalid PDF structure" before it ever reached its own extractor.
+     */
     const looksLikePdf =
-      buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+      buffer.length > 4 && buffer.subarray(0, 4).toString("latin1") === "%PDF";
 
     if (name.endsWith(".pdf") || type === "application/pdf" || looksLikePdf) {
       return { sections: await extractPdf(buffer) };
@@ -200,6 +226,24 @@ export async function extractFile({
 
     if (name.endsWith(".docx") || type.includes("wordprocessingml")) {
       return { sections: await extractDocx(buffer) };
+    }
+
+    if (
+      name.endsWith(".pptx") ||
+      type.includes("presentationml") ||
+      type === "application/vnd.ms-powerpoint"
+    ) {
+      return { sections: await extractPresentation(buffer) };
+    }
+
+    if (
+      name.endsWith(".html") ||
+      name.endsWith(".htm") ||
+      type === "text/html"
+    ) {
+      const text = htmlToText(buffer.toString("utf8"));
+
+      return text ? { sections: [{ text }] } : { sections: [] };
     }
 
     if (

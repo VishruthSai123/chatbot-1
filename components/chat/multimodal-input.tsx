@@ -646,7 +646,7 @@ function PureMultimodalInput({
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-snug text-amber-700 dark:text-amber-300">
           <EyeOffIcon className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1">
-            {selectedModelName} cannot see images.
+            {selectedModelName} cannot see images — text will be read with OCR.
           </span>
           {onModelChange ? (
             <button
