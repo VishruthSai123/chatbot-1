@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 
+import {
+  type CardData,
+  MorphingCardStack,
+} from "@/components/ui/morphing-card-stack";
 import { capabilities } from "@/lib/capabilities";
 import { type SampleFile, samples } from "@/lib/samples";
 import { cn } from "@/lib/utils";
@@ -21,12 +25,12 @@ import { cn } from "@/lib/utils";
 /**
  * The empty state.
  *
- * Eight families, each an icon and a name — nothing to read, everything one
- * click from its examples. The detail lives in the panel those tiles open, so
- * the home screen stays a launcher rather than a brochure.
+ * The nine families are a swipeable card stack: drag the top card left or right
+ * to move through them, or switch to the grid to see them all at once. Clicking
+ * a card opens the panel that explains it.
  *
  * The samples underneath are the other half of the first thirty seconds: a new
- * user has no PDF, no photo and no recording, so every tile would otherwise
+ * user has no PDF, no photo and no recording, so every card would otherwise
  * dead-end at "attach a file".
  */
 
@@ -41,6 +45,17 @@ const ICONS = {
   search: SearchIcon,
   table: TableIcon,
 } as const;
+
+const CARD_DATA: CardData[] = capabilities.map((capability) => {
+  const Icon = ICONS[capability.icon];
+
+  return {
+    description: capability.description,
+    icon: <Icon className="size-4" />,
+    id: capability.id,
+    title: capability.name,
+  };
+});
 
 type SuggestedActionsProps = {
   onShowCapabilities?: (familyId?: string) => void;
@@ -75,36 +90,10 @@ function PureSuggestedActions({
 
   return (
     <div className="flex w-full flex-col gap-4" data-testid="suggested-actions">
-      {/*
-        Three columns: nine families fill a 3×3 square with no orphan. On a
-        phone the grid is two wide, so the odd tile out spans the last row
-        rather than sitting alone in half of it.
-      */}
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-        {capabilities.map((capability, index) => {
-          const Icon = ICONS[capability.icon];
-          const isLast = index === capabilities.length - 1;
-
-          return (
-            <button
-              className={cn(
-                "group flex cursor-pointer items-center gap-2 rounded-lg border border-border/50 bg-card/30 px-2.5 py-2 text-left transition-colors duration-150 hover:border-border hover:bg-card/80",
-                isLast &&
-                  capabilities.length % 2 === 1 &&
-                  "col-span-2 sm:col-span-1"
-              )}
-              key={capability.id}
-              onClick={() => onShowCapabilities?.(capability.id)}
-              type="button"
-            >
-              <Icon className="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
-              <span className="truncate text-[12px] font-medium text-foreground/90">
-                {capability.name}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <MorphingCardStack
+        cards={CARD_DATA}
+        onCardClick={(card) => onShowCapabilities?.(card.id)}
+      />
 
       {onTrySample ? (
         <div className="flex flex-wrap items-center justify-center gap-1.5">
