@@ -34,3 +34,9 @@ tsconfig.tsbuildinfo
 
 # A separate repository cloned into the workspace; not part of this app.
 quick-search/
+.env*
+
+# Android build artifacts: binaries do not belong in the repository.
+*.apk
+*.aab
+*.idsig

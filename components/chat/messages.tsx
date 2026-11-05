@@ -24,7 +24,6 @@ type MessagesProps = {
   isLoading?: boolean;
   selectedModelId: string;
   onEditMessage?: (message: ChatMessage) => void;
-  sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   onShowCapabilities?: (familyId?: string) => void;
   onTrySample?: (sample: SampleFile) => Promise<void>;
 };
@@ -42,7 +41,6 @@ function PureMessages({
   isLoading,
   selectedModelId: _selectedModelId,
   onEditMessage,
-  sendMessage,
   onShowCapabilities,
   onTrySample,
 }: MessagesProps) {
@@ -86,10 +84,8 @@ function PureMessages({
           <div className="m-auto flex w-full max-w-2xl flex-col gap-6">
             <Greeting />
             <SuggestedActions
-              chatId={chatId}
               onShowCapabilities={onShowCapabilities}
               onTrySample={onTrySample}
-              sendMessage={sendMessage}
             />
           </div>
         </div>

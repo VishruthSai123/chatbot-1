@@ -205,7 +205,6 @@ export function ChatShell() {
               onTrySample={handleTrySample}
               regenerate={regenerate}
               selectedModelId={currentModelId}
-              sendMessage={sendMessage}
               setMessages={setMessages}
               status={status}
               votes={votes}
