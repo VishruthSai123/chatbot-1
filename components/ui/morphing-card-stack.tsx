@@ -6,24 +6,24 @@ import {
   LayoutGroup,
   motion,
 } from "framer-motion";
-import { Grid3X3, Layers, LayoutList } from "lucide-react";
+import { Layers, LayoutList } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
 /**
- * A card collection that can be a swipeable stack, a grid or a list.
+ * A card collection that can be a swipeable stack or a list.
  *
- * The three modes are the same cards: `layoutId` lets a card move between them
+ * The two modes are the same cards: `layoutId` lets a card move between them
  * instead of being re-created, which is what makes the switch feel like one
- * object changing shape rather than three lists swapping.
+ * object changing shape rather than two lists swapping.
  *
- * Adapted for this app in two ways: the grid is three columns on a wide screen
- * so nine cards do not become a column five rows deep, and a drag no longer
- * fires the card's click when the pointer is released.
+ * Adapted for this app in two ways: only the top few cards are drawn, so a deck
+ * of nine does not fan wider than the card itself, and a drag no longer fires
+ * the card's click when the pointer is released.
  */
 
-export type LayoutMode = "grid" | "list" | "stack";
+export type LayoutMode = "list" | "stack";
 
 export interface CardData {
   color?: string;
@@ -41,7 +41,6 @@ export interface MorphingCardStackProps {
 }
 
 const layoutIcons = {
-  grid: Grid3X3,
   list: LayoutList,
   stack: Layers,
 };
@@ -54,7 +53,6 @@ const SWIPE_VELOCITY = 500;
 type PositionedCard = CardData & { stackPosition: number };
 
 const CONTAINER_STYLES: Record<LayoutMode, string> = {
-  grid: "grid w-full max-w-lg grid-cols-2 gap-3 sm:grid-cols-3",
   list: "flex w-full flex-col gap-3",
   stack: "relative h-64 w-64",
 };
@@ -186,7 +184,6 @@ export function MorphingCardStack({
                     layout === "stack" &&
                       isTopCard &&
                       "cursor-grab active:cursor-grabbing",
-                    layout === "grid" && "aspect-square w-full",
                     layout === "list" && "w-full",
                     isExpanded && "ring-2 ring-primary"
                   )}
@@ -231,7 +228,6 @@ export function MorphingCardStack({
                         className={cn(
                           "mt-1 text-sm text-muted-foreground",
                           layout === "stack" && "line-clamp-3",
-                          layout === "grid" && "line-clamp-2",
                           layout === "list" && "line-clamp-1"
                         )}
                       >
