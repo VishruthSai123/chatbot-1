@@ -26,7 +26,7 @@ import { useAutoResume } from "@/hooks/use-auto-resume";
 import { allowedModelIds, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
-import type { ChatMessage } from "@/lib/types";
+import type { Attachment, ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
 type ActiveChatContextValue = {
@@ -48,6 +48,13 @@ type ActiveChatContextValue = {
   setCurrentModelId: (id: string) => void;
   showCreditCardAlert: boolean;
   setShowCreditCardAlert: Dispatch<SetStateAction<boolean>>;
+  /**
+   * Files handed over by the Android WebView shell (share sheet). The chat
+   * shell appends these to the composer once, so the user can add their own
+   * prompt before sending.
+   */
+  pendingAttachments: Attachment[];
+  setPendingAttachments: Dispatch<SetStateAction<Attachment[]>>;
 };
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -89,6 +96,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const [input, setInput] = useState("");
   const [showCreditCardAlert, setShowCreditCardAlert] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>(
+    []
+  );
 
   const { data: chatData, isLoading } = useSWR(
     isNewChat
@@ -243,19 +253,25 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const loadedChatIds = useRef(new Set<string>());
 
-  if (isNewChat && !loadedChatIds.current.has(newChatIdRef.current)) {
-    loadedChatIds.current.add(newChatIdRef.current);
-  }
-
   useEffect(() => {
     if (loadedChatIds.current.has(chatId)) {
       return;
     }
-    if (chatData?.messages) {
-      loadedChatIds.current.add(chatId);
-      setMessages(chatData.messages);
+
+    /*
+     * A chat that has not been written yet answers with an empty list and a
+     * null owner: the URL moves to `/chat/<id>` before the first message is
+     * persisted. Treating that response as loaded would pin the conversation
+     * to its empty state, and every later revalidation would be ignored.
+     * Wait for the authoritative response instead.
+     */
+    if (!chatData || chatData.userId === null) {
+      return;
     }
-  }, [chatId, chatData?.messages, setMessages]);
+
+    loadedChatIds.current.add(chatId);
+    setMessages(chatData.messages);
+  }, [chatId, chatData, setMessages]);
 
   const prevChatIdRef = useRef(chatId);
   useEffect(() => {
@@ -328,11 +344,13 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading: !isNewChat && isLoading,
       isReadonly,
       messages,
+      pendingAttachments,
       regenerate,
       sendMessage,
       setCurrentModelId,
       setInput,
       setMessages,
+      setPendingAttachments,
       setShowCreditCardAlert,
       showCreditCardAlert,
       status,
@@ -343,6 +361,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     [
       chatId,
       messages,
+      pendingAttachments,
       setMessages,
       sendMessage,
       status,

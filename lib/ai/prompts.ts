@@ -188,10 +188,13 @@ export const systemPrompt = ({
   requestHints,
   supportsTools,
   imageRequirement,
+  isGuest = false,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
   imageRequirement?: ImageRequirementHint;
+  /** Guests can chat and read attachments; tools need an account. */
+  isGuest?: boolean;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
 
@@ -202,9 +205,26 @@ export const systemPrompt = ({
   const requirementPrompt = imageRequirement
     ? `\n\n${imageRequirement} Pass these through to the matching image tool fields exactly (unit and dpi included); do not re-derive or ask the user.`
     : "";
+  const guestPrompt = isGuest ? guestPromptText : "";
 
-  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}`;
+  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}${guestPrompt}`;
 };
+
+/**
+ * What the model should do differently for a guest.
+ *
+ * Guests can chat and read attachments — the file text is already in the
+ * conversation — but every tool that creates or transforms a file needs an
+ * account. Saying so here means a guest gets a real answer about their PDF
+ * instead of a tool call that is refused.
+ */
+const guestPromptText = `
+
+GUEST MODE:
+- This visitor is not signed in. Chatting and reading attachments are free; tools that create or transform files need a free account.
+- When an attachment is in the conversation, answer from its text yourself. Do not call a tool just to read, summarise or quote a file — the text is already provided.
+- If the request genuinely needs a tool (editing an image, merging PDFs, building a deck, a notebook, a download, or a web search), say plainly that a free account unlocks it. Do not invent an error and do not attempt the call.
+- Never mention internal tool names, accounts or limits beyond that one sentence.`;
 
 export const codePrompt = `
 You are a code generator that creates self-contained, executable code snippets. When writing code:

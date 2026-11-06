@@ -20,6 +20,7 @@ import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { ChatbotError } from "../errors";
 import { generateUUID } from "../utils";
 import {
+  artifact,
   type Chat,
   chat,
   type DBMessage,
@@ -30,6 +31,7 @@ import {
   type Suggestion,
   stream,
   suggestion,
+  task,
   type User,
   user,
   vote,
@@ -98,6 +100,89 @@ export async function createUser(email: string, password: string) {
     throw new ChatbotError("bad_request:database", {
       cause: error,
     });
+  }
+}
+
+/**
+ * Turns the current guest into a registered account.
+ *
+ * A guest who signs up keeps the same user row, and therefore every chat,
+ * document and notebook they made while browsing. Creating a second user would
+ * hand them an empty account and strand the work they had just been told to
+ * save.
+ */
+export async function upgradeGuestUser({
+  email,
+  id,
+  password,
+}: {
+  email: string;
+  id: string;
+  password: string;
+}) {
+  try {
+    const [upgraded] = await db
+      .update(user)
+      .set({
+        email,
+        isAnonymous: false,
+        name: email,
+        password: generateHashedPassword(password),
+        updatedAt: new Date(),
+      })
+      .where(eq(user.id, id))
+      .returning({ email: user.email, id: user.id });
+
+    return upgraded;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Moves an anonymous visitor's work onto the account they just signed in to.
+ *
+ * Registration upgrades the guest row, so nothing needs moving there. Signing
+ * in to an existing account is different: the session cookie is replaced, and
+ * every chat or file made as a guest would be stranded on a row nobody can
+ * reach. The sign-in prompt promises the work is kept, so keep it.
+ */
+export async function claimGuestWork({
+  fromUserId,
+  toUserId,
+}: {
+  fromUserId: string;
+  toUserId: string;
+}) {
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(chat)
+        .set({ userId: toUserId })
+        .where(eq(chat.userId, fromUserId));
+      await tx
+        .update(document)
+        .set({ userId: toUserId })
+        .where(eq(document.userId, fromUserId));
+      await tx
+        .update(suggestion)
+        .set({ userId: toUserId })
+        .where(eq(suggestion.userId, fromUserId));
+      await tx
+        .update(task)
+        .set({ userId: toUserId })
+        .where(eq(task.userId, fromUserId));
+      await tx
+        .update(artifact)
+        .set({ userId: toUserId })
+        .where(eq(artifact.userId, fromUserId));
+      await tx
+        .update(mediaSession)
+        .set({ userId: toUserId })
+        .where(eq(mediaSession.userId, fromUserId));
+    });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 

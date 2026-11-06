@@ -16,6 +16,7 @@ import {
   ToolOutput,
 } from "../ai-elements/tool";
 import { AudioToolCard, type AudioToolType } from "./audio-tool-card";
+import { AuthRequiredNotice, featureForTool } from "./auth-required";
 import { useDataStream } from "./data-stream-provider";
 import { DocToolCard, type DocToolType } from "./doc-tool-card";
 import { DocumentToolResult } from "./document";
@@ -204,6 +205,25 @@ const PurePreviewMessage = ({
         >
           <MessageResponse>{sanitizeText(part.text)}</MessageResponse>
         </MessageContent>
+      );
+    }
+
+    /**
+     * A tool that refused because the visitor is a guest.
+     *
+     * Handled once, before any family-specific branch, so every tool says the
+     * same thing and offers the same two ways forward. Otherwise each card
+     * invents its own error and some of them offer no way out at all.
+     */
+    if (
+      type?.startsWith("tool-") &&
+      (part as { output?: { requiresAuth?: boolean } }).output?.requiresAuth
+    ) {
+      return (
+        <AuthRequiredNotice
+          feature={featureForTool(type)}
+          key={`auth-${key}`}
+        />
       );
     }
 

@@ -533,6 +533,7 @@ export async function POST(request: Request) {
                 ],
           instructions: systemPrompt({
             imageRequirement: imageRequirementHint,
+            isGuest: userType === "guest",
             requestHints,
             supportsTools,
           }),

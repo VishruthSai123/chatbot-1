@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { safeNextPath } from "./lib/auth/next";
 import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
 
 /**
@@ -56,7 +57,16 @@ export async function proxy(request: NextRequest) {
   const isGuest = guestRegex.test(token?.email ?? "");
 
   if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
-    return NextResponse.redirect(new URL(`${base}/`, request.url));
+    // An already-signed-in visitor who followed a `?next=` link goes where the
+    // link pointed, not to the home page.
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+    const target = new URL(`${base}${next}`, request.url);
+
+    if (request.nextUrl.searchParams.get("embed") === "android") {
+      target.searchParams.set("embed", "android");
+    }
+
+    return NextResponse.redirect(target);
   }
 
   return NextResponse.next();

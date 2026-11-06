@@ -8,10 +8,15 @@ import { useActionState, useEffect, useState } from "react";
 import { AuthForm } from "@/components/chat/auth-form";
 import { SubmitButton } from "@/components/chat/submit-button";
 import { toast } from "@/components/chat/toast";
+import { useAuthReturnHref } from "@/hooks/use-auth-return";
 import { type LoginActionState, login } from "../actions";
 
 export default function Page() {
   const router = useRouter();
+  const returnHref = useAuthReturnHref();
+  const signUpHref = returnHref.includes("embed=android")
+    ? "/register?embed=android"
+    : "/register";
   const [email, setEmail] = useState("");
   const [isSuccessful, setIsSuccessful] = useState(false);
 
@@ -34,9 +39,9 @@ export default function Page() {
     } else if (state.status === "success") {
       setIsSuccessful(true);
       updateSession();
-      router.refresh();
+      router.replace(returnHref);
     }
-  }, [state.status]);
+  }, [state.status, returnHref]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get("email") as string);
@@ -55,7 +60,7 @@ export default function Page() {
           {"No account? "}
           <Link
             className="text-foreground underline-offset-4 hover:underline"
-            href="/register"
+            href={signUpHref}
           >
             Sign up
           </Link>
