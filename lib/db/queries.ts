@@ -270,6 +270,32 @@ export async function deleteAllChatsByUserId({ userId }: { userId: string }) {
   }
 }
 
+/** Lightweight title search used by Quick Search's Spire library section. */
+export async function searchChatsByUserId({
+  id,
+  limit,
+  query,
+}: {
+  id: string;
+  limit: number;
+  query: string;
+}) {
+  try {
+    return await db
+      .select({
+        createdAt: chat.createdAt,
+        id: chat.id,
+        title: chat.title,
+      })
+      .from(chat)
+      .where(and(eq(chat.userId, id), ilike(chat.title, `%${query}%`)))
+      .orderBy(desc(chat.createdAt))
+      .limit(limit);
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
 export async function getChatsByUserId({
   id,
   limit,

@@ -13,10 +13,10 @@ import { searchProviders } from "@/lib/search/engines";
 /*
  * Searching the web.
  *
- * There is no provider-executed search tool here: every model this app runs on
- * is a free OpenRouter model, and none of them can search. A model asked to
- * "search the web" without a tool answers from its training data and invents
- * the links — which is the one thing a search feature must never do.
+ * There is no provider-executed search tool here: the app answers with Gemini
+ * Flash, and a model asked to "search the web" without a tool answers from its
+ * training data and invents the links — which is the one thing a search feature
+ * must never do.
  *
  * So the search is done natively, in three steps:
  *

@@ -4,7 +4,6 @@ import { generateText, type UIMessage } from "ai";
 import { cookies } from "next/headers";
 import { auth } from "@/app/(auth)/auth";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
-import { titleModel } from "@/lib/ai/models";
 import { titlePrompt } from "@/lib/ai/prompts";
 import { getTitleModel } from "@/lib/ai/providers";
 import {
@@ -28,15 +27,16 @@ export async function generateTitleFromUserMessage({
   try {
     const { text } = await generateText({
       instructions: titlePrompt,
+      maxOutputTokens: 128,
+      maxRetries: 0,
       model: getTitleModel(),
       prompt: getTextFromMessage(message),
-      ...(titleModel.gatewayOrder
-        ? {
-            providerOptions: {
-              gateway: { order: titleModel.gatewayOrder },
-            },
-          }
-        : {}),
+      providerOptions: {
+        google: {
+          thinkingConfig: { thinkingLevel: "minimal" },
+        },
+      },
+      temperature: 0.2,
     });
     return text
       .replace(/^[#*"\s]+/, "")

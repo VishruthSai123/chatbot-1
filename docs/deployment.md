@@ -9,7 +9,7 @@ Vercel does not apply a new variable to a running deployment.
 |---|---|---|
 | `POSTGRES_URL` | yes | Supabase Postgres. The session pooler (port 5432) works; the app caps its pool at 3 connections. |
 | `AUTH_SECRET` | yes | NextAuth sessions. Also the fallback key for encrypting media sessions. |
-| `OPENROUTER_API_KEY` | yes | Every model in the app. Without it nothing answers. |
+| `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | yes | The single Gemini model used for chat, title and vision. Without one, requests fail with a clear configuration error. |
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | Storage and the browser client. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Storage, browser side. |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Storage, server side (signed uploads and reads). |
@@ -18,7 +18,22 @@ Vercel does not apply a new variable to a running deployment.
 | `YTDLP_PROXY` | optional | Routes yt-dlp through a proxy, which is the fix for YouTube bot-checking the server. |
 | `YTDLP_EXTRACTOR_ARGS` | optional | e.g. `youtube:player_client=tv`, to pin a player client. |
 | `BRAVE_SEARCH_API_KEY` / `TAVILY_API_KEY` | optional | Alternative search providers. |
-| `OPENROUTER_VISION_MODEL` | optional | Pins the model used for OCR. |
+| `AI_FALLBACK_PROVIDER` | optional | Set to `openrouter` to enable the explicit fallback. Disabled otherwise. |
+| `OPENROUTER_API_KEY` | optional | Only used when `AI_FALLBACK_PROVIDER=openrouter`. |
+| `OPENROUTER_FALLBACK_MODEL` | optional | Fallback model id, e.g. `google/gemini-3.5-flash-lite`. |
+| `GOOGLE_GENERATIVE_AI_API_BASE` | optional | Proxy or mock base URL for the Google provider. |
+
+## Models
+
+There is exactly one model. It was verified against Google's `models` endpoint
+and model card:
+
+| Role | Model id | Notes |
+|---|---|---|
+| Chat, title and vision | `gemini-3.5-flash-lite` | GA, 1,048,576 input / 65,536 output, image/PDF input, function calling, streaming. $0.30 / $2.50 per 1M tokens. |
+
+Chat uses `thinkingLevel: "low"`; title and OCR use `"minimal"`. There is no
+user-facing model picker and no other model in `allowedModelIds`.
 
 ## Build
 

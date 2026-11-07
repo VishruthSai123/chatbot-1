@@ -16,9 +16,9 @@ export {
 /**
  * The models the non-chat work runs on.
  *
- * Everything in this app runs on OpenRouter. "Grounding" here does not mean a
- * provider-executed search tool — no such tool is used. It means the work that
- * turns *outside information* into text:
+ * Everything in this app runs on Gemini by default. "Grounding" here does not
+ * mean a provider-executed search tool — no such tool is used. It means the
+ * work that turns *outside information* into text:
  *
  * - searching the web and reading the pages (done natively, see
  *   `lib/search/web.ts` and `lib/net/page.ts`),

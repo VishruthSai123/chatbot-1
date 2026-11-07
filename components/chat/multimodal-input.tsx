@@ -175,6 +175,9 @@ function PureMultimodalInput({
   const hasAttachedFiles = attachments.length > 0 || uploadQueue.length > 0;
   const isSendingOrGenerating =
     status === "submitted" || status === "streaming";
+  const canSend =
+    (Boolean(input.trim()) || attachments.length > 0) &&
+    uploadQueue.length === 0;
 
   // Adaptive beam size: "line" when files attached, expanded height, or while sending/generating; otherwise "md"
   const beamSize: BorderBeamSize =
@@ -214,13 +217,9 @@ function PureMultimodalInput({
         case "rename":
           toast("Rename is available from the sidebar chat menu.");
           break;
-        case "model": {
-          const modelBtn = document.querySelector<HTMLButtonElement>(
-            "[data-testid='model-selector']"
-          );
-          modelBtn?.click();
+        case "model":
+          toast("This build uses a fixed model: Gemini 3.5 Flash-Lite.");
           break;
-        }
         case "theme":
           setTheme(resolvedTheme === "dark" ? "light" : "dark");
           break;
@@ -744,16 +743,13 @@ function PureMultimodalInput({
             ) : (
               <PromptInputSubmit
                 className={cn(
-                  "h-7 w-7 rounded-xl transition-all duration-200",
-                  input.trim() || attachments.length > 0
-                    ? "bg-foreground text-background hover:opacity-85 active:scale-95"
-                    : "bg-muted text-muted-foreground/25 cursor-not-allowed"
+                  "h-8 w-8 shrink-0 rounded-full shadow-sm transition-all duration-200",
+                  canSend
+                    ? "bg-foreground text-background hover:bg-foreground/90 hover:shadow-md active:scale-95"
+                    : "cursor-not-allowed bg-muted text-muted-foreground/30 shadow-none"
                 )}
                 data-testid="send-button"
-                disabled={
-                  (!input.trim() && attachments.length === 0) ||
-                  uploadQueue.length > 0
-                }
+                disabled={!canSend}
                 status={status}
                 variant="secondary"
               >
@@ -978,7 +974,20 @@ function PureModelSelectorCompact({
     activeModels.find((m: ChatModel) => m.id === selectedModelId) ??
     activeModels.find((m: ChatModel) => m.id === DEFAULT_CHAT_MODEL) ??
     activeModels[0];
-  const [provider] = selectedModel.id.split("/");
+  const { provider } = selectedModel;
+
+  // One fixed model: show it, but do not offer a picker.
+  if (chatModels.length <= 1) {
+    return (
+      <div
+        className="flex h-7 max-w-[170px] items-center gap-1.5 px-2 text-[12px] text-muted-foreground sm:max-w-[200px]"
+        data-testid="model-label"
+      >
+        {provider ? <ModelSelectorLogo provider={provider} /> : null}
+        <span className="truncate">{selectedModel.name}</span>
+      </div>
+    );
+  }
 
   return (
     <ModelSelector onOpenChange={setOpen} open={open}>

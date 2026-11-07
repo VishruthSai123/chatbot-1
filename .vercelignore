@@ -1,0 +1,15 @@
+# Vercel only needs the web app. Keep the Android project and local build
+# artifacts out of the upload so production deploys stay fast.
+/quick-search/
+/.next/
+/node_modules/
+/.ytdlp/
+/.git/
+/artifacts/spire/
+/docs/
+/tests/
+/test-results/
+*.apk
+*.idsig
+tsconfig.tsbuildinfo
+/public/preview.png

@@ -1,36 +1,15 @@
-export const DEFAULT_CHAT_MODEL = "openrouter/free";
-
-export const titleModel: {
-  description: string;
-  id: string;
-  name: string;
-  provider: string;
-  gatewayOrder?: string[];
-} = {
-  description: "Fast free model for title generation",
-  id: "openrouter/free",
-  name: "Free Models Router",
-  provider: "openrouter",
-};
-
 /**
- * The model that reads images.
+ * One model, fixed at build time.
  *
- * `openrouter/free` routes to a free model with vision when an image is in the
- * request. A deployment that wants a specific vision model can set
- * `OPENROUTER_VISION_MODEL` without changing the conversation's model.
+ * Gemini 3.5 Flash-Lite is the low-cost current Gemini model that still
+ * supports what this app needs: 1M context, image/PDF input, function calling
+ * and streaming. There is deliberately no user-facing model selection.
+ *
+ * The id was checked against Google's `models` endpoint. Do not replace it
+ * with a guessed alias.
  */
-export const visionModel: {
-  description: string;
-  id: string;
-  name: string;
-  provider: string;
-} = {
-  description: "Free vision model for reading images",
-  id: process.env.OPENROUTER_VISION_MODEL?.trim() || "openrouter/free",
-  name: "Free Models Router",
-  provider: "openrouter",
-};
+
+export type ModelProvider = "google" | "openrouter";
 
 export type ModelCapabilities = {
   tools: boolean;
@@ -41,111 +20,56 @@ export type ModelCapabilities = {
 export type ChatModel = {
   id: string;
   name: string;
-  provider: string;
+  provider: ModelProvider;
   description: string;
-  gatewayOrder?: string[];
-  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
+  /** Gemini thinking level. `low` is the chat default. */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 };
 
+export const DEFAULT_CHAT_MODEL = "gemini-3.5-flash-lite";
+
 /**
- * Curated list of high-quality free models on OpenRouter.
- * Every model in the selector is a free OpenRouter model.
+ * Title and vision use the same model. Title/OCR set thinking to `minimal`
+ * explicitly because those tasks do not need reasoning.
  */
+export const titleModel: {
+  description: string;
+  id: string;
+  name: string;
+  provider: ModelProvider;
+} = {
+  description: "Fast, low-cost title generation",
+  id: DEFAULT_CHAT_MODEL,
+  name: "Gemini 3.5 Flash-Lite",
+  provider: "google",
+};
+
+export const visionModel: {
+  description: string;
+  id: string;
+  name: string;
+  provider: ModelProvider;
+} = {
+  description: "Fast, low-cost multimodal Gemini model for reading images",
+  id: DEFAULT_CHAT_MODEL,
+  name: "Gemini 3.5 Flash-Lite",
+  provider: "google",
+};
+
+/** The only model in the app. */
 export const chatModels: ChatModel[] = [
   {
     description:
-      "Auto-routes to the best available free model with vision and tool use",
-    id: "openrouter/free",
-    name: "Free Models Router",
-    provider: "openrouter",
-  },
-  {
-    description:
-      "Vision-language model with 1M context window and tool use (Free)",
-    id: "nvidia/nemotron-3.5-super-vl:free",
-    name: "NVIDIA Nemotron 3.5 Super VL",
-    provider: "nvidia",
-  },
-  {
-    description:
-      "High-speed 1M token context instruction model with tool use (Free)",
-    id: "nvidia/nemotron-3.5-lightning:free",
-    name: "NVIDIA Nemotron 3.5 Lightning",
-    provider: "nvidia",
-  },
-  {
-    description:
-      "512k context window with multimodal vision and tool use (Free)",
-    id: "dots-studio/dots-3-note-preview:free",
-    name: "Dots Studio Dots3",
-    provider: "dots-studio",
-  },
-  {
-    description:
-      "262k context reasoning and versatile instruction model (Free)",
-    id: "poolside/laguna-s-2.1:free",
-    name: "Poolside Laguna S 2.1",
-    provider: "poolside",
-    reasoningEffort: "medium",
-  },
-  {
-    description: "Fast 262k context general instruction and tool model (Free)",
-    id: "recursive/flint-v1.0:free",
-    name: "Recursive Flint",
-    provider: "recursive",
-  },
-  {
-    description:
-      "Specialized code generation and technical tool execution model (Free)",
-    id: "cohere/north-mini-code:free",
-    name: "Cohere North Mini Code",
-    provider: "cohere",
-  },
-  {
-    description: "Ultra-fast lightweight instruction model (Free)",
-    id: "liquid/lfm-2.5-2.6b:free",
-    name: "LiquidAI LFM 2.5",
-    provider: "liquid",
+      "Fast, low-cost Gemini with 1M context, vision and tool calling",
+    id: DEFAULT_CHAT_MODEL,
+    name: "Gemini 3.5 Flash-Lite",
+    provider: "google",
+    thinkingLevel: "low",
   },
 ];
 
 export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
-  "cohere/north-mini-code:free": {
-    reasoning: true,
-    tools: true,
-    vision: false,
-  },
-  "dots-studio/dots-3-note-preview:free": {
-    reasoning: true,
-    tools: true,
-    vision: true,
-  },
-  "liquid/lfm-2.5-2.6b:free": {
-    reasoning: false,
-    tools: true,
-    vision: false,
-  },
-  "nvidia/nemotron-3.5-lightning:free": {
-    reasoning: false,
-    tools: true,
-    vision: false,
-  },
-  "nvidia/nemotron-3.5-super-vl:free": {
-    reasoning: true,
-    tools: true,
-    vision: true,
-  },
-  "openrouter/free": { reasoning: true, tools: true, vision: true },
-  "poolside/laguna-s-2.1:free": {
-    reasoning: true,
-    tools: true,
-    vision: false,
-  },
-  "recursive/flint-v1.0:free": {
-    reasoning: false,
-    tools: true,
-    vision: false,
-  },
+  "gemini-3.5-flash-lite": { reasoning: false, tools: true, vision: true },
 };
 
 export async function getCapabilities(): Promise<

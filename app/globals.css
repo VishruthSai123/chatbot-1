@@ -529,6 +529,11 @@ html[data-embed="android"] a[href*="vercel.com/templates/next.js/chatbot"],
 html[data-embed="android"] a[href*="vercel.com/d?to="] {
   display: none;
 }
+/*
+ * Keep the website header visible inside the Android shell. The native Spire
+ * top bar sits above the WebView, so the web header naturally starts below it
+ * and keeps the model, visibility and export controls available.
+ */
 html[data-embed="android"] body {
   overscroll-behavior-y: none;
 }

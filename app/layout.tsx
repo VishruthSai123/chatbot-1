@@ -13,17 +13,17 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "SuperiorAI",
+    title: "Spire",
   },
-  applicationName: "SuperiorAI",
+  applicationName: "Spire",
   description:
-    "A workbench for images, PDFs, spreadsheets, documents, audio, notebooks and research.",
+    "Spire is an AI workbench for images, PDFs, spreadsheets, documents, audio, notebooks and research.",
   icons: {
     apple: `${basePath}/icons/apple-touch-icon.png`,
     icon: `${basePath}/icons/icon-192.png`,
   },
   metadataBase: new URL("https://chatbot-1-beige.vercel.app"),
-  title: "SuperiorAI",
+  title: "Spire",
 };
 
 export const viewport: Viewport = {

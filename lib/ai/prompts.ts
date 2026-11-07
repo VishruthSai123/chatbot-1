@@ -184,15 +184,25 @@ About the origin of user's request:
 /** One-line deterministic geometry hint derived from the user's latest message. */
 export type ImageRequirementHint = string | null;
 
+const deviceActionsPrompt = `
+
+**Device actions (Quick Search Android):**
+- Use \`deviceAction\` only when the user explicitly asks to do something on their phone: open an app, create a reminder, create a note, or search their phone.
+- Do not use it for general questions, and do not invent dates, times, app names, or note content.
+- The user sees a native Allow/Cancel dialog. After the tool returns, tell the user what happened in one short sentence. If it was cancelled, acknowledge that without retrying.
+- If the result says the action is unavailable, explain that device actions require the Quick Search Android app.`;
+
 export const systemPrompt = ({
   requestHints,
   supportsTools,
   imageRequirement,
+  deviceActionsAvailable = false,
   isGuest = false,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
   imageRequirement?: ImageRequirementHint;
+  deviceActionsAvailable?: boolean;
   /** Guests can chat and read attachments; tools need an account. */
   isGuest?: boolean;
 }) => {
@@ -205,9 +215,10 @@ export const systemPrompt = ({
   const requirementPrompt = imageRequirement
     ? `\n\n${imageRequirement} Pass these through to the matching image tool fields exactly (unit and dpi included); do not re-derive or ask the user.`
     : "";
+  const devicePrompt = deviceActionsAvailable ? deviceActionsPrompt : "";
   const guestPrompt = isGuest ? guestPromptText : "";
 
-  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}${guestPrompt}`;
+  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}${devicePrompt}${guestPrompt}`;
 };
 
 /**

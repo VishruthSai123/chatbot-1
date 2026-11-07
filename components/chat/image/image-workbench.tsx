@@ -506,7 +506,7 @@ export const ImageWorkbench = memo(function InnerImageWorkbench({
     }
     const link = document.createElement("a");
     link.href = formatSrc(currentBase64);
-    link.download = imageDownloadName("superiorai-image", currentBase64);
+    link.download = imageDownloadName("spire-image", currentBase64);
     link.click();
     toast.success("Download started!");
   }, [currentBase64, formatSrc]);

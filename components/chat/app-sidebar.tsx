@@ -2,7 +2,6 @@
 
 import {
   LibraryIcon,
-  MessageSquareIcon,
   PanelLeftIcon,
   PenSquareIcon,
   TrashIcon,
@@ -14,6 +13,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
+import { SpireMark, SpireWordmark } from "@/components/brand/spire-mark";
 import {
   getChatHistoryPaginationKey,
   SidebarHistory,
@@ -91,11 +91,12 @@ export function AppSidebar({ user }: { user: User | undefined }) {
               <div className="group/logo relative flex items-center justify-center">
                 <SidebarMenuButton
                   asChild
-                  className="size-8 !px-0 items-center justify-center group-data-[collapsible=icon]:group-hover/logo:opacity-0"
-                  tooltip="SuperiorAI"
+                  className="h-8 w-auto !px-1 items-center justify-center group-data-[collapsible=icon]:group-hover/logo:opacity-0"
+                  tooltip="Spire"
                 >
                   <Link href="/" onClick={closeMobile}>
-                    <MessageSquareIcon className="size-4 text-sidebar-foreground/50" />
+                    <SpireMark className="size-4 text-sidebar-foreground/60" />
+                    <SpireWordmark className="h-4 text-sidebar-foreground/80 group-data-[collapsible=icon]:hidden" />
                   </Link>
                 </SidebarMenuButton>
                 <Tooltip>

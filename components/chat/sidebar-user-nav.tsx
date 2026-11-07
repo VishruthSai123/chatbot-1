@@ -39,7 +39,10 @@ export function SidebarUserNav({ user }: { user: User }) {
 
   const handleAuthClick = useCallback(() => {
     if (isGuest) {
-      router.push("/login");
+      const embed =
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("embed") === "android";
+      router.push(embed ? "/login?embed=android" : "/login");
     } else {
       signOut({
         redirectTo: "/",

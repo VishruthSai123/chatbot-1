@@ -1,5 +1,7 @@
 import "server-only";
 
+import { GEMINI_IMAGE_MEDIA_TYPES } from "@/lib/ai/vision-limits";
+import { normalizeVisionImage } from "@/lib/ai/vision-normalize";
 import { extractFile } from "@/lib/notebook/extract";
 import type { ChatMessage } from "@/lib/types";
 import { isImageType, isMediaType, mediaTypeFor } from "./media";
@@ -81,9 +83,42 @@ async function readablePart({
   const filename = part.filename ?? part.name ?? "attachment";
   const mediaType = part.mediaType ?? mediaTypeFor(filename);
 
-  // An image the model can see is better as an image than as OCR text.
-  if (isImageType(mediaType) && vision && part.url) {
-    return part;
+  /*
+   * An image the model can see is better as an image than as OCR text. Gemini
+   * accepts PNG/JPEG/WEBP/HEIC directly; anything else is re-encoded so the
+   * provider never receives an unsupported inline part.
+   */
+  if (isImageType(mediaType) && vision) {
+    if (part.documentId) {
+      const imageSource = await readSourceDocument({
+        documentId: part.documentId,
+        userId,
+      });
+
+      if (imageSource) {
+        try {
+          const normalized = await normalizeVisionImage({
+            buffer: imageSource.buffer,
+            mediaType: imageSource.mediaType || mediaType,
+          });
+
+          return {
+            ...part,
+            filename,
+            mediaType: normalized.mediaType,
+            url: `data:${normalized.mediaType};base64,${normalized.buffer.toString("base64")}`,
+          };
+        } catch {
+          // Fall through to text extraction: a broken image should still
+          // produce a clear "could not be read" note instead of failing the
+          // whole request.
+        }
+      }
+    }
+
+    if (GEMINI_IMAGE_MEDIA_TYPES.has(mediaType) && part.url) {
+      return part;
+    }
   }
 
   if (!part.documentId) {

@@ -64,9 +64,9 @@ read: scripts, styles, templates and comments are noise.
 ## 4. Images
 
 OCR goes to the vision model (`getVisionModel()` in
-`lib/ai/search/grounding.ts`), which defaults to `openrouter/free` and can be
-pointed at a specific model with `OPENROUTER_VISION_MODEL`. A text-only model
-is never asked to read a picture.
+`lib/ai/search/grounding.ts`), which is the same fixed
+`gemini-3.5-flash-lite` model used everywhere. A text-only model is never asked
+to read a picture.
 
 ## 5. Capability discovery
 

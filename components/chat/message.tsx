@@ -997,6 +997,67 @@ const PurePreviewMessage = ({
       );
     }
 
+    if (type === "tool-deviceAction") {
+      const { toolCallId, state, output } = part as {
+        errorText?: string;
+        output?: { message?: string; status?: string };
+        state?: string;
+        toolCallId: string;
+      };
+
+      const isFinished =
+        state === "output-available" ||
+        state === "output-error" ||
+        state === "output-denied";
+
+      if (isFinished) {
+        const status = output?.status;
+        const isFailure =
+          state === "output-error" ||
+          status === "error" ||
+          status === "unavailable";
+        const statusMessage =
+          output?.message ||
+          (part as { errorText?: string }).errorText ||
+          (status === "cancelled"
+            ? "The device action was cancelled."
+            : "The device action finished.");
+
+        return (
+          <div
+            className={cn(
+              "flex w-[min(100%,450px)] items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs shadow-sm",
+              isFailure
+                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                : "border-border/50 bg-muted/40 text-muted-foreground"
+            )}
+            key={toolCallId}
+          >
+            <SparklesIcon size={13} />
+            <span className="whitespace-normal break-words text-foreground/80">
+              {statusMessage}
+            </span>
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className="flex w-[min(100%,450px)] items-center gap-2.5 rounded-xl border border-border/50 bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground shadow-sm"
+          key={toolCallId}
+        >
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-sky-400" />
+          <Shimmer
+            as="span"
+            className="font-medium whitespace-normal break-words text-foreground/80"
+            duration={1.2}
+          >
+            Waiting for confirmation…
+          </Shimmer>
+        </div>
+      );
+    }
+
     return null;
   });
 

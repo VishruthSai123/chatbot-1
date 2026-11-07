@@ -12,7 +12,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useArtifact } from "@/hooks/use-artifact";
@@ -178,44 +178,78 @@ export function Library() {
     return () => clearTimeout(timer);
   }, [kind, load, query]);
 
-  const handleOpen = useCallback(
-    async (document: LibraryDocument) => {
-      setOpeningId(document.id);
+  const returnToChat = useCallback(() => {
+    const embed =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("embed");
+
+    // The chat shell owns the artifact panel, so the document is opened from
+    // the chat rather than from the library itself.
+    router.push(embed === "android" ? "/?embed=android" : "/");
+  }, [router]);
+
+  const handleOpenDocumentId = useCallback(
+    async (documentId: string) => {
+      setOpeningId(documentId);
 
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${document.id}`
+          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`
         );
         const versions = await response.json();
+        const latest = Array.isArray(versions) ? versions.at(-1) : null;
 
-        if (!response.ok || !Array.isArray(versions) || versions.length === 0) {
+        if (!response.ok || !latest) {
           toast.error("That document could not be opened.");
           return;
         }
 
-        const latest = versions.at(-1);
-
         setArtifact((current) => ({
           ...current,
           content: latest.content ?? "",
-          documentId: document.id,
+          documentId,
           isVisible: true,
-          kind: document.kind ?? "text",
+          kind: latest.kind ?? "text",
           status: "idle",
-          title: document.title,
+          title: latest.title ?? "Document",
         }));
-
-        // The chat shell owns the artifact panel, so the document is opened
-        // from the chat rather than from the library itself.
-        router.push("/");
+        returnToChat();
       } catch {
         toast.error("That document could not be opened.");
       } finally {
         setOpeningId(null);
       }
     },
-    [router, setArtifact]
+    [returnToChat, setArtifact]
   );
+
+  const handleOpen = useCallback(
+    async (document: LibraryDocument) => {
+      await handleOpenDocumentId(document.id);
+    },
+    [handleOpenDocumentId]
+  );
+
+  // Quick Search can deep-link straight to a library artifact. Open it once,
+  // then let the chat shell own the panel exactly like a normal library tap.
+  const openedDocumentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const documentId = new URLSearchParams(window.location.search).get(
+      "document"
+    );
+
+    if (!documentId || openedDocumentRef.current === documentId) {
+      return;
+    }
+
+    openedDocumentRef.current = documentId;
+    handleOpenDocumentId(documentId).catch(() => undefined);
+  }, [handleOpenDocumentId]);
 
   const handleDelete = useCallback(async (document: LibraryDocument) => {
     try {

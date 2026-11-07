@@ -11,9 +11,9 @@ export default function manifest(): MetadataRoute.Manifest {
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
   return {
-    background_color: "#ffffff",
+    background_color: "#09090b",
     description:
-      "A workbench for images, PDFs, spreadsheets, documents, audio, notebooks and research.",
+      "Spire is an AI workbench for images, PDFs, spreadsheets, documents, audio, notebooks and research.",
     display: "standalone",
     icons: [
       {
@@ -33,11 +33,11 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/png",
       },
     ],
-    name: "SuperiorAI",
+    name: "Spire",
     orientation: "portrait-primary",
     scope: `${basePath}/`,
-    short_name: "SuperiorAI",
+    short_name: "Spire",
     start_url: `${basePath}/`,
-    theme_color: "#18181b",
+    theme_color: "#09090b",
   };
 }

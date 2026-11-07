@@ -2,13 +2,17 @@
 
 import type { UseChatHelpers } from "@ai-sdk/react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
 import { usePathname } from "next/navigation";
 import {
   createContext,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -26,7 +30,13 @@ import { useAutoResume } from "@/hooks/use-auto-resume";
 import { allowedModelIds, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
+import {
+  cancelPendingDeviceActions,
+  type DeviceActionInput,
+  requestDeviceAction,
+} from "@/lib/spire-device-bridge";
 import type { Attachment, ChatMessage } from "@/lib/types";
+import { uploadFile } from "@/lib/upload/client";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
 type ActiveChatContextValue = {
@@ -71,6 +81,69 @@ function extractChatId(pathname: string): string | null {
   return match[1];
 }
 
+/**
+ * True only when the last step has a client-side device action and every tool
+ * in that step already has a result. The old check resubmitted as soon as one
+ * device result existed, even if another call was still pending.
+ */
+function lastAssistantMessageHasCompleteDeviceAction(
+  messages: ChatMessage[]
+): boolean {
+  const message = messages.at(-1);
+
+  if (message?.role !== "assistant") {
+    return false;
+  }
+
+  const lastStepStart = message.parts.reduce(
+    (lastIndex, part, index) =>
+      part.type === "step-start" ? index : lastIndex,
+    -1
+  );
+  const lastStep = message.parts.slice(lastStepStart + 1);
+  const toolParts = lastStep.filter(
+    (part) =>
+      part.type.startsWith("tool-") &&
+      !(part as { providerExecuted?: boolean }).providerExecuted
+  );
+
+  if (toolParts.length === 0) {
+    return false;
+  }
+
+  const hasDeviceAction = toolParts.some(
+    (part) => part.type === "tool-deviceAction"
+  );
+
+  if (!hasDeviceAction) {
+    return false;
+  }
+
+  const allResolved = toolParts.every((part) => {
+    const { state } = part as { state?: string };
+    return (
+      state === "output-available" ||
+      state === "output-error" ||
+      state === "output-denied"
+    );
+  });
+
+  if (!allResolved) {
+    return false;
+  }
+
+  const lastToolIndex = lastStep.findLastIndex((part) =>
+    part.type.startsWith("tool-")
+  );
+
+  return !lastStep
+    .slice(lastToolIndex + 1)
+    .some(
+      (part) =>
+        part.type === "text" && (part as { state?: string }).state !== "done"
+    );
+}
+
 export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { setDataStream, setWaitingStatus } = useDataStream();
@@ -99,6 +172,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>(
     []
   );
+  const pendingDeviceActionsRef = useRef(new Set<string>());
+  const resolvedDeviceActionsRef = useRef(new Set<string>());
+  const stopRequestedRef = useRef(false);
 
   const { data: chatData, isLoading } = useSWR(
     isNewChat
@@ -173,6 +249,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     regenerate,
     resumeStream,
     addToolApprovalResponse,
+    addToolOutput,
   } = useChat<ChatMessage>({
     generateId: generateUUID,
     id: chatId,
@@ -196,36 +273,102 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         });
       }
     },
-    onFinish: () => {
+    onFinish: ({ isAbort, isError }) => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
+
+      if (isAbort || isError) {
+        cancelPendingDeviceActions(
+          isAbort
+            ? "The action was cancelled because you stopped the response."
+            : "The action was cancelled because the response failed."
+        );
+      }
+    },
+    onToolCall: async ({ toolCall }) => {
+      if (toolCall.toolName !== "deviceAction") {
+        return;
+      }
+
+      if (resolvedDeviceActionsRef.current.has(toolCall.toolCallId)) {
+        return;
+      }
+
+      pendingDeviceActionsRef.current.add(toolCall.toolCallId);
+
+      try {
+        if (stopRequestedRef.current) {
+          addToolOutput({
+            errorText: "The action was cancelled.",
+            state: "output-error",
+            tool: "deviceAction",
+            toolCallId: toolCall.toolCallId,
+          });
+          return;
+        }
+
+        const output = await requestDeviceAction(
+          toolCall.input as DeviceActionInput
+        );
+
+        addToolOutput({
+          output,
+          tool: "deviceAction",
+          toolCallId: toolCall.toolCallId,
+        });
+      } catch (error) {
+        addToolOutput({
+          errorText:
+            error instanceof Error
+              ? error.message
+              : "The device action could not be completed.",
+          state: "output-error",
+          tool: "deviceAction",
+          toolCallId: toolCall.toolCallId,
+        });
+      } finally {
+        pendingDeviceActionsRef.current.delete(toolCall.toolCallId);
+        resolvedDeviceActionsRef.current.add(toolCall.toolCallId);
+      }
     },
     sendAutomaticallyWhen: ({ messages: currentMessages }) => {
-      const lastMessage = currentMessages.at(-1);
-      return (
-        lastMessage?.parts?.some(
-          (part) =>
-            "state" in part &&
-            part.state === "approval-responded" &&
-            "approval" in part &&
-            (part.approval as { approved?: boolean })?.approved === true
-        ) ?? false
-      );
+      if (stopRequestedRef.current) {
+        return false;
+      }
+
+      if (
+        lastAssistantMessageIsCompleteWithApprovalResponses({
+          messages: currentMessages,
+        })
+      ) {
+        return true;
+      }
+
+      return lastAssistantMessageHasCompleteDeviceAction(currentMessages);
     },
     transport: new DefaultChatTransport({
       api: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat`,
       fetch: fetchWithErrorHandlers,
       prepareSendMessagesRequest(request) {
         const lastMessage = request.messages.at(-1);
+
+        if (lastMessage?.role === "user") {
+          stopRequestedRef.current = false;
+        }
+
+        const hasResolvedToolResult = request.messages.some((msg) =>
+          msg.parts?.some((part) => {
+            const { state } = part as { state?: string };
+            return (
+              part.type.startsWith("tool-") &&
+              (state === "output-available" ||
+                state === "output-error" ||
+                state === "output-denied" ||
+                state === "approval-responded")
+            );
+          })
+        );
         const isToolApprovalContinuation =
-          lastMessage?.role !== "user" ||
-          request.messages.some((msg) =>
-            msg.parts?.some((part) => {
-              const { state } = part as { state?: string };
-              return (
-                state === "approval-responded" || state === "output-denied"
-              );
-            })
-          );
+          lastMessage?.role !== "user" || hasResolvedToolResult;
 
         return {
           body: {
@@ -236,6 +379,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
             activeImage: activeImageRef.current ?? undefined,
             activePdf: activePdfRef.current ?? undefined,
             activeSheet: activeSheetRef.current ?? undefined,
+            androidBridge:
+              typeof window !== "undefined" && Boolean(window.SpireAndroid),
             selectedChatModel: currentModelIdRef.current,
             selectedVisibilityType: visibility,
             ...request.body,
@@ -244,6 +389,68 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       },
     }),
   });
+
+  /**
+   * Stop must first complete any native action that is waiting for the user.
+   * Otherwise the tool call is left open and the next turn cannot be built.
+   */
+  const stopWithCleanup = useCallback(async () => {
+    stopRequestedRef.current = true;
+    cancelPendingDeviceActions(
+      "The action was cancelled because you stopped the response."
+    );
+
+    // Let the onToolCall continuation write its result before aborting.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    await stop();
+  }, [stop]);
+
+  /*
+   * A device call can be left unresolved if the page was aborted before
+   * onToolCall ran. Complete it with an explicit error as soon as the turn is
+   * no longer streaming; pending native dialogs are excluded above.
+   */
+  useEffect(() => {
+    if (status !== "ready" && status !== "error") {
+      return;
+    }
+
+    const lastMessage = messages.at(-1);
+
+    if (lastMessage?.role !== "assistant") {
+      return;
+    }
+
+    for (const part of lastMessage.parts) {
+      if (part.type !== "tool-deviceAction") {
+        continue;
+      }
+
+      const { state } = part as { state?: string };
+
+      if (state !== "input-available" && state !== "input-streaming") {
+        continue;
+      }
+
+      if (
+        pendingDeviceActionsRef.current.has(part.toolCallId) ||
+        resolvedDeviceActionsRef.current.has(part.toolCallId)
+      ) {
+        continue;
+      }
+
+      resolvedDeviceActionsRef.current.add(part.toolCallId);
+      addToolOutput({
+        errorText: "The device action did not finish. Please try again.",
+        state: "output-error",
+        tool: "deviceAction",
+        toolCallId: part.toolCallId,
+      });
+    }
+  }, [addToolOutput, messages, status]);
 
   useEffect(() => {
     if (status === "submitted" || status === "ready" || status === "error") {
@@ -318,6 +525,103 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     }
   }, [sendMessage, chatId]);
 
+  /**
+   * Android shell hand-off.
+   *
+   * The native app opens `?query=` for a text share or Ask action, `?draft=`
+   * to prefill only, and `?share=<token>` for images/PDFs. The token maps to a
+   * small manifest served by the WebView from
+   * `https://appassets.androidplatform.net`. Files are fetched here and sent
+   * through the same `uploadFile` path as a normal attachment, so the native
+   * side never needs the HttpOnly session cookie.
+   */
+  const hasHydratedAndroidExtrasRef = useRef(false);
+  useEffect(() => {
+    if (hasHydratedAndroidExtrasRef.current) {
+      return;
+    }
+    hasHydratedAndroidExtrasRef.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embed") === "android") {
+      document.documentElement.dataset.embed = "android";
+    }
+
+    const draft = params.get("draft");
+    if (draft) {
+      setInput((current) => current || draft);
+    }
+
+    const cleanUrl = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("share");
+      url.searchParams.delete("draft");
+      window.history.replaceState({}, "", url.toString());
+    };
+
+    const share = params.get("share");
+    if (!share) {
+      if (draft) {
+        cleanUrl();
+      }
+      return;
+    }
+
+    // Tells the Android WebView fallback not to inject the same files again.
+    document.documentElement.dataset.androidShare = "handled";
+
+    const shareBase = "https://appassets.androidplatform.net";
+    // biome-ignore lint/complexity/noVoid: the async block handles its own errors
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${shareBase}/share/${encodeURIComponent(share)}/manifest.json`
+        );
+        if (!response.ok) {
+          throw new Error(`Share manifest ${response.status}`);
+        }
+        const manifest = (await response.json()) as {
+          text?: string;
+          files?: Array<{ name: string; type: string; url: string }>;
+        };
+
+        if (manifest.text) {
+          setInput((current) => current || manifest.text || "");
+        }
+
+        const uploaded: Attachment[] = [];
+        for (const file of manifest.files ?? []) {
+          // biome-ignore lint/performance/noAwaitInLoops: uploads stay in share-sheet order
+          const fileResponse = await fetch(file.url);
+          if (!fileResponse.ok) {
+            continue;
+          }
+          const blob = await fileResponse.blob();
+          const result = await uploadFile(
+            new File([blob], file.name, {
+              type: file.type || blob.type || "application/octet-stream",
+            }),
+            { chatId }
+          );
+          uploaded.push({
+            contentType: result.contentType,
+            documentId: result.documentId,
+            name: result.name,
+            url: result.url,
+          });
+        }
+
+        if (uploaded.length > 0) {
+          setPendingAttachments((current) => [...current, ...uploaded]);
+        }
+        cleanUrl();
+      } catch (error) {
+        console.error("Could not import the shared file", error);
+        cleanUrl();
+      }
+    })();
+  }, [chatId]);
+
   useAutoResume({
     autoResume: !isNewChat && !!chatData,
     initialMessages,
@@ -354,18 +658,17 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       setShowCreditCardAlert,
       showCreditCardAlert,
       status,
-      stop,
+      stop: stopWithCleanup,
       visibilityType: visibility,
       votes,
     }),
     [
       chatId,
       messages,
-      pendingAttachments,
       setMessages,
       sendMessage,
       status,
-      stop,
+      stopWithCleanup,
       regenerate,
       addToolApprovalResponse,
       input,
@@ -375,6 +678,7 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading,
       votes,
       currentModelId,
+      pendingAttachments,
       showCreditCardAlert,
     ]
   );

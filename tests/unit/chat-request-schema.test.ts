@@ -4,7 +4,7 @@ import { postRequestBodySchema } from "../../app/(chat)/api/chat/schema";
 
 const baseBody = {
   id: "00000000-0000-4000-8000-000000000000",
-  selectedChatModel: "gemini-2.5-flash",
+  selectedChatModel: "gemini-3.5-flash-lite",
   selectedVisibilityType: "private" as const,
 };
 

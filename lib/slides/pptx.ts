@@ -277,7 +277,7 @@ export async function deckToBlob(deck: Deck, themeId?: string): Promise<Blob> {
   const theme = themeFor(themeId ?? deck.theme);
   const pptx = new PptxGenJS();
 
-  pptx.author = "SuperiorAI";
+  pptx.author = "Spire";
   pptx.layout = "LAYOUT_16x9";
   pptx.subject = deck.title;
   pptx.title = deck.title;

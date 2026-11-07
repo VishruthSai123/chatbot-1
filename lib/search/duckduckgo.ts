@@ -9,9 +9,9 @@ import {
 /*
  * A keyless web search.
  *
- * The free models this app runs on cannot search — none of them has a search
- * tool — so the searching is done here instead of being delegated. DuckDuckGo's
- * HTML endpoint returns ordinary result links with no key and no account. It is
+ * The app does not delegate search to the model — no provider-executed search
+ * tool is used — so the searching is done here instead. DuckDuckGo's HTML
+ * endpoint returns ordinary result links with no key and no account. It is
  * scraped defensively: a short timeout, a bounded number of results, and a plain
  * failure when it does not answer. The pages themselves are then read through
  * the same address checks as every other fetch.

@@ -21,14 +21,26 @@ import {
   getCapabilities,
   getModelAvailability,
 } from "@/lib/ai/models";
+import {
+  errorClass,
+  errorStatusCode,
+  logChatObservation,
+  providerForModel,
+} from "@/lib/ai/observability";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
+import { withVisibleOutputGuard } from "@/lib/ai/stream-guard";
+import {
+  mergeClientToolResults,
+  resolveDanglingToolCalls,
+} from "@/lib/ai/tool-continuity";
 import {
   audioInfo,
   audioOpen,
   audioTranscribe,
 } from "@/lib/ai/tools/audio-tools";
 import { createDocument } from "@/lib/ai/tools/create-document";
+import { deviceAction } from "@/lib/ai/tools/device-action";
 import {
   docConvert,
   docDiff,
@@ -126,6 +138,13 @@ function isModelStreamActivity(chunk: { type: string }) {
   );
 }
 
+function isVisibleModelChunk(chunk: { delta?: string; type: string }) {
+  if (chunk.type === "text-delta") {
+    return Boolean(chunk.delta?.trim());
+  }
+  return chunk.type === "tool-call" || chunk.type === "tool-input-start";
+}
+
 function getStreamContext() {
   try {
     return createResumableStreamContext({ waitUntil: after });
@@ -138,6 +157,9 @@ export { getStreamContext };
 
 export async function POST(request: Request) {
   let requestBody: PostRequestBody;
+  const requestId =
+    request.headers.get("x-request-id")?.slice(0, 100) || generateUUID();
+  const startedAt = Date.now();
 
   try {
     const json = await request.json();
@@ -161,6 +183,7 @@ export async function POST(request: Request) {
       activeImage,
       activePdf,
       activeSheet,
+      androidBridge,
       id,
       message,
       messages,
@@ -249,7 +272,8 @@ export async function POST(request: Request) {
             (p) =>
               p.type === "text" ||
               p.type?.startsWith("tool-") ||
-              p.type === "reasoning"
+              p.type === "reasoning" ||
+              (p as { type?: string }).type === "error"
           );
         }
         return true;
@@ -273,38 +297,38 @@ export async function POST(request: Request) {
 
     if (isToolApprovalFlow && messages) {
       const dbMessages = convertToUIMessages(messagesFromDb);
-      const approvalStates = new Map(
-        messages.flatMap(
-          (m) =>
-            m.parts
-              ?.filter(
-                (p: Record<string, unknown>) =>
-                  p.state === "approval-responded" ||
-                  p.state === "output-denied"
-              )
-              .map((p: Record<string, unknown>) => [
-                String(p.toolCallId ?? ""),
-                p,
-              ]) ?? []
-        )
-      );
-      uiMessages = dbMessages.map((msg) => ({
-        ...msg,
-        parts: msg.parts.map((part) => {
-          if (
-            "toolCallId" in part &&
-            approvalStates.has(String(part.toolCallId))
-          ) {
-            return { ...part, ...approvalStates.get(String(part.toolCallId)) };
-          }
-          return part;
-        }),
-      })) as ChatMessage[];
+
+      /*
+       * The database has the assistant tool call, but a client-side tool such
+       * as deviceAction writes its result only in the WebView. Merge every
+       * resolved client tool part back before the model sees the history.
+       */
+      uiMessages = mergeClientToolResults({
+        clientMessages: messages as ChatMessage[],
+        dbMessages,
+      });
     } else {
       uiMessages = [
         ...convertToUIMessages(messagesFromDb),
         message as ChatMessage,
       ];
+    }
+
+    /*
+     * Never call a model with half a tool exchange. A stopped generation, a
+     * dropped native callback or a client race can leave a call without a
+     * result; resolve it as an explicit error instead of letting the SDK throw
+     * AI_MissingToolResultsError.
+     */
+    const continuity = resolveDanglingToolCalls(uiMessages);
+    uiMessages = continuity.messages;
+
+    if (continuity.resolvedToolCallIds.length > 0) {
+      logChatObservation("chat_tool_continuity_repaired", {
+        modelId: chatModel,
+        requestId,
+        toolCallCount: continuity.resolvedToolCallIds.length,
+      });
     }
 
     // Deterministic parse of the user's latest message: geometry hint for the
@@ -334,7 +358,15 @@ export async function POST(request: Request) {
     const capabilities = modelCapabilities[chatModel];
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
-    const isGeminiModel = chatModel.includes("gemini");
+    const provider = modelConfig?.provider ?? providerForModel(chatModel);
+    const isGeminiModel = provider === "google";
+
+    logChatObservation("chat_request", {
+      modelId: chatModel,
+      provider,
+      requestId,
+      userType,
+    });
 
     /**
      * Attachments are converted before the provider sees them.
@@ -384,8 +416,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // If model does not support native vision/files, sanitize file parts into descriptive text
-    // so OpenRouter text-only models do not fail with 400 Bad Request
+    // If the selected model cannot see images, turn file parts into a short
+    // note instead of sending an unsupported part to the provider.
     const modelMessages = capabilities?.vision
       ? rawModelMessages
       : (rawModelMessages.map((msg) => {
@@ -415,6 +447,7 @@ export async function POST(request: Request) {
         const modelName = modelConfig?.name ?? chatModel;
         let streamError: Error | unknown = null;
         let hasModelActivity = false;
+        let hasVisibleOutput = false;
         let healthCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
         const clearHealthCheckTimer = () => {
@@ -476,74 +509,97 @@ export async function POST(request: Request) {
         };
 
         const result = streamText({
-          activeTools:
-            isReasoningModel && !supportsTools
-              ? []
-              : [
-                  "getWeather",
-                  "createDocument",
-                  "editDocument",
-                  "updateDocument",
-                  "requestSuggestions",
-                  "imageResize",
-                  "imageRemoveBg",
-                  "imageCrop",
-                  "imageCompress",
-                  "imageConvert",
-                  "imageUpscaleEnhance",
-                  "imagePixelate",
-                  "imageRotate",
-                  "imageOcr",
-                  "imageListPresets",
-                  "imageStitch",
-                  "imageOverlay",
-                  "imageCollage",
-                  "pdfGetInfo",
-                  "pdfMerge",
-                  "pdfSplit",
-                  "pdfArrange",
-                  "pdfRotatePages",
-                  "pdfExtractText",
-                  "imageToPdf",
-                  "sheetGetInfo",
-                  "sheetFilterSort",
-                  "sheetRemoveDuplicates",
-                  "sheetSummaryStats",
-                  "sheetConvertFormat",
-                  "webSearch",
-                  "readUrl",
-                  "research",
-                  "notebookCreate",
-                  "notebookAsk",
-                  "notebookGenerate",
-                  "notebookQuiz",
-                  "notebookGrade",
-                  "notebookAddSource",
-                  "docRead",
-                  "docSummarize",
-                  "docDiff",
-                  "docStats",
-                  "docConvert",
-                  "audioInfo",
-                  "audioTranscribe",
-                  "audioOpen",
-                  "downloadMedia",
-                  "slidesCreate",
-                  "slidesEdit",
-                ],
+          abortSignal: request.signal,
+          activeTools: supportsTools
+            ? [
+                "getWeather",
+                "createDocument",
+                "editDocument",
+                "updateDocument",
+                "requestSuggestions",
+                "imageResize",
+                "imageRemoveBg",
+                "imageCrop",
+                "imageCompress",
+                "imageConvert",
+                "imageUpscaleEnhance",
+                "imagePixelate",
+                "imageRotate",
+                "imageOcr",
+                "imageListPresets",
+                "imageStitch",
+                "imageOverlay",
+                "imageCollage",
+                "pdfGetInfo",
+                "pdfMerge",
+                "pdfSplit",
+                "pdfArrange",
+                "pdfRotatePages",
+                "pdfExtractText",
+                "imageToPdf",
+                "sheetGetInfo",
+                "sheetFilterSort",
+                "sheetRemoveDuplicates",
+                "sheetSummaryStats",
+                "sheetConvertFormat",
+                "webSearch",
+                "readUrl",
+                "research",
+                "notebookCreate",
+                "notebookAsk",
+                "notebookGenerate",
+                "notebookQuiz",
+                "notebookGrade",
+                "notebookAddSource",
+                "docRead",
+                "docSummarize",
+                "docDiff",
+                "docStats",
+                "docConvert",
+                "audioInfo",
+                "audioTranscribe",
+                "audioOpen",
+                "downloadMedia",
+                "slidesCreate",
+                "slidesEdit",
+                // `as const` keeps the spread a literal, so the whole list
+                // still infers as tool names rather than widening to string[].
+                ...(androidBridge ? (["deviceAction"] as const) : []),
+              ]
+            : [],
           instructions: systemPrompt({
+            deviceActionsAvailable: Boolean(androidBridge),
             imageRequirement: imageRequirementHint,
             isGuest: userType === "guest",
             requestHints,
             supportsTools,
           }),
+          maxOutputTokens: 8192,
+          maxRetries: 1,
           messages: modelMessages,
           model: getLanguageModel(chatModel),
           onAbort() {
+            logChatObservation("chat_aborted", {
+              modelId: chatModel,
+              provider,
+              requestId,
+              totalMs: Date.now() - startedAt,
+            });
             stopWaitingStatus();
           },
           onChunk({ chunk }) {
             if (isModelStreamActivity(chunk)) {
+              if (isVisibleModelChunk(chunk)) {
+                hasVisibleOutput = true;
+              }
+              if (!hasModelActivity) {
+                logChatObservation("chat_first_token", {
+                  firstTokenMs: Date.now() - startedAt,
+                  modelId: chatModel,
+                  provider,
+                  requestId,
+                });
+              }
               markModelActive();
             }
           },
@@ -551,31 +607,47 @@ export async function POST(request: Request) {
             stopWaitingStatus();
           },
           onError({ error }) {
-            console.error("streamText onError in route:", error);
             streamError = error;
+            logChatObservation("chat_stream_error", {
+              errorClass: errorClass(error),
+              modelId: chatModel,
+              provider,
+              requestId,
+              statusCode: errorStatusCode(error),
+            });
             stopWaitingStatus();
           },
           providerOptions: {
-            ...(modelConfig?.gatewayOrder && {
-              gateway: { order: modelConfig.gatewayOrder },
-            }),
-            ...(modelConfig?.reasoningEffort && {
-              openai: { reasoningEffort: modelConfig.reasoningEffort },
-            }),
-            // Fast models: skip Gemini's "thinking" pass so the first token arrives
-            // in ~1s instead of several seconds. The deterministic requirement
-            // parser + prompt hints keep tool arguments accurate without it.
-            ...(isGeminiModel &&
-              !isReasoningModel && {
-                google: { thinkingConfig: { thinkingBudget: 0 } },
-              }),
+            ...(isGeminiModel
+              ? {
+                  google: {
+                    ...(capabilities?.vision
+                      ? { mediaResolution: "MEDIA_RESOLUTION_HIGH" }
+                      : {}),
+                    // Minimal thinking keeps the first token fast; the prompt
+                    // carries the deterministic geometry hints that tool
+                    // arguments need.
+                    thinkingConfig: {
+                      thinkingLevel: modelConfig?.thinkingLevel ?? "low",
+                    },
+                  },
+                }
+              : {}),
           },
-          stopWhen: isStepCount(5),
+          stopWhen: isStepCount(4),
+          streamRetries: 0,
           telemetry: {
             functionId: "stream-text",
             isEnabled:
               isProductionEnvironment &&
               Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+          },
+          timeout: {
+            chunkMs: 30_000,
+            firstChunkMs: 12_000,
+            stepMs: 90_000,
+            toolMs: 120_000,
+            totalMs: 240_000,
           },
           tools: {
             audioInfo: audioInfo({ messages: uiMessages, session }),
@@ -784,13 +856,14 @@ export async function POST(request: Request) {
               session,
             }),
             webSearch: webSearch({ session }),
+            ...(androidBridge ? { deviceAction } : {}),
           },
         });
 
         dataStream.merge(
           toUIMessageStream({
             sendReasoning: isReasoningModel,
-            stream: result.stream,
+            stream: withVisibleOutputGuard(result.stream),
           })
         );
 
@@ -811,10 +884,41 @@ export async function POST(request: Request) {
         try {
           await result.text;
         } catch (err) {
+          /*
+           * A provider can fail after it has already streamed the answer.
+           * Keep the answer; only turn the turn into an error when nothing
+           * visible was produced.
+           */
+          if (hasVisibleOutput) {
+            logChatObservation("chat_late_stream_error", {
+              errorClass: errorClass(err),
+              modelId: chatModel,
+              provider,
+              requestId,
+              statusCode: errorStatusCode(err),
+            });
+            return;
+          }
+
           if (streamError) {
             throw streamError;
           }
           throw err;
+        } finally {
+          const finishReason = await Promise.resolve(result.finishReason).catch(
+            () => "error" as const
+          );
+          const toolCalls = await Promise.resolve(result.toolCalls).catch(
+            () => []
+          );
+          logChatObservation("chat_finished", {
+            finishReason: String(finishReason),
+            modelId: chatModel,
+            provider,
+            requestId,
+            toolCallCount: toolCalls.length,
+            totalMs: Date.now() - startedAt,
+          });
         }
       },
       generateId: generateUUID,
@@ -827,7 +931,8 @@ export async function POST(request: Request) {
             (p) =>
               p.type === "text" ||
               p.type?.startsWith("tool-") ||
-              p.type === "reasoning"
+              p.type === "reasoning" ||
+              (p as { type?: string }).type === "error"
           );
         });
 
@@ -873,44 +978,70 @@ export async function POST(request: Request) {
         }
       },
       onError: (error) => {
-        console.error("createUIMessageStream onError:", error);
+        const status = errorStatusCode(error);
+        const name = errorClass(error);
+
+        logChatObservation("chat_error", {
+          errorClass: name,
+          modelId: chatModel,
+          provider,
+          requestId,
+          statusCode: status,
+        });
+
+        if (name.includes("MissingToolResults")) {
+          return "A previous tool call did not finish. It has been cancelled; please retry.";
+        }
+
+        if (
+          name === "AbortError" ||
+          name === "TimeoutError" ||
+          name.includes("Timeout")
+        ) {
+          return "The model took too long to respond. Please retry.";
+        }
+
+        if (name === "AI_NoOutputGeneratedError") {
+          return "The model returned no output. Please retry or switch models.";
+        }
+
+        if (name === "LoadAPIKeyError" || status === 401 || status === 403) {
+          return "Gemini API key is missing or invalid. Configure GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY.";
+        }
+
         if (
           error instanceof Error &&
-          (error.message?.includes("Missing Authentication header") ||
-            error.message?.includes("No cookie auth credentials found") ||
-            error.message?.includes("401 Unauthorized") ||
-            error.message?.includes('code":401') ||
-            error.message?.includes("User has not configured an API key"))
+          error.message.includes("Gemini is not configured")
         ) {
-          return "OpenRouter API key is missing or invalid. Please configure OPENROUTER_API_KEY in your environment variables.";
-        }
-        if (
-          error instanceof Error &&
-          (error.message?.includes("rate-limited upstream") ||
-            error.message?.includes("temporarily rate-limited") ||
-            error.message?.includes("Rate limit exceeded") ||
-            error.message?.includes("429"))
-        ) {
-          return "The selected model is temporarily rate-limited upstream. Please retry in a moment or switch to another free model.";
-        }
-        if (
-          error instanceof Error &&
-          error.message?.includes(
-            "AI Gateway requires a valid credit card on file to service requests"
-          )
-        ) {
-          return "AI Gateway requires a valid credit card on file to service requests. Please visit https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai%3Fmodal%3Dadd-credit-card to add a card and unlock your free credits.";
-        }
-        if (
-          error instanceof Error &&
-          error.message?.includes("Google Generative AI API key is missing")
-        ) {
-          return "Google Generative AI API key is missing. Please configure GOOGLE_GENERATIVE_AI_API_KEY in your Vercel Project Environment Variables.";
-        }
-        if (error instanceof Error && error.message) {
           return error.message;
         }
-        return "An error occurred while communicating with the AI model.";
+
+        if (
+          error instanceof Error &&
+          error.message.includes("OPENROUTER_API_KEY")
+        ) {
+          return "The configured fallback provider is missing OPENROUTER_API_KEY.";
+        }
+
+        if (
+          status === 402 ||
+          (error instanceof Error &&
+            (error.message.includes("prepayment credits") ||
+              error.message.includes("RESOURCE_EXHAUSTED") ||
+              error.message.includes("Insufficient credits")))
+        ) {
+          return "Gemini API credits are exhausted for this project. Add billing, or enable the configured fallback provider.";
+        }
+
+        if (status === 404) {
+          return "The selected model is not available. Choose another model.";
+        }
+
+        if (status === 429) {
+          return "The model is rate-limited right now. Please retry in a moment.";
+        }
+
+        return "The AI model could not complete this response. Please retry.";
       },
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
     });
@@ -934,6 +1065,11 @@ export async function POST(request: Request) {
           /* non-critical */
         }
       },
+      headers: {
+        "x-model-id": chatModel,
+        "x-model-provider": provider,
+        "x-request-id": requestId,
+      },
       stream,
     });
   } catch (error) {
@@ -943,16 +1079,16 @@ export async function POST(request: Request) {
       return error.toResponse();
     }
 
-    if (
-      error instanceof Error &&
-      error.message?.includes(
-        "AI Gateway requires a valid credit card on file to service requests"
-      )
-    ) {
-      return new ChatbotError("bad_request:activate_gateway").toResponse();
-    }
+    logChatObservation("chat_unhandled_error", {
+      errorClass: errorClass(error),
+      requestId,
+      statusCode: errorStatusCode(error),
+    });
 
-    console.error("Unhandled error in chat API:", error, { vercelId });
+    console.error("Unhandled error in chat API:", error, {
+      requestId,
+      vercelId,
+    });
     return new ChatbotError("offline:chat").toResponse();
   }
 }

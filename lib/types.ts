@@ -7,6 +7,7 @@ import type {
   audioTranscribe,
 } from "./ai/tools/audio-tools";
 import type { createDocument } from "./ai/tools/create-document";
+import type { deviceAction } from "./ai/tools/device-action";
 import type {
   docConvert,
   docDiff,
@@ -69,6 +70,7 @@ export type MessageMetadata = z.infer<typeof messageMetadataSchema>;
 
 type weatherTool = InferUITool<typeof getWeather>;
 type createDocumentTool = InferUITool<ReturnType<typeof createDocument>>;
+type deviceActionTool = InferUITool<typeof deviceAction>;
 type updateDocumentTool = InferUITool<ReturnType<typeof updateDocument>>;
 type requestSuggestionsTool = InferUITool<
   ReturnType<typeof requestSuggestions>
@@ -126,6 +128,7 @@ type imageToPdfTool = InferUITool<ReturnType<typeof imageToPdf>>;
 export type ChatTools = {
   getWeather: weatherTool;
   createDocument: createDocumentTool;
+  deviceAction: deviceActionTool;
   updateDocument: updateDocumentTool;
   requestSuggestions: requestSuggestionsTool;
   imageResize: imageResizeTool;

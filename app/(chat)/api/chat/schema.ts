@@ -60,6 +60,9 @@ export const postRequestBodySchema = z.object({
       versionIndex: z.number().int().min(0).optional(),
     })
     .optional(),
+  // True when the page is running inside Quick Search's Android WebView and
+  // exposes the confirmed device-action bridge.
+  androidBridge: z.boolean().optional(),
   id: z.uuid(),
   message: userMessageSchema.optional(),
   messages: z.array(toolApprovalMessageSchema).optional(),

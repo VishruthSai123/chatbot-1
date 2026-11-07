@@ -52,7 +52,7 @@ export async function convertImagesToPdf(
   if (options.title) {
     pdfDoc.setTitle(options.title);
   }
-  pdfDoc.setProducer("SuperiorAI PDF Studio");
+  pdfDoc.setProducer("Spire PDF Studio");
 
   const sharp = await getSharp();
 
