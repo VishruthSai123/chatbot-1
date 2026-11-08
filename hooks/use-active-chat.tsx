@@ -265,11 +265,24 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     onError: (error) => {
       if (error.message?.includes("AI Gateway requires a valid credit card")) {
         setShowCreditCardAlert(true);
-      } else if (error instanceof ChatbotError) {
+        return;
+      }
+
+      /*
+       * The SDK uses "An error occurred." for late stream/tool noise, including
+       * turns where the answer has already streamed. The message itself renders
+       * the real error card; a duplicate toast only makes a successful answer
+       * look broken.
+       */
+      if (!error.message || error.message === "An error occurred.") {
+        return;
+      }
+
+      if (error instanceof ChatbotError) {
         toast({ description: error.message, type: "error" });
       } else {
         toast({
-          description: error.message || "Oops, an error occurred!",
+          description: error.message,
           type: "error",
         });
       }
