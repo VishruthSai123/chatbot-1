@@ -11,12 +11,12 @@ import {
 } from "@/lib/pdf/images-to-pdf";
 import {
   arrangePdfPages,
-  extractPdfText,
   getPdfInfo,
   mergePdfs,
   rotatePdfPages,
   splitPdf,
 } from "@/lib/pdf/native";
+import { readPdf } from "@/lib/pdf/ocr";
 import { parsePageRanges } from "@/lib/pdf/pages";
 import { decodePdfRef } from "@/lib/pdf/ref";
 import {
@@ -429,11 +429,13 @@ export async function executeExtractText({
   buffer: Buffer;
   params: ExtractTextInput;
 }): Promise<{
-  pages: { page: number; text: string }[];
+  error?: string;
+  method: "ocr" | "text";
+  pages: { page: number | null; text: string }[];
   text: string;
   totalPages: number;
 }> {
-  const extracted = await extractPdfText(buffer);
+  const extracted = await readPdf(buffer);
 
   if (!params.pageRanges) {
     return extracted;
@@ -445,9 +447,13 @@ export async function executeExtractText({
   const wanted = new Set(
     parsePageRanges(params.pageRanges, extracted.totalPages)
   );
-  const pages = extracted.pages.filter((entry) => wanted.has(entry.page));
+  const pages = extracted.pages.filter(
+    (entry) => entry.page === null || wanted.has(entry.page)
+  );
 
   return {
+    error: extracted.error,
+    method: extracted.method,
     pages,
     text: pages.map((entry) => entry.text).join("\n\n"),
     totalPages: extracted.totalPages,

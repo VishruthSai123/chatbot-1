@@ -13,6 +13,8 @@ import {
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
+import { handleLiveFinalizeRequest } from "@/lib/live/finalize";
+import { handleLiveTokenRequest } from "@/lib/live/token";
 import { generateUUID } from "@/lib/utils";
 
 export const maxDuration = 60;
@@ -53,7 +55,7 @@ function titleFromText(text: string): string {
     : normalized || "Live conversation";
 }
 
-export async function POST(request: Request) {
+async function handleLiveChatRequest(request: Request) {
   const session = await auth();
 
   if (!session?.user) {
@@ -218,4 +220,26 @@ export async function POST(request: Request) {
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+/**
+ * One serverless function for the whole Live family.
+ *
+ * Vercel Hobby allows twelve functions per deployment, and the app already uses
+ * all twelve. `?action=token` and `?action=finalize` therefore share this route
+ * rather than each adding a function. The chat path remains the default so the
+ * existing Android client URL keeps working unchanged.
+ */
+export async function POST(request: Request) {
+  const action = new URL(request.url).searchParams.get("action");
+
+  if (action === "token") {
+    return await handleLiveTokenRequest();
+  }
+
+  if (action === "finalize") {
+    return await handleLiveFinalizeRequest(request);
+  }
+
+  return await handleLiveChatRequest(request);
 }

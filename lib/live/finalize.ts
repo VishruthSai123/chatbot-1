@@ -6,8 +6,6 @@ import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { generateUUID } from "@/lib/utils";
 
-export const maxDuration = 30;
-
 const finalizeSchema = z.object({
   chatId: z.uuid().optional(),
   turns: z
@@ -35,7 +33,7 @@ function titleFromText(text: string): string {
  * The client sends every finished turn after each turn, so this endpoint must be
  * idempotent. Message IDs are the client turn IDs and duplicates are ignored.
  */
-export async function POST(request: Request) {
+export async function handleLiveFinalizeRequest(request: Request) {
   const session = await auth();
 
   if (!session?.user) {

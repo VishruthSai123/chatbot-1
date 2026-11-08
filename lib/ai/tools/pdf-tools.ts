@@ -795,7 +795,7 @@ export const pdfExtractText = ({
 }: PdfToolsProps) =>
   tool({
     description:
-      "Extract the text layer of a PDF, page by page. Use this to read, summarise or quote a document. Scans without a text layer return little or nothing.",
+      "Extract the text of a PDF, page by page. Use this to read, summarise or quote a document. Scanned and handwritten pages are OCR'd automatically, so this works even when the PDF has no text layer.",
     execute: async ({ documentId, pageRanges }) => {
       if (checkIsGuest(session)) {
         return { error: "Sign in to read PDFs." };
@@ -818,8 +818,17 @@ export const pdfExtractText = ({
         params,
       });
 
+      if (!extracted.text.trim()) {
+        return {
+          documentId: source.documentId,
+          error: extracted.error ?? "That PDF has no readable text.",
+          totalPages: extracted.totalPages,
+        };
+      }
+
       return {
         documentId: source.documentId,
+        method: extracted.method,
         // Long documents would blow the context window; the first pages are enough
         // for the model to answer, and the studio shows the full text.
         text: extracted.text.slice(0, 24_000),

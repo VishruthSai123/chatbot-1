@@ -62,7 +62,12 @@ The deployment stays inside Hobby's twelve-function limit:
 | `/api/tools/[family]` | Image, PDF, sheet, document, audio, notebook, media sessions |
 | `/api/document` | One document, or the Library list |
 | `/api/files/upload` | Signed upload, then complete |
+| `/api/live` | Live voice chat; `?action=token` and `?action=finalize` share this function |
 | `/api/auth/*`, `/api/history`, `/api/messages`, `/api/models`, `/api/vote` | Platform routes |
+
+Live is deliberately one function: the token and transcript endpoints are
+actions on `/api/live` rather than separate route files, which keeps the
+deployment inside Hobby's twelve-function limit.
 
 `/api/download` sets `maxDuration = 120`. yt-dlp itself is capped at 100
 seconds so a client rotation can never outlive the function.

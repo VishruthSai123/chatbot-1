@@ -3,8 +3,6 @@ import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import { getMessageCountByUserId } from "@/lib/db/queries";
 import { ChatbotError } from "@/lib/errors";
 
-export const maxDuration = 30;
-
 const DEFAULT_LIVE_MODEL = "models/gemini-2.5-flash-native-audio-latest";
 const TOKEN_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/auth_tokens";
@@ -64,7 +62,7 @@ async function requestToken(
  * a direct WebSocket. A serverless proxy cannot carry full-duplex audio, and
  * the raw production key must never reach the device.
  */
-export async function POST() {
+export async function handleLiveTokenRequest() {
   const session = await auth();
 
   if (!session?.user) {

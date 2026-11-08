@@ -127,7 +127,7 @@ export const notebookCreate = ({
 }: NotebookToolsProps) =>
   tool({
     description:
-      "Create a notebook from a set of sources — files the user attached and/or web page URLs. Use it when the user wants a collection of sources they can ask questions of, a study set, a research folder, or a summary of several documents. The notebook can then be questioned, summarised, turned into a study guide or FAQ, or quizzed.",
+      "Create a notebook from a set of sources — files the user attached and/or web page URLs. Use it when the user wants a collection of sources they can ask questions of, a study set, a research folder, or a summary of several documents. The notebook can then be questioned, summarised, turned into a study guide or FAQ, or quizzed. If the user asked to be quizzed as part of the same request, call notebookQuiz immediately after this tool succeeds.",
     execute: async ({ files, title, urls }) => {
       if (checkIsGuest(session)) {
         return {
@@ -181,6 +181,10 @@ export const notebookCreate = ({
         userId: session.user.id,
       });
 
+      if ("error" in created) {
+        return { error: created.error };
+      }
+
       dataStream?.write({
         data: "notebook",
         transient: true,
@@ -205,9 +209,12 @@ export const notebookCreate = ({
 
       return {
         documentId: created.documentId,
-        sources: resolved.map((source) => source.title),
+        sources: created.sources.map((source) => source.title),
         title: title || "Notebook",
         unmatched: unknown,
+        unreadable: created.sources
+          .filter((source) => source.readable === false)
+          .map((source) => source.title),
       };
     },
     inputSchema: z.object({
@@ -473,6 +480,10 @@ export const notebookAddSource = ({ messages, session }: NotebookToolsProps) =>
 
       if (!result) {
         return { error: "That notebook could not be opened." };
+      }
+
+      if ("error" in result) {
+        return { error: result.error };
       }
 
       return {

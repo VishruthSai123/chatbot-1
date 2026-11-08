@@ -143,7 +143,12 @@ async function resolveSource(
     }
 
     const chunks = sectionsToChunks(extraction.sections);
-    setCachedChunks(key, chunks);
+
+    // An empty result is not cached: OCR can fail transiently, and a retry in
+    // the next turn should be allowed to read the file again.
+    if (chunks.length > 0) {
+      setCachedChunks(key, chunks);
+    }
 
     return {
       chunks,
@@ -174,7 +179,11 @@ async function resolveSource(
   }
 
   const chunks = sectionsToChunks(extraction.sections);
-  setCachedChunks(key, chunks);
+
+  // See the URL path above: empty chunks are retried, not cached.
+  if (chunks.length > 0) {
+    setCachedChunks(key, chunks);
+  }
 
   return {
     chunks,
@@ -273,7 +282,26 @@ async function saveNotebook({
   }
 }
 
-/** Creates a notebook from a set of sources. */
+export type CreateNotebookResult =
+  | {
+      content: string;
+      documentId: string;
+      /** The sources that were saved, with their readability recorded. */
+      sources: NotebookSource[];
+      /** Sources that could not be read, with the reason. */
+      unreadable: string[];
+    }
+  | { error: string };
+
+/**
+ * Creates a notebook from a set of sources.
+ *
+ * Every source is read before the notebook is saved. A notebook that lists
+ * sources but contains no text is worse than no notebook at all: it looks
+ * successful in the chat and then fails at the first question or quiz. If none
+ * of the sources can be read, nothing is written and the caller gets the real
+ * reason to show the user.
+ */
 export async function createNotebook({
   chatId: _chatId,
   sources,
@@ -284,20 +312,74 @@ export async function createNotebook({
   sources: NotebookSource[];
   title: string;
   userId: string;
-}): Promise<{ content: string; documentId: string }> {
+}): Promise<CreateNotebookResult> {
+  if (sources.length === 0) {
+    return { error: "A notebook needs at least one source." };
+  }
+
+  const savedSources: NotebookSource[] = [];
+  const unreadable: string[] = [];
+
+  for (const source of sources) {
+    let resolved: ResolvedSource;
+
+    try {
+      // biome-ignore lint/performance/noAwaitInLoops: reading one source at a time keeps peak memory flat; a notebook of scanned PDFs would otherwise run every OCR request at once
+      resolved = await resolveSource(source, userId);
+    } catch (error) {
+      // A storage or parser failure must not lose the whole notebook: record
+      // the source as unreadable and keep reading the others.
+      console.warn("Notebook source read failed:", error);
+      savedSources.push({ ...source, chars: 0, readable: false });
+      unreadable.push(
+        `${source.title}: ${
+          error instanceof Error ? error.message : "could not be read"
+        }`
+      );
+      continue;
+    }
+
+    const readable = resolved.chunks.length > 0;
+
+    savedSources.push({
+      ...source,
+      chars: readable ? resolved.text.length : 0,
+      readable,
+    });
+
+    if (!readable) {
+      unreadable.push(
+        `${source.title}: ${resolved.error ?? "no readable text"}`
+      );
+    }
+  }
+
+  if (savedSources.every((source) => source.readable === false)) {
+    return {
+      error: `${unreadable.join(" ")} No notebook was created because none of the sources could be read.`,
+    };
+  }
+
   const documentId = crypto.randomUUID();
-  const ref: NotebookRef = { sources, title };
+  const ref: NotebookRef = { sources: savedSources, title };
   const content = encodeNotebookRef(ref);
 
-  await saveDocument({
-    content,
-    id: documentId,
-    kind: "notebook",
-    title,
-    userId,
-  });
+  try {
+    await saveDocument({
+      content,
+      id: documentId,
+      kind: "notebook",
+      title,
+      userId,
+    });
+  } catch (error) {
+    console.warn("Failed to save notebook:", error);
+    return {
+      error: "The notebook could not be saved. Please try again.",
+    };
+  }
 
-  return { content, documentId };
+  return { content, documentId, sources: savedSources, unreadable };
 }
 
 /** Adds a source to an existing notebook and saves a new version. */
@@ -309,7 +391,7 @@ export async function addNotebookSource({
   documentId: string;
   source: NotebookSource;
   userId: string;
-}): Promise<{ notebook: LoadedNotebook } | null> {
+}): Promise<{ notebook: LoadedNotebook } | { error: string } | null> {
   const notebook = await loadNotebook({ documentId, userId });
 
   if (!notebook) {
@@ -323,9 +405,38 @@ export async function addNotebookSource({
   );
 
   if (!already) {
+    let resolved: ResolvedSource;
+
+    try {
+      resolved = await resolveSource(source, userId);
+    } catch (error) {
+      console.warn("Notebook source read failed:", error);
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : `"${source.title}" could not be read, so it was not added.`,
+      };
+    }
+
+    if (resolved.chunks.length === 0) {
+      return {
+        error:
+          resolved.error ??
+          `"${source.title}" has no readable text, so it was not added.`,
+      };
+    }
+
     const ref: NotebookRef = {
       ...notebook.ref,
-      sources: [...notebook.ref.sources, source],
+      sources: [
+        ...notebook.ref.sources,
+        {
+          ...source,
+          chars: resolved.text.length,
+          readable: true,
+        },
+      ],
     };
 
     await saveNotebook({

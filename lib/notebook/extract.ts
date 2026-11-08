@@ -9,7 +9,7 @@ import { fetchVideoTranscript } from "@/lib/media/transcript";
 import { isVideoUrl } from "@/lib/media/url";
 import { htmlToText } from "@/lib/net/html";
 import { fetchPageText } from "@/lib/net/page";
-import { extractPdfText } from "@/lib/pdf/native";
+import { readPdf } from "@/lib/pdf/ocr";
 import { readSheetFile } from "@/lib/sheet/native";
 import type { NotebookChunk } from "./chunk";
 import { chunkText } from "./chunk";
@@ -88,13 +88,35 @@ async function extractPresentation(
   ];
 }
 
-/** Reads a PDF, one section per page, so a citation can name the page. */
-async function extractPdf(buffer: Buffer): Promise<ExtractedSection[]> {
-  const { pages } = await extractPdfText(buffer);
+/**
+ * Reads a PDF, one section per page, so a citation can name the page.
+ *
+ * A PDF with no text layer is OCR'd by `readPdf`, which is what makes a scanned
+ * or handwritten document readable here rather than an empty notebook.
+ */
+async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
+  const { error, method, pages } = await readPdf(buffer);
 
-  return pages
+  const sections = pages
     .filter((page) => page.text.trim())
-    .map((page) => ({ label: `Page ${page.page}`, text: page.text }));
+    .map((page) => ({
+      label:
+        page.page === null
+          ? method === "ocr"
+            ? "OCR text"
+            : undefined
+          : `Page ${page.page}`,
+      text: page.text,
+    }));
+
+  if (sections.length === 0) {
+    return {
+      error: error ?? "That PDF has no readable text.",
+      sections: [],
+    };
+  }
+
+  return { sections };
 }
 
 /** Reads a spreadsheet, one section per sheet. */
@@ -221,7 +243,7 @@ export async function extractFile({
       buffer.length > 4 && buffer.subarray(0, 4).toString("latin1") === "%PDF";
 
     if (name.endsWith(".pdf") || type === "application/pdf" || looksLikePdf) {
-      return { sections: await extractPdf(buffer) };
+      return await extractPdf(buffer);
     }
 
     if (name.endsWith(".docx") || type.includes("wordprocessingml")) {

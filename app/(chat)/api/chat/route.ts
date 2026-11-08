@@ -145,6 +145,29 @@ function isVisibleModelChunk(chunk: { delta?: string; type: string }) {
   return chunk.type === "tool-call" || chunk.type === "tool-input-start";
 }
 
+/** The text the user typed, ignoring attachments. */
+function textFromUserMessage(message?: PostRequestBody["message"]): string {
+  return (message?.parts ?? [])
+    .filter(
+      (part): part is { text: string; type: "text" } => part.type === "text"
+    )
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * True when the user asked for a quiz in this turn.
+ *
+ * The check is intentionally broad: the route only acts on it after a notebook
+ * was created, and a user who mentions a quiz while building a notebook almost
+ * always wants one. Missing the intent leaves the request half-done; the cost
+ * of the occasional extra quiz is much lower.
+ */
+function askedForQuiz(text: string): boolean {
+  return /\bquiz\b/i.test(text) || /\btest me\b/i.test(text);
+}
+
 function getStreamContext() {
   try {
     return createResumableStreamContext({ waitUntil: after });
@@ -508,6 +531,8 @@ export async function POST(request: Request) {
           clearHealthCheckTimer();
         };
 
+        const quizRequested = askedForQuiz(textFromUserMessage(message));
+
         const result = streamText({
           abortSignal: request.signal,
           activeTools: supportsTools
@@ -616,6 +641,38 @@ export async function POST(request: Request) {
               statusCode: errorStatusCode(error),
             });
             stopWaitingStatus();
+          },
+          prepareStep: ({ steps }) => {
+            if (!quizRequested) {
+              return {};
+            }
+
+            const previous = steps.at(-1);
+            const createdNotebook = previous?.toolCalls.some(
+              (call) => call?.toolName === "notebookCreate"
+            );
+            const alreadyQuizzed = previous?.toolCalls.some(
+              (call) => call?.toolName === "notebookQuiz"
+            );
+            const createFailed = previous?.toolResults.some((toolResult) => {
+              if (toolResult?.toolName !== "notebookCreate") {
+                return false;
+              }
+              return (
+                typeof toolResult.output === "object" &&
+                toolResult.output !== null &&
+                "error" in toolResult.output
+              );
+            });
+
+            // The user asked to create a notebook and be quizzed. Models often
+            // stop after the first successful tool call, leaving the request
+            // half-done; force the quiz step instead of making them ask again.
+            if (createdNotebook && !(alreadyQuizzed || createFailed)) {
+              return { toolChoice: { toolName: "notebookQuiz", type: "tool" } };
+            }
+
+            return {};
           },
           providerOptions: {
             ...(isGeminiModel

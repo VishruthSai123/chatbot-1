@@ -56,6 +56,7 @@ export interface NotebookToolOutput {
   sources?: string[];
   title?: string;
   unmatched?: string[];
+  unreadable?: string[];
   verdict?: "correct" | "partial" | "incorrect";
 }
 
@@ -456,6 +457,12 @@ export function NotebookToolCard({
               <p className="flex items-start gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                 <CircleAlert className="mt-px size-3 shrink-0" />
                 Could not match: {output.unmatched.join(", ")}
+              </p>
+            ) : null}
+            {output?.unreadable && output.unreadable.length > 0 ? (
+              <p className="flex items-start gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                <CircleAlert className="mt-px size-3 shrink-0" />
+                Could not read: {output.unreadable.join(", ")}
               </p>
             ) : null}
           </div>
