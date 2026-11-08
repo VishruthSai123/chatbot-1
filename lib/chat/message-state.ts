@@ -27,3 +27,12 @@ export function assistantMessageBody({
 
   return isLoading ? "waiting" : "empty";
 }
+
+/**
+ * A request is a tool continuation only when the last message is the assistant
+ * message that produced the tool call. A new user message is always a new turn,
+ * even if earlier turns contain resolved tool results.
+ */
+export function isToolContinuation(messages: Array<{ role: string }>): boolean {
+  return messages.at(-1)?.role === "assistant";
+}

@@ -28,6 +28,7 @@ import { toast } from "@/components/chat/toast";
 import type { VisibilityType } from "@/components/chat/visibility-selector";
 import { useAutoResume } from "@/hooks/use-auto-resume";
 import { allowedModelIds, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
+import { isToolContinuation } from "@/lib/chat/message-state";
 import type { Vote } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import {
@@ -355,20 +356,13 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
           stopRequestedRef.current = false;
         }
 
-        const hasResolvedToolResult = request.messages.some((msg) =>
-          msg.parts?.some((part) => {
-            const { state } = part as { state?: string };
-            return (
-              part.type.startsWith("tool-") &&
-              (state === "output-available" ||
-                state === "output-error" ||
-                state === "output-denied" ||
-                state === "approval-responded")
-            );
-          })
-        );
-        const isToolApprovalContinuation =
-          lastMessage?.role !== "user" || hasResolvedToolResult;
+        /*
+         * Only an assistant message can be a tool continuation. A new user
+         * message must be sent as `message`, even if older turns contain tool
+         * results; otherwise the server treats the whole history as a
+         * continuation and can end with an empty response.
+         */
+        const isToolApprovalContinuation = isToolContinuation(request.messages);
 
         return {
           body: {

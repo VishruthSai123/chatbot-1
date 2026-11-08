@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { convertToModelMessages, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-
 import {
   mergeClientToolResults,
   resolveDanglingToolCalls,
 } from "../../lib/ai/tool-continuity";
+import { isToolContinuation } from "../../lib/chat/message-state";
 import type { ChatMessage } from "../../lib/types";
 
 const usage = {
@@ -58,6 +58,15 @@ function userMessage(): ChatMessage {
 }
 
 test.describe("tool continuity", () => {
+  test("a new user message after an earlier tool result is not a continuation", () => {
+    expect(isToolContinuation([{ role: "assistant" }, { role: "user" }])).toBe(
+      false
+    );
+    expect(isToolContinuation([{ role: "user" }, { role: "assistant" }])).toBe(
+      true
+    );
+  });
+
   test("merges a client-side device result onto the database copy", () => {
     const merged = mergeClientToolResults({
       clientMessages: [
