@@ -9,6 +9,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   LockIcon,
+  Mic,
   SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -161,6 +162,11 @@ function PureMultimodalInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
   const [isExpandedHeight, setIsExpandedHeight] = useState(false);
+  const [androidLiveAvailable, setAndroidLiveAvailable] = useState(false);
+
+  useEffect(() => {
+    setAndroidLiveAvailable(Boolean(window.SpireAndroid?.startLive));
+  }, []);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -723,6 +729,22 @@ function PureMultimodalInput({
                 onModelChange={onModelChange}
                 selectedModelId={selectedModelId}
               />
+              {androidLiveAvailable ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      aria-label="Spire Live"
+                      className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+                      data-testid="live-button"
+                      onClick={() => window.SpireAndroid?.startLive?.()}
+                      type="button"
+                    >
+                      <Mic className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Spire Live</TooltipContent>
+                </Tooltip>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

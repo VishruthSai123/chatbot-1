@@ -572,10 +572,13 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 
 ### Android (quick-search/)
 
-- Added a two-scene bottom navigation bar: **Search | Bot** (MainSceneShell.kt).
+- Removed the bottom navigation bar. Bot opens from the circular chat button beside the search bar's voice action, the chat button on the Open Keyboard pill, and the **Ask SuperiorAI** row.
 - Added RootDestination.Bot and the embedded WebView scene (ChatScene.kt, ChatWebViewStore.kt).
-- The WebView is owned above the destination and survives tab switches, so a streaming chat is not reloaded.
-- Added the **Ask SuperiorAI** row above the search result list (BotAskRow.kt); it opens the Bot with the current query.
+- The WebView is owned above the destination and survives leaving the scene, so a streaming chat is not reloaded.
+- Added a native Material 3 top bar with back-to-search, title, history, new chat, and a determinate/indeterminate loading bar.
+- Added a shimmering chat skeleton while the page loads, plus a retry error state.
+- The web header is hidden in `?embed=android`; the native top bar owns that chrome.
+- Added the **Ask SuperiorAI** row above the search result list (BotAskRow.kt), aligned to the same content width as other result components; it opens the Bot with the current query.
 - Added Android share intake for text, images, and PDFs (ChatIntentParser.kt, ChatShare.kt), including a WebViewAssetLoader-style appassets bridge for images. Text-only shares use the existing live ?query= path; image shares use the new ?share= hand-off.
 - Added static launcher shortcuts **New chat** and **Ask SuperiorAI** (es/xml/shortcuts.xml).
 - Added App Links handling for https://chatbot-1-beige.vercel.app/chat/*.
@@ -593,5 +596,5 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 
 ### Remaining deployment step
 
-The Android **text share / Ask / Bot tab** paths work against the current live site. **Image/PDF sharing** needs this web change deployed to https://chatbot-1-beige.vercel.app (the ?share= handler). The ssetlinks.json needs the Play App Signing SHA-256 if App Links/TWA verification is required on Play-distributed builds.
+The Android **text share / Ask / Bot tab** paths work against the current live site. **Image/PDF sharing** also has a compatibility bridge: when the deployed web build does not handle `?share=` yet, the WebView feeds the files into the existing composer file input. Deploying this web change is still recommended because it is cleaner, faster, and handles shared captions/PDF metadata directly. The `assetlinks.json` needs the Play App Signing SHA-256 if App Links/TWA verification is required on Play-distributed builds.
 

@@ -397,6 +397,33 @@ export async function saveMessages({ messages }: { messages: DBMessage[] }) {
   }
 }
 
+/**
+ * Inserts messages without overwriting existing rows.
+ *
+ * Live saves the transcript after every completed turn, so the same message IDs
+ * are sent repeatedly. Existing IDs are ignored, which makes the save idempotent
+ * without letting a client rewrite someone else's message.
+ */
+export async function saveMessagesIfAbsent({
+  messages,
+}: {
+  messages: DBMessage[];
+}) {
+  if (messages.length === 0) {
+    return;
+  }
+  try {
+    return await db
+      .insert(message)
+      .values(messages)
+      .onConflictDoNothing({ target: message.id });
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", {
+      cause: error,
+    });
+  }
+}
+
 export async function updateMessage({
   id,
   parts,

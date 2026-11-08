@@ -20,6 +20,7 @@ export type DeviceActionResult = {
 
 type NativeBridge = {
   requestAction: (requestId: string, action: string, argsJson: string) => void;
+  startLive?: () => void;
 };
 
 declare global {
