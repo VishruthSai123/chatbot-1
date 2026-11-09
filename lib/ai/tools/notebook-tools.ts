@@ -273,6 +273,7 @@ export const notebookAsk = ({ session }: NotebookToolsProps) =>
       return {
         answer: answer.answer,
         citations: answer.citations,
+        documentId: id,
         mode: answer.mode,
         question,
       };
@@ -325,6 +326,7 @@ export const notebookGenerate = ({ session }: NotebookToolsProps) =>
       return {
         citations: deliverable.citations,
         content: deliverable.content,
+        documentId: id,
         kind,
         title: deliverable.title,
       };
@@ -420,7 +422,7 @@ export const notebookGrade = ({ session }: NotebookToolsProps) =>
         };
       }
 
-      return { ...grade, questionId };
+      return { ...grade, documentId: id, questionId };
     },
     inputSchema: z.object({
       answer: z.string().min(1).max(4000).describe("The user's answer."),

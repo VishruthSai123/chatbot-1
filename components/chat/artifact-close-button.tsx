@@ -1,18 +1,16 @@
 import { memo, useCallback } from "react";
-import { initialArtifactData, useArtifact } from "@/hooks/use-artifact";
+import { useArtifact } from "@/hooks/use-artifact";
 import { CrossIcon } from "./icons";
 
 function PureArtifactCloseButton() {
   const { setArtifact } = useArtifact();
   const handleClick = useCallback(() => {
-    setArtifact((currentArtifact) =>
-      currentArtifact.status === "streaming"
-        ? {
-            ...currentArtifact,
-            isVisible: false,
-          }
-        : { ...initialArtifactData, status: "idle" }
-    );
+    // Hiding, not resetting, is what lets the header toggle (or a card's Open
+    // panel button) bring the same document back after the user closes it.
+    setArtifact((currentArtifact) => ({
+      ...currentArtifact,
+      isVisible: false,
+    }));
   }, [setArtifact]);
 
   return (

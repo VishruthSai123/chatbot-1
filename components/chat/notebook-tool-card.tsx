@@ -11,12 +11,14 @@ import {
   FileText,
   NotebookPen,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { MessageResponse } from "@/components/ai-elements/message";
+import { useArtifact } from "@/hooks/use-artifact";
 import type { QuizQuestion } from "@/lib/quiz/schema";
 import { cn } from "@/lib/utils";
+import { OpenPanelButton } from "./open-panel-button";
 
 /**
  * The result card for the notebook tools.
@@ -324,6 +326,8 @@ export function NotebookToolCard({
   output,
 }: NotebookToolCardProps) {
   const [hasCopied, setHasCopied] = useState(false);
+  const { setArtifact } = useArtifact();
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const config = TOOL_CONFIG[toolType] ?? TOOL_CONFIG["tool-notebookAsk"];
   const Icon = config.icon;
@@ -331,6 +335,50 @@ export function NotebookToolCard({
   const body = output?.answer ?? output?.content ?? "";
   const citations =
     output?.citations ?? (output?.citation ? [output.citation] : []);
+  const documentId = output?.documentId;
+
+  const handleOpenNotebook = useCallback(async () => {
+    if (!documentId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`
+      );
+      const versions = await response.json();
+
+      if (!response.ok || !Array.isArray(versions) || versions.length === 0) {
+        toast.error("That notebook could not be opened.");
+        return;
+      }
+
+      const latest = versions.at(-1) as
+        | { content?: string; title?: string }
+        | undefined;
+      const rect = cardRef.current?.getBoundingClientRect();
+
+      setArtifact((current) => ({
+        ...current,
+        boundingBox: rect
+          ? {
+              height: rect.height,
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+            }
+          : current.boundingBox,
+        content: latest?.content ?? "",
+        documentId,
+        isVisible: true,
+        kind: "notebook",
+        status: "idle",
+        title: latest?.title ?? output?.title ?? "Notebook",
+      }));
+    } catch {
+      toast.error("That notebook could not be opened.");
+    }
+  }, [documentId, output?.title, setArtifact]);
 
   const handleCopy = useCallback(async () => {
     if (!body) {
@@ -391,7 +439,10 @@ export function NotebookToolCard({
   }, [body, citations, config.label, output?.title]);
 
   return (
-    <div className="flex w-full max-w-[480px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90">
+    <div
+      className="flex w-full max-w-[480px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90"
+      ref={cardRef}
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -551,6 +602,15 @@ export function NotebookToolCard({
         ) : null}
 
         <CitationList citations={citations} />
+
+        {documentId ? (
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/40 pt-2.5">
+            <OpenPanelButton
+              label="Open notebook"
+              onClick={handleOpenNotebook}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  Copy,
-  Download,
-  Lock,
-  RotateCcw,
-  SlidersHorizontal,
-} from "lucide-react";
+import { Copy, Download, Lock, PanelRightOpen, RotateCcw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -430,11 +424,11 @@ export function ImageToolCard({
         <button
           className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/5 px-3 py-1 text-xs font-medium text-foreground hover:bg-foreground/10 transition-colors cursor-pointer border border-border/50"
           onClick={handleOpenInspector}
-          title="Edit image in studio"
+          title="Open image in studio"
           type="button"
         >
-          <SlidersHorizontal className="size-3.5" />
-          Edit
+          <PanelRightOpen className="size-3.5" />
+          Open in Studio
         </button>
       </div>
 

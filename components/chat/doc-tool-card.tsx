@@ -8,9 +8,12 @@ import {
   ListTree,
   Type,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 
+import { useArtifact } from "@/hooks/use-artifact";
 import { cn } from "@/lib/utils";
+import { OpenPanelButton } from "./open-panel-button";
 
 /**
  * The result card for the document tools.
@@ -34,6 +37,7 @@ export interface DocToolOutput {
   content?: string;
   documentA?: string;
   documentB?: string;
+  documentId?: string;
   error?: string;
   minutesToRead?: number;
   outline?: { level: number; text: string }[];
@@ -141,6 +145,8 @@ export function DocToolCard({
   output,
 }: DocToolCardProps) {
   const [showAll, setShowAll] = useState(false);
+  const { setArtifact } = useArtifact();
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const config = TOOL_CONFIG[toolType] ?? TOOL_CONFIG["tool-docRead"];
   const Icon = config.icon;
@@ -148,11 +154,58 @@ export function DocToolCard({
   const isDiff = toolType === "tool-docDiff" && output?.segments;
   const rows = isDiff ? pairDiff(output.segments ?? []) : [];
   const visibleRows = showAll ? rows : rows.slice(0, 24);
+  const documentId = output?.documentId ?? output?.documentB;
 
   const body = output?.summary ?? output?.text ?? output?.content ?? "";
 
+  const handleOpenDocument = useCallback(async () => {
+    if (!documentId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/document?id=${documentId}`
+      );
+      const versions = await response.json();
+
+      if (!response.ok || !Array.isArray(versions) || versions.length === 0) {
+        toast.error("That document could not be opened.");
+        return;
+      }
+
+      const latest = versions.at(-1) as
+        | { content?: string; title?: string }
+        | undefined;
+      const rect = cardRef.current?.getBoundingClientRect();
+
+      setArtifact((current) => ({
+        ...current,
+        boundingBox: rect
+          ? {
+              height: rect.height,
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+            }
+          : current.boundingBox,
+        content: latest?.content ?? "",
+        documentId,
+        isVisible: true,
+        kind: "doc",
+        status: "idle",
+        title: latest?.title ?? "Document",
+      }));
+    } catch {
+      toast.error("That document could not be opened.");
+    }
+  }, [documentId, setArtifact]);
+
   return (
-    <div className="flex w-full max-w-[560px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90">
+    <div
+      className="flex w-full max-w-[560px] flex-col rounded-xl border border-border/70 bg-card/60 p-3.5 shadow-sm transition-all hover:border-border hover:bg-card/90"
+      ref={cardRef}
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -268,6 +321,12 @@ export function DocToolCard({
           ) : null}
         </div>
       )}
+
+      {documentId ? (
+        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-border/40 pt-2.5">
+          <OpenPanelButton label="Open document" onClick={handleOpenDocument} />
+        </div>
+      ) : null}
     </div>
   );
 }
