@@ -19,6 +19,7 @@ import { docArtifact } from "@/artifacts/doc/client";
 import { imageArtifact } from "@/artifacts/image/client";
 import { notebookArtifact } from "@/artifacts/notebook/client";
 import { pdfArtifact } from "@/artifacts/pdf/client";
+import { searchArtifact } from "@/artifacts/search/client";
 import { sheetArtifact } from "@/artifacts/sheet/client";
 import { slidesArtifact } from "@/artifacts/slides/client";
 import { textArtifact } from "@/artifacts/text/client";
@@ -33,6 +34,7 @@ import { LoaderIcon } from "./icons";
 import { Toolbar } from "./toolbar";
 import { VersionFooter } from "./version-footer";
 import type { VisibilityType } from "./visibility-selector";
+import { WorkspaceEmptyState } from "./workspace-empty-state";
 
 export const artifactDefinitions = [
   textArtifact,
@@ -45,7 +47,16 @@ export const artifactDefinitions = [
   audioArtifact,
   slidesArtifact,
 ];
+
+/**
+ * The panel can also render client-only surfaces that are not database
+ * documents. Search results are the first of those: they are a snapshot of what
+ * the model just read, so they never need a `Document` row.
+ */
+export const uiArtifactDefinitions = [...artifactDefinitions, searchArtifact];
+
 export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
+export type UIArtifactKind = ArtifactKind | "search";
 export type ImageToolMode =
   | "compress"
   | "resize"
@@ -60,10 +71,12 @@ export type ImageToolMode =
 export type UIArtifact = {
   title: string;
   documentId: string;
-  kind: ArtifactKind;
+  kind: UIArtifactKind;
   content: string;
   isVisible: boolean;
   status: "streaming" | "idle";
+  /** Optional line under the title, used by client-only panels such as search. */
+  subtitle?: string;
   boundingBox: {
     top: number;
     left: number;
@@ -425,7 +438,7 @@ function PureArtifact({
   });
   const isMobile = windowWidth ? windowWidth < 768 : false;
 
-  const artifactDefinition = artifactDefinitions.find(
+  const artifactDefinition = uiArtifactDefinitions.find(
     (definition) => definition.kind === artifact.kind
   );
 
@@ -463,20 +476,32 @@ function PureArtifact({
       )
       .join("\n") || undefined;
 
+  const isEmptyWorkspace = artifact.documentId === "init" && !artifact.content;
+
   const artifactPanel = (
     <>
-      {sidebarState !== "collapsed" &&
+      {(sidebarState !== "collapsed" ||
+        isEmptyWorkspace ||
+        artifact.kind === "search") &&
         artifact.kind !== "image" &&
         artifact.kind !== "pdf" && (
           <div className="flex h-[calc(3.5rem+1px)] shrink-0 items-center justify-between border-b border-border/50 px-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <ArtifactCloseButton />
-              <div className="flex flex-col gap-0.5">
-                <div className="text-sm font-semibold leading-tight tracking-tight">
-                  {artifact.title}
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="max-w-[320px] truncate text-sm font-semibold leading-tight tracking-tight">
+                  {isEmptyWorkspace ? "Workspace" : artifact.title}
                 </div>
-                <div className="flex items-center gap-2">
-                  {isContentDirty ? (
+                <div className="flex min-w-0 items-center gap-2">
+                  {isEmptyWorkspace ? (
+                    <div className="max-w-[320px] truncate text-xs text-muted-foreground">
+                      Nothing open yet
+                    </div>
+                  ) : artifact.kind === "search" && artifact.subtitle ? (
+                    <div className="max-w-[320px] truncate text-xs text-muted-foreground">
+                      {artifact.subtitle}
+                    </div>
+                  ) : isContentDirty ? (
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <div className="size-1.5 animate-pulse rounded-full bg-amber-500" />
                       Saving...
@@ -519,30 +544,35 @@ function PureArtifact({
         onScroll={handleArtifactScroll}
         ref={artifactContentRef}
       >
-        <artifactDefinition.content
-          content={
-            isCurrentVersion
-              ? artifact.content
-              : getDocumentContentById(currentVersionIndex)
-          }
-          currentVersionIndex={currentVersionIndex}
-          documentId={artifact.documentId}
-          getDocumentContentById={getDocumentContentById}
-          handleVersionChange={handleVersionChange}
-          isCurrentVersion={isCurrentVersion}
-          isInline={false}
-          isLoading={isDocumentsFetching && !artifact.content}
-          metadata={metadata}
-          mode={mode}
-          onSaveContent={saveContent}
-          setMetadata={setMetadata}
-          status={artifact.status}
-          suggestions={[]}
-          title={artifact.title}
-          totalVersions={documents?.length ?? 1}
-        />
+        {isEmptyWorkspace ? (
+          <WorkspaceEmptyState />
+        ) : (
+          <artifactDefinition.content
+            content={
+              isCurrentVersion
+                ? artifact.content
+                : getDocumentContentById(currentVersionIndex)
+            }
+            currentVersionIndex={currentVersionIndex}
+            documentId={artifact.documentId}
+            getDocumentContentById={getDocumentContentById}
+            handleVersionChange={handleVersionChange}
+            isCurrentVersion={isCurrentVersion}
+            isInline={false}
+            isLoading={isDocumentsFetching && !artifact.content}
+            metadata={metadata}
+            mode={mode}
+            onSaveContent={saveContent}
+            setMetadata={setMetadata}
+            status={artifact.status}
+            suggestions={[]}
+            title={artifact.title}
+            totalVersions={documents?.length ?? 1}
+          />
+        )}
         <AnimatePresence>
-          {isCurrentVersion &&
+          {!isEmptyWorkspace &&
+          isCurrentVersion &&
           artifact.kind !== "image" &&
           artifact.kind !== "pdf" ? (
             <Toolbar
@@ -572,7 +602,8 @@ function PureArtifact({
         </AnimatePresence>
       </div>
       <AnimatePresence>
-        {!isCurrentVersion &&
+        {!isEmptyWorkspace &&
+          !isCurrentVersion &&
           artifact.kind !== "image" &&
           artifact.kind !== "pdf" && (
             <VersionFooter

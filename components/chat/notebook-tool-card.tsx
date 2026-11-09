@@ -14,6 +14,7 @@ import {
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
+import { MessageResponse } from "@/components/ai-elements/message";
 import type { QuizQuestion } from "@/lib/quiz/schema";
 import { cn } from "@/lib/utils";
 
@@ -133,6 +134,15 @@ function InteractiveQuizCard({ questions }: { questions: QuizQuestionData[] }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between border-b border-border/40 pb-2">
+        <span className="text-[11px] font-medium text-foreground/80">
+          {totalQuestions} questions
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">
+          {totalGraded}/{totalQuestions} answered
+        </span>
+      </div>
+
       {questions.map((q, qIndex) => {
         const isGraded = !!graded[q.id];
         const selectedIdx = selected[q.id];
@@ -385,7 +395,9 @@ export function NotebookToolCard({
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <Icon className="size-3.5 shrink-0 text-zinc-500" />
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-zinc-500/10 text-zinc-500">
+            <Icon className="size-3.5" />
+          </span>
           <span className="text-xs font-semibold tracking-tight text-foreground">
             {config.label}
           </span>
@@ -397,6 +409,11 @@ export function NotebookToolCard({
           {output?.mode === "searched" ? (
             <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               retrieved
+            </span>
+          ) : null}
+          {citations.length > 0 ? (
+            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {citations.length}
             </span>
           ) : null}
         </div>
@@ -445,10 +462,11 @@ export function NotebookToolCard({
               <ul className="flex flex-col gap-0.5">
                 {output.sources.map((source) => (
                   <li
-                    className="truncate text-[11px] text-muted-foreground"
+                    className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground"
                     key={source}
                   >
-                    {source}
+                    <FileText className="size-3 shrink-0 text-muted-foreground/60" />
+                    <span className="truncate">{source}</span>
                   </li>
                 ))}
               </ul>
@@ -469,7 +487,17 @@ export function NotebookToolCard({
         ) : null}
 
         {toolType === "tool-notebookGrade" ? (
-          <div className="flex flex-col gap-1.5">
+          <div
+            className={cn(
+              "flex flex-col gap-1.5 rounded-lg border p-2.5",
+              output?.verdict === "correct" &&
+                "border-emerald-500/30 bg-emerald-500/5",
+              output?.verdict === "partial" &&
+                "border-amber-500/30 bg-amber-500/5",
+              output?.verdict === "incorrect" &&
+                "border-rose-500/30 bg-rose-500/5"
+            )}
+          >
             <div
               className={cn(
                 "flex items-center gap-1.5 text-[12px] font-medium",
@@ -508,16 +536,18 @@ export function NotebookToolCard({
           />
         ) : null}
 
-        {body ? (
-          <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/90">
-            {body}
+        {output?.question && toolType === "tool-notebookAsk" ? (
+          <p className="mb-2 mt-1 border-l-2 border-border/60 pl-2 text-[11px] italic text-muted-foreground">
+            {output.question}
           </p>
         ) : null}
 
-        {output?.question && toolType === "tool-notebookAsk" ? (
-          <p className="mb-1.5 mt-2 border-l-2 border-border/60 pl-2 text-[11px] italic text-muted-foreground">
-            {output.question}
-          </p>
+        {body ? (
+          <div className="text-[12px] leading-relaxed text-foreground/90">
+            <MessageResponse className="text-[12px] leading-relaxed [&_h1]:text-sm [&_h2]:text-[13px] [&_h3]:text-xs [&_li]:text-[12px] [&_p]:text-[12px]">
+              {body}
+            </MessageResponse>
+          </div>
         ) : null}
 
         <CitationList citations={citations} />

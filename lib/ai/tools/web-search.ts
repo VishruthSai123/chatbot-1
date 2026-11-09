@@ -47,7 +47,7 @@ function trim(text: string): string {
 export const webSearch = ({ session }: SearchToolsProps) =>
   tool({
     description:
-      "Search the web and answer with citations. Use it for anything that may have changed or that you are not certain about: current news, prices, releases, today's date, live data, documentation, or a fact you simply cannot vouch for. Returns a grounded answer plus the source pages.",
+      "Search the web once and answer with citations. Use it for a single factual lookup: current news, prices, releases, today's date, live data, documentation, or a fact you cannot vouch for. Do not also call research for the same question. Returns a grounded answer plus the source pages.",
     execute: async ({ query }) => {
       if (checkIsGuest(session)) {
         return {

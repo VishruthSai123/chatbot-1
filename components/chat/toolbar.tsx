@@ -23,7 +23,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ChatMessage } from "@/lib/types";
-import { type ArtifactKind, artifactDefinitions } from "./artifact";
+import { type UIArtifactKind, uiArtifactDefinitions } from "./artifact";
 import type { ArtifactToolbarItem } from "./create-artifact";
 import { ArrowUpIcon, StopIcon, SummarizeIcon } from "./icons";
 
@@ -339,7 +339,7 @@ const PureToolbar = ({
   sendMessage: UseChatHelpers<ChatMessage>["sendMessage"];
   stop: UseChatHelpers<ChatMessage>["stop"];
   setMessages: UseChatHelpers<ChatMessage>["setMessages"];
-  artifactKind: ArtifactKind;
+  artifactKind: UIArtifactKind;
   consoleError?: string;
   documentId?: string;
   artifactActions?: ReactNode;
@@ -418,7 +418,7 @@ const PureToolbar = ({
     setMessages((messages) => messages);
   }, [setMessages, stop]);
 
-  const artifactDefinition = artifactDefinitions.find(
+  const artifactDefinition = uiArtifactDefinitions.find(
     (definition) => definition.kind === artifactKind
   );
 

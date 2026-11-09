@@ -2,7 +2,7 @@ import { memo, type ReactNode, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { artifactDefinitions, type UIArtifact } from "./artifact";
+import { type UIArtifact, uiArtifactDefinitions } from "./artifact";
 import type { ArtifactActionContext } from "./create-artifact";
 
 type ArtifactActionsProps = {
@@ -84,7 +84,7 @@ function PureArtifactActions({
 }: ArtifactActionsProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  const artifactDefinition = artifactDefinitions.find(
+  const artifactDefinition = uiArtifactDefinitions.find(
     (definition) => definition.kind === artifact.kind
   );
 

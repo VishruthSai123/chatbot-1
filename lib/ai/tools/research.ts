@@ -89,7 +89,7 @@ function writeStatus(
 export const research = ({ dataStream, session }: ResearchToolsProps) =>
   tool({
     description:
-      "Research a topic deeply: plan several search angles, search the web, read the most useful pages in full, and write a cited report. Use it for open-ended questions that need more than one search — comparisons, 'best of', 'how does X work', market or product questions, or anything where a single answer would be thin. Prefer webSearch for a single factual lookup.",
+      "Research a topic deeply: plan several search angles, search the web, read the most useful pages in full, and write a cited report. Use it for open-ended questions that need more than one search — comparisons, 'best of', 'how does X work', market or product questions, or anything where a single answer would be thin. This tool performs its own searches; do not call webSearch first for the same question.",
     execute: async ({ depth = "standard", topic }) => {
       if (checkIsGuest(session)) {
         return {

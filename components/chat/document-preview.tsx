@@ -76,7 +76,10 @@ export function DocumentPreview({
   }, [artifact.documentId, setArtifact]);
 
   if (isDocumentsFetching) {
-    const kind = result?.kind ?? args?.kind ?? artifact.kind;
+    const kind =
+      result?.kind ??
+      args?.kind ??
+      (artifact.kind === "search" ? "text" : artifact.kind);
     const title = result?.title ?? args?.title ?? artifact.title;
 
     return (
@@ -115,7 +118,11 @@ export function DocumentPreview({
       : null;
 
   if (!document) {
-    return <LoadingSkeleton artifactKind={artifact.kind} />;
+    return (
+      <LoadingSkeleton
+        artifactKind={artifact.kind === "search" ? "text" : artifact.kind}
+      />
+    );
   }
 
   return (
