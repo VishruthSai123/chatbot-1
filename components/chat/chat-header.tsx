@@ -1,23 +1,16 @@
 "use client";
 
-import {
-  PanelLeftIcon,
-  PanelRightClose,
-  PanelRightOpen,
-  SparklesIcon,
-} from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { PanelLeftIcon, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { memo, useCallback, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useArtifact, useArtifactSelector } from "@/hooks/use-artifact";
-import { useIsGuest } from "@/hooks/use-is-guest";
 import type { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { DownloadConversationButton } from "./download-conversation-button";
+import { PlanUsage } from "./plan-usage";
 import { VisibilitySelector, type VisibilityType } from "./visibility-selector";
 
 function PureChatHeader({
@@ -32,8 +25,6 @@ function PureChatHeader({
   messages: ChatMessage[];
 }) {
   const { toggleSidebar } = useSidebar();
-  const { isGuest } = useIsGuest();
-  const pathname = usePathname();
   const { setArtifact } = useArtifact();
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
   const panelButtonRef = useRef<HTMLButtonElement>(null);
@@ -116,17 +107,10 @@ function PureChatHeader({
 
         {/*
           A guest should know they are one before a tool refuses them, not
-          after. This is the standing answer to "why did that not work".
+          after. The usage pill doubles as the sign-up prompt for guests and as
+          the "what is left" answer for accounts.
         */}
-        {isGuest ? (
-          <Link
-            className="flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-            href={`/register?next=${encodeURIComponent(pathname || "/")}`}
-          >
-            <SparklesIcon className="size-3" />
-            Guest · Sign up
-          </Link>
-        ) : null}
+        <PlanUsage />
 
         <DownloadConversationButton messages={messages} />
       </div>

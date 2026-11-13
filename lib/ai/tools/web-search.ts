@@ -1,11 +1,18 @@
 import { generateText, tool } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
-
-import { getGroundingModel } from "@/lib/ai/search/grounding";
+import { getGroundingModelFor } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
+import { getEntitlement } from "@/lib/entitlements";
 import { fetchPageText } from "@/lib/net/page";
 import { searchWeb } from "@/lib/search/web";
+import { QuotaExceededError } from "@/lib/usage/ledger";
+import {
+  releaseSearchTask,
+  reserveSearchTask,
+  type SearchReservation,
+  settleSearchTask,
+} from "@/lib/usage/search";
 
 type SearchToolsProps = {
   session: Session;
@@ -56,8 +63,43 @@ export const webSearch = ({ session }: SearchToolsProps) =>
         };
       }
 
+      const plan = await getEntitlement(session.user.id);
+
+      let reservation: SearchReservation;
       try {
-        const result = await searchWeb(query);
+        reservation = await reserveSearchTask({
+          plan,
+          userId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return {
+            code: "quota_exceeded",
+            error:
+              plan.searchesPerMonth > 0
+                ? "You have used your web searches for this period. Local search and on-device tools are still free."
+                : "Web search is not included in your plan.",
+            kind: error.details.kind,
+            limit: error.details.limit,
+            period: error.details.period,
+            resetAt: error.details.resetAt,
+            used: error.details.used,
+          };
+        }
+        throw error;
+      }
+
+      try {
+        const result = await searchWeb(query, { model: plan.model });
+
+        await settleSearchTask({
+          model: plan.model,
+          provider: result.via,
+          reservation,
+          usage: result.usage,
+        }).catch((error) => {
+          console.error("Search usage settlement failed:", error);
+        });
 
         return {
           answer: trim(result.answer),
@@ -66,6 +108,7 @@ export const webSearch = ({ session }: SearchToolsProps) =>
           via: result.via,
         };
       } catch (error: any) {
+        await releaseSearchTask(reservation).catch(() => undefined);
         console.error("webSearch failed:", error);
         return {
           error:
@@ -103,12 +146,37 @@ export const readUrl = ({ session }: SearchToolsProps) =>
         };
       }
 
+      const plan = await getEntitlement(session.user.id);
+
+      let reservation: SearchReservation;
+      try {
+        reservation = await reserveSearchTask({
+          plan,
+          userId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return {
+            code: "quota_exceeded",
+            error:
+              "You have used your web allowance for this period. Local search and on-device tools are still free.",
+            kind: error.details.kind,
+            limit: error.details.limit,
+            period: error.details.period,
+            resetAt: error.details.resetAt,
+            used: error.details.used,
+          };
+        }
+        throw error;
+      }
+
       try {
         // The page is fetched here, through the address checks, and the model
         // is given its text. No provider tool is involved.
         const page = await fetchPageText(url);
-        const { text } = await generateText({
-          model: getGroundingModel(),
+        const { text, usage } = await generateText({
+          maxOutputTokens: 700,
+          model: getGroundingModelFor(plan.model),
           prompt: [
             `Read the web page at ${page.url} and report its content.`,
             instruction
@@ -121,12 +189,27 @@ export const readUrl = ({ session }: SearchToolsProps) =>
           ].join("\n"),
         });
 
+        await settleSearchTask({
+          model: plan.model,
+          provider: "read",
+          reservation,
+          usage: {
+            cachedTokens: (usage as { cachedInputTokens?: number | null })
+              ?.cachedInputTokens,
+            inputTokens: usage?.inputTokens,
+            outputTokens: usage?.outputTokens,
+          },
+        }).catch((error) => {
+          console.error("Page-read usage settlement failed:", error);
+        });
+
         return {
           content: trim(text.trim()),
           sources: [{ title: url, url }],
           url,
         };
       } catch (error: any) {
+        await releaseSearchTask(reservation).catch(() => undefined);
         console.error("readUrl failed:", error);
         return {
           error:

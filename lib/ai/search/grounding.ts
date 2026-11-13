@@ -34,9 +34,19 @@ export function getGroundingModel(): LanguageModel {
   return getLanguageModel(DEFAULT_CHAT_MODEL);
 }
 
+/** Plan-aware variant: paid plans get the better model they pay for. */
+export function getGroundingModelFor(modelId?: string): LanguageModel {
+  return getLanguageModel(modelId || DEFAULT_CHAT_MODEL);
+}
+
 /** The model used for search synthesis. */
 export function getSearchModel(): LanguageModel {
   return getLanguageModel(DEFAULT_CHAT_MODEL);
+}
+
+/** Plan-aware search synthesis. */
+export function getSearchModelFor(modelId?: string): LanguageModel {
+  return getLanguageModel(modelId || DEFAULT_CHAT_MODEL);
 }
 
 /** The model that reads images. */

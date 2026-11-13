@@ -1,9 +1,10 @@
+import { ipAddress } from "@vercel/functions";
 import { type ModelMessage, streamText } from "ai";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
-import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import { getLanguageModel } from "@/lib/ai/providers";
+import { guestRegex } from "@/lib/constants";
 import {
   getChatById,
   getMessageCountByUserId,
@@ -12,9 +13,13 @@ import {
   saveMessages,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
+import { getEntitlement } from "@/lib/entitlements";
 import { ChatbotError } from "@/lib/errors";
 import { handleLiveFinalizeRequest } from "@/lib/live/finalize";
 import { handleLiveTokenRequest } from "@/lib/live/token";
+import { checkIpRateLimitFor } from "@/lib/ratelimit";
+import { usageRailsEnabled } from "@/lib/usage/config";
+import { expireStaleReservations } from "@/lib/usage/ledger";
 import { generateUUID } from "@/lib/utils";
 
 export const maxDuration = 60;
@@ -25,7 +30,7 @@ const liveRequestSchema = z.object({
   text: z.string().trim().min(1).max(2000),
 });
 
-const liveSystemPrompt = `You are Spire Live, a voice assistant inside Quick Search. Reply for speech: 1-2 short sentences, ideally under 30 words, plain text only, no markdown, no code blocks, no bullet lists. If the user asks for a long explanation, give the short answer and offer to open Spire for details. Do not claim to see the screen or the user's device. Ask one short clarifying question if needed. Reply in the user's language.`;
+const liveSystemPrompt = `You are Spire Live, a voice assistant inside Quick Search. Reply for speech: 1-2 short sentences, ideally under 30 words, plain text only, no markdown, no code blocks, no bullet lists. If the user asks for a long explanation, give the short answer and offer to open Spire for details. Do not claim to see the screen or the user's device. Ask one short clarifying question if needed. Keep the established conversation language by default. If the user's very first complete utterance is clearly in a different language, follow that language. After that, switch only when the user speaks at least two complete, consecutive turns in the new language. Never switch because of a single foreign word, a name, an accent, a misheard phrase, background speech, or an uncertain transcription. When in doubt, keep the established language.`;
 
 function textFromParts(parts: unknown): string {
   if (!Array.isArray(parts)) {
@@ -62,6 +67,13 @@ async function handleLiveChatRequest(request: Request) {
     return new ChatbotError("unauthorized:chat").toResponse();
   }
 
+  if (
+    session.user.type === "guest" ||
+    guestRegex.test(session.user.email ?? "")
+  ) {
+    return new ChatbotError("auth_required:chat").toResponse();
+  }
+
   let input: z.infer<typeof liveRequestSchema>;
   try {
     input = liveRequestSchema.parse(await request.json());
@@ -72,13 +84,13 @@ async function handleLiveChatRequest(request: Request) {
     ).toResponse();
   }
 
-  const userType = session.user.type;
+  const plan = await getEntitlement(session.user.id);
   const messageCount = await getMessageCountByUserId({
     differenceInHours: 1,
     id: session.user.id,
   });
 
-  if (messageCount > entitlementsByUserType[userType].maxMessagesPerHour) {
+  if (messageCount > plan.messagesPerHour) {
     return new ChatbotError("rate_limit:chat").toResponse();
   }
 
@@ -137,7 +149,7 @@ async function handleLiveChatRequest(request: Request) {
       },
     },
     system: input.locale
-      ? `${liveSystemPrompt}\nThe user's locale is ${input.locale}.`
+      ? `${liveSystemPrompt}\nThe user's locale is ${input.locale}. Treat it as the established conversation language.`
       : liveSystemPrompt,
   });
 
@@ -230,10 +242,64 @@ async function handleLiveChatRequest(request: Request) {
  * rather than each adding a function. The chat path remains the default so the
  * existing Android client URL keeps working unchanged.
  */
+async function handleExpireRequest(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  const authorization = request.headers.get("authorization");
+
+  if (!(secret && authorization === `Bearer ${secret}`)) {
+    return Response.json(
+      { error: "unauthorized" },
+      { headers: { "Cache-Control": "no-store" }, status: 401 }
+    );
+  }
+
+  if (!usageRailsEnabled()) {
+    return Response.json(
+      { error: "usage_rails_disabled" },
+      { headers: { "Cache-Control": "no-store" }, status: 503 }
+    );
+  }
+
+  const result = await expireStaleReservations(500);
+  return Response.json(result, {
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+export async function GET(request: Request) {
+  const action = new URL(request.url).searchParams.get("action");
+
+  if (action === "expire") {
+    return await handleExpireRequest(request);
+  }
+
+  return Response.json(
+    { error: "not_found" },
+    { headers: { "Cache-Control": "no-store" }, status: 404 }
+  );
+}
+
 export async function POST(request: Request) {
   const action = new URL(request.url).searchParams.get("action");
 
+  if (action === "expire") {
+    return await handleExpireRequest(request);
+  }
+
   if (action === "token") {
+    const allowed = await checkIpRateLimitFor({
+      ip: ipAddress(request),
+      key: "live-token",
+      limit: 10,
+    });
+
+    if (!allowed) {
+      return Response.json(
+        { error: "live_rate_limited" },
+        { headers: { "Cache-Control": "no-store" }, status: 429 }
+      );
+    }
+
     return await handleLiveTokenRequest();
   }
 

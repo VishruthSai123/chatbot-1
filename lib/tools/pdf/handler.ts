@@ -16,6 +16,7 @@ import {
   executePdfMetadata,
   executeRotatePdf,
   executeSplit,
+  persistPdfBytes,
   resolvePdfSource,
 } from "@/lib/tools/pdf";
 import {
@@ -26,6 +27,13 @@ import {
   rotateSchema,
   splitSchema,
 } from "@/lib/tools/pdf/types";
+
+/**
+ * Vercel rejects request bodies over 4.5 MB before the route runs. Keep a margin
+ * for the JSON envelope and reject anything larger with an actionable message
+ * instead of an opaque platform error.
+ */
+const MAX_CLIENT_PDF_BASE64_CHARS = 4_000_000;
 
 /**
  * The PDF family's half of `/api/tools/[family]`.
@@ -217,6 +225,96 @@ export async function runPdfAction({
           pages: first.pages,
           storageKey: first.storageKey,
           title: title || source.title,
+          userId: session.user.id,
+        });
+
+        return NextResponse.json({
+          documentId: nextId,
+          persisted: Boolean(nextId),
+          result: first,
+          results: rest,
+          success: true,
+        });
+      }
+
+      /**
+       * Stores parts the browser produced with `pdf-lib`.
+       *
+       * Splitting is pure page arithmetic plus re-serialisation, so it can run on
+       * the client for free. The server still owns the write: it validates sizes,
+       * mints signed URLs and promotes the first part to the next document
+       * version, exactly like the server-side `split` action above.
+       */
+      case "persist_split": {
+        const parts: Array<{
+          base64?: string;
+          filename?: string;
+          pages?: number;
+        }> = Array.isArray(params?.parts) ? params.parts : [];
+
+        if (parts.length === 0) {
+          return NextResponse.json(
+            { error: "No browser-produced PDF parts were sent." },
+            { status: 400 }
+          );
+        }
+
+        const totalChars = parts.reduce(
+          (sum, part) =>
+            sum + (typeof part.base64 === "string" ? part.base64.length : 0),
+          0
+        );
+
+        if (totalChars > MAX_CLIENT_PDF_BASE64_CHARS) {
+          return NextResponse.json(
+            { error: "Those parts are too large to upload in one request." },
+            { status: 413 }
+          );
+        }
+
+        const persisted: Awaited<ReturnType<typeof persistPdfBytes>>[] = [];
+        for (const [index, part] of parts.entries()) {
+          if (
+            typeof part.base64 !== "string" ||
+            !Number.isInteger(part.pages) ||
+            Number(part.pages) < 1
+          ) {
+            continue;
+          }
+
+          const bytes = Buffer.from(part.base64, "base64");
+          if (bytes.length === 0) {
+            continue;
+          }
+
+          persisted.push(
+            // biome-ignore lint/performance/noAwaitInLoops: uploads share one connection budget; serial keeps memory flat for large parts.
+            await persistPdfBytes({
+              bytes,
+              chatId: context.chatId,
+              filename:
+                parts.length === 1
+                  ? "split.pdf"
+                  : `split-${index + 1}of${parts.length}.pdf`,
+              pages: Number(part.pages),
+              userId: session.user.id,
+            })
+          );
+        }
+
+        if (persisted.length === 0) {
+          return NextResponse.json(
+            { error: "None of the browser-produced parts were readable." },
+            { status: 400 }
+          );
+        }
+
+        const [first, ...rest] = persisted;
+        const nextId = await persistVersion({
+          documentId: context.documentId,
+          pages: first.pages,
+          storageKey: first.storageKey,
+          title: title || "Document",
           userId: session.user.id,
         });
 

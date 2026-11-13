@@ -15,6 +15,20 @@
       "when": 1710000000001,
       "tag": "0001_media_session",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794489327873,
+      "tag": "0002_scale_rails",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794576000000,
+      "tag": "0003_boundary",
+      "breakpoints": true
     }
   ]
 }

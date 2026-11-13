@@ -2,9 +2,19 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/app/(auth)/auth";
 import { guestRegex } from "@/lib/constants";
+import { getEntitlement } from "@/lib/entitlements";
 import { downloadMedia } from "@/lib/media/download";
 import { storeDownloadedMedia } from "@/lib/media/persist";
 import { readMediaSessionForUrl } from "@/lib/media/session";
+import {
+  type ActionReservation,
+  releaseAction,
+  reserveAction,
+  settleAction,
+} from "@/lib/usage/actions";
+import { downloadQuotaEnabled } from "@/lib/usage/config";
+import { QuotaExceededError, recordUsage } from "@/lib/usage/ledger";
+import { downloadCost } from "@/lib/usage/pricing";
 
 /**
  * The media downloader.
@@ -20,6 +30,8 @@ import { readMediaSessionForUrl } from "@/lib/media/session";
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
+  let reservation: ActionReservation | null = null;
+
   try {
     const session = await auth();
 
@@ -39,6 +51,45 @@ export async function POST(request: Request) {
         },
         { status: 403 }
       );
+    }
+
+    const plan = await getEntitlement(session.user.id);
+
+    // Downloads are a paid feature, not a flag. Keeping this check outside the
+    // quota switch is what makes the free plan honest while billing is pending.
+    if (plan.downloadsPerMonth <= 0) {
+      return NextResponse.json(
+        {
+          error: "upgrade_required",
+          message:
+            "Media downloads are part of paid plans. Local search and on-device tools stay free.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (downloadQuotaEnabled()) {
+      try {
+        reservation = await reserveAction({
+          kind: "downloads",
+          limit: plan.downloadsPerMonth,
+          subjectId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return NextResponse.json(
+            {
+              error: "quota_exceeded",
+              kind: error.details.kind,
+              limit: error.details.limit,
+              period: error.details.period,
+              resetAt: error.details.resetAt,
+            },
+            { status: 429 }
+          );
+        }
+        throw error;
+      }
     }
 
     const body = await request.json();
@@ -67,6 +118,27 @@ export async function POST(request: Request) {
       userId: session.user.id,
     });
 
+    if (reservation) {
+      await settleAction({
+        costUsd: downloadCost(stored.sizeBytes),
+        eventKind: "download",
+        metadata: { format },
+        reservation,
+      }).catch((error) => {
+        console.error("Download usage settlement failed:", error);
+      });
+    } else {
+      await recordUsage({
+        bytesOut: stored.sizeBytes,
+        costUsd: downloadCost(stored.sizeBytes),
+        kind: "download",
+        metadata: { format },
+        userId: session.user.id,
+      }).catch((error) => {
+        console.error("Download usage recording failed:", error);
+      });
+    }
+
     return NextResponse.json({
       companion: stored.companion
         ? {
@@ -87,6 +159,9 @@ export async function POST(request: Request) {
       url: stored.url,
     });
   } catch (error: any) {
+    if (reservation) {
+      await releaseAction(reservation).catch(() => undefined);
+    }
     console.error("Media download failed:", error);
     return NextResponse.json(
       { error: error?.message ?? "The download failed." },

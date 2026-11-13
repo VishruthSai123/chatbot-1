@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import {
@@ -8,6 +9,8 @@ import {
   getUser,
   upgradeGuestUser,
 } from "@/lib/db/queries";
+import { ensureEntitlement } from "@/lib/entitlements";
+import { checkIpRateLimitFor } from "@/lib/ratelimit";
 
 import { auth, signIn } from "./auth";
 
@@ -89,6 +92,18 @@ export const register = async (
   formData: FormData
 ): Promise<RegisterActionState> => {
   try {
+    const headerStore = await headers();
+    const ip = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim();
+    const allowed = await checkIpRateLimitFor({
+      ip,
+      key: "register",
+      limit: 5,
+    });
+
+    if (!allowed) {
+      return { status: "failed" } as RegisterActionState;
+    }
+
     const validatedData = authFormSchema.parse({
       email: formData.get("email"),
       password: formData.get("password"),
@@ -120,6 +135,13 @@ export const register = async (
       });
     } else {
       await createUser(validatedData.email, validatedData.password);
+    }
+
+    const [account] = await getUser(validatedData.email);
+    if (account) {
+      await ensureEntitlement(account.id).catch((error) => {
+        console.warn("Non-fatal: failed to create free entitlement:", error);
+      });
     }
 
     await signIn("credentials", {

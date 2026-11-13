@@ -40,6 +40,7 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
+import { useIsGuest } from "@/hooks/use-is-guest";
 import {
   type ChatModel,
   chatModels,
@@ -62,6 +63,7 @@ import {
 } from "../ai-elements/prompt-input";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { GuestAuthModal } from "./guest-auth-modal";
 import { PaperclipIcon, StopIcon } from "./icons";
 import { ImageCollectionLauncher } from "./image/image-collection-launcher";
 import { MediaSessionDialog } from "./media-session-dialog";
@@ -157,6 +159,8 @@ function PureMultimodalInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<string[]>([]);
   const [draggingFiles, setDraggingFiles] = useState<boolean>(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const { isGuest } = useIsGuest();
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -354,6 +358,11 @@ function PureMultimodalInput({
         return;
       }
 
+      if (isGuest) {
+        setAuthOpen(true);
+        return;
+      }
+
       setUploadQueue(files.map((file) => file.name));
 
       try {
@@ -373,7 +382,7 @@ function PureMultimodalInput({
         setUploadQueue([]);
       }
     },
-    [setAttachments, uploadFile]
+    [isGuest, setAttachments, uploadFile]
   );
 
   const handleFileChange = useCallback(
@@ -474,6 +483,12 @@ function PureMultimodalInput({
         return;
       }
 
+      if (isGuest) {
+        event.preventDefault();
+        setAuthOpen(true);
+        return;
+      }
+
       event.preventDefault();
 
       setUploadQueue((prev) => [...prev, "Pasted image"]);
@@ -502,7 +517,7 @@ function PureMultimodalInput({
         setUploadQueue([]);
       }
     },
-    [setAttachments, uploadFile]
+    [isGuest, setAttachments, uploadFile]
   );
 
   useEffect(() => {
@@ -528,6 +543,10 @@ function PureMultimodalInput({
   }, []);
 
   const handlePromptSubmit = useCallback(() => {
+    if (isGuest) {
+      setAuthOpen(true);
+      return;
+    }
     if (input.startsWith("/")) {
       const query = input.slice(1).trim();
       const cmd = slashCommands.find((c) => c.name === query);
@@ -544,7 +563,14 @@ function PureMultimodalInput({
     } else {
       toast.error("Please wait for the model to finish its response!");
     }
-  }, [attachments.length, handleSlashSelect, input, status, submitForm]);
+  }, [
+    attachments.length,
+    handleSlashSelect,
+    input,
+    isGuest,
+    status,
+    submitForm,
+  ]);
 
   const handleTextareaKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -781,6 +807,8 @@ function PureMultimodalInput({
           </PromptInputFooter>
         </PromptInput>
       </BorderBeam>
+
+      <GuestAuthModal onOpenChange={setAuthOpen} open={authOpen} />
     </div>
   );
 }

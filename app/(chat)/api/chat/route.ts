@@ -13,7 +13,7 @@ import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
 import { z } from "zod";
 import { auth, type UserType } from "@/app/(auth)/auth";
-import { entitlementsByUserType } from "@/lib/ai/entitlements";
+import { trimModelMessages } from "@/lib/ai/context";
 import {
   allowedModelIds,
   chatModels,
@@ -29,6 +29,7 @@ import {
 } from "@/lib/ai/observability";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
 import { getLanguageModel } from "@/lib/ai/providers";
+import { modelRoutingEnabled, resolveChatModel } from "@/lib/ai/router";
 import { withVisibleOutputGuard } from "@/lib/ai/stream-guard";
 import {
   mergeClientToolResults,
@@ -109,6 +110,7 @@ import {
   updateMessage,
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
+import { getEntitlement } from "@/lib/entitlements";
 import { ChatbotError } from "@/lib/errors";
 import {
   describeRequirement,
@@ -116,6 +118,15 @@ import {
 } from "@/lib/image/requirements";
 import { checkIpRateLimit } from "@/lib/ratelimit";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
+import {
+  type ChatReservation,
+  recordChatTask,
+  releaseChatTask,
+  reserveChatTask,
+  settleChatTask,
+} from "@/lib/usage/chat";
+import { chatQuotaEnabled } from "@/lib/usage/config";
+import { QuotaExceededError } from "@/lib/usage/ledger";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
 import { type PostRequestBody, postRequestBodySchema } from "./schema";
@@ -227,11 +238,30 @@ export async function POST(request: Request) {
       return new ChatbotError("unauthorized:chat").toResponse();
     }
 
-    const chatModel = allowedModelIds.has(selectedChatModel)
+    let chatModel = allowedModelIds.has(selectedChatModel)
       ? selectedChatModel
       : DEFAULT_CHAT_MODEL;
+    let modelInputBudget: number | undefined;
+    let modelOutputBudget = 8192;
 
     const userType: UserType = session.user.type;
+
+    // Quick Search's local layer stays free and accountless. Hosted Spire AI is
+    // the optional, metered layer, so anonymous guests get an explicit prompt
+    // instead of an untracked free allowance they can reset by clearing cookies.
+    if (userType === "guest") {
+      return new ChatbotError("auth_required:chat").toResponse();
+    }
+
+    const plan = await getEntitlement(session.user.id);
+    const isFreePlan = plan.plan === "free";
+
+    if (modelRoutingEnabled()) {
+      const routed = resolveChatModel({ plan, requestedModel: chatModel });
+      chatModel = routed.id;
+      modelInputBudget = routed.maxInputTokens;
+      modelOutputBudget = routed.maxOutputTokens;
+    }
 
     // These four calls are independent. Batch them into a single concurrent
     // round-trip instead of four sequential awaits — the serialized database
@@ -246,7 +276,7 @@ export async function POST(request: Request) {
       getCapabilities(),
     ]);
 
-    if (messageCount > entitlementsByUserType[userType].maxMessagesPerHour) {
+    if (messageCount > plan.messagesPerHour) {
       return new ChatbotError("rate_limit:chat").toResponse();
     }
 
@@ -377,7 +407,18 @@ export async function POST(request: Request) {
       longitude,
     };
 
-    const modelConfig = chatModels.find((m) => m.id === chatModel);
+    const modelConfig =
+      chatModels.find((m) => m.id === chatModel) ??
+      ({
+        description: "Cost-efficient free-tier model",
+        id: chatModel,
+        name:
+          chatModel === "gemini-3.1-flash-lite"
+            ? "Gemini 3.1 Flash-Lite"
+            : chatModel,
+        provider: "google" as const,
+        thinkingLevel: "minimal" as const,
+      } satisfies (typeof chatModels)[number]);
     const capabilities = modelCapabilities[chatModel];
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
@@ -465,6 +506,43 @@ export async function POST(request: Request) {
           return msg;
         }) as typeof rawModelMessages);
 
+    const requestMessages = modelInputBudget
+      ? trimModelMessages(modelMessages, modelInputBudget)
+      : modelMessages;
+
+    let chatReservation: ChatReservation | null = null;
+    if (chatQuotaEnabled()) {
+      try {
+        chatReservation = await reserveChatTask({
+          plan,
+          userId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return Response.json(
+            {
+              error: "quota_exceeded",
+              kind: error.details.kind,
+              limit: error.details.limit,
+              message:
+                error.details.kind === "chat_tasks"
+                  ? "You have used your free AI tasks for today. Your allowance resets tomorrow; local search and on-device tools are still free."
+                  : "You have used your free AI allowance for this period. Local search and on-device tools are still free.",
+              period: error.details.period,
+              reserved: error.details.reserved,
+              resetAt: error.details.resetAt,
+              used: error.details.used,
+            },
+            {
+              headers: { "Cache-Control": "no-store" },
+              status: 429,
+            }
+          );
+        }
+        throw error;
+      }
+    }
+
     const stream = createUIMessageStream({
       execute: async ({ writer: dataStream }) => {
         const modelName = modelConfig?.name ?? chatModel;
@@ -536,72 +614,76 @@ export async function POST(request: Request) {
         const result = streamText({
           abortSignal: request.signal,
           activeTools: supportsTools
-            ? [
-                "getWeather",
-                "createDocument",
-                "editDocument",
-                "updateDocument",
-                "requestSuggestions",
-                "imageResize",
-                "imageRemoveBg",
-                "imageCrop",
-                "imageCompress",
-                "imageConvert",
-                "imageUpscaleEnhance",
-                "imagePixelate",
-                "imageRotate",
-                "imageOcr",
-                "imageListPresets",
-                "imageStitch",
-                "imageOverlay",
-                "imageCollage",
-                "pdfGetInfo",
-                "pdfMerge",
-                "pdfSplit",
-                "pdfArrange",
-                "pdfRotatePages",
-                "pdfExtractText",
-                "imageToPdf",
-                "sheetGetInfo",
-                "sheetFilterSort",
-                "sheetRemoveDuplicates",
-                "sheetSummaryStats",
-                "sheetConvertFormat",
-                "webSearch",
-                "readUrl",
-                "research",
-                "notebookCreate",
-                "notebookAsk",
-                "notebookGenerate",
-                "notebookQuiz",
-                "notebookGrade",
-                "notebookAddSource",
-                "docRead",
-                "docSummarize",
-                "docDiff",
-                "docStats",
-                "docConvert",
-                "audioInfo",
-                "audioTranscribe",
-                "audioOpen",
-                "downloadMedia",
-                "slidesCreate",
-                "slidesEdit",
-                // `as const` keeps the spread a literal, so the whole list
-                // still infers as tool names rather than widening to string[].
-                ...(androidBridge ? (["deviceAction"] as const) : []),
-              ]
+            ? isFreePlan
+              ? ["webSearch", "readUrl"]
+              : [
+                  "getWeather",
+                  "createDocument",
+                  "editDocument",
+                  "updateDocument",
+                  "requestSuggestions",
+                  "imageResize",
+                  "imageRemoveBg",
+                  "imageCrop",
+                  "imageCompress",
+                  "imageConvert",
+                  "imageUpscaleEnhance",
+                  "imagePixelate",
+                  "imageRotate",
+                  "imageOcr",
+                  "imageListPresets",
+                  "imageStitch",
+                  "imageOverlay",
+                  "imageCollage",
+                  "pdfGetInfo",
+                  "pdfMerge",
+                  "pdfSplit",
+                  "pdfArrange",
+                  "pdfRotatePages",
+                  "pdfExtractText",
+                  "imageToPdf",
+                  "sheetGetInfo",
+                  "sheetFilterSort",
+                  "sheetRemoveDuplicates",
+                  "sheetSummaryStats",
+                  "sheetConvertFormat",
+                  "webSearch",
+                  "readUrl",
+                  "research",
+                  "notebookCreate",
+                  "notebookAsk",
+                  "notebookGenerate",
+                  "notebookQuiz",
+                  "notebookGrade",
+                  "notebookAddSource",
+                  "docRead",
+                  "docSummarize",
+                  "docDiff",
+                  "docStats",
+                  "docConvert",
+                  "audioInfo",
+                  "audioTranscribe",
+                  "audioOpen",
+                  "downloadMedia",
+                  "slidesCreate",
+                  "slidesEdit",
+                  // `as const` keeps the spread a literal, so the whole list
+                  // still infers as tool names rather than widening to string[].
+                  ...(androidBridge ? (["deviceAction"] as const) : []),
+                ]
             : [],
           instructions: systemPrompt({
+            compact: isFreePlan,
             deviceActionsAvailable: Boolean(androidBridge),
             imageRequirement: imageRequirementHint,
-            isGuest: userType === "guest",
+            // Guests are rejected above; hosted chat is the account layer.
+            isGuest: false,
             requestHints,
             supportsTools,
           }),
-          maxOutputTokens: 8192,
+          maxOutputTokens: modelOutputBudget,
           maxRetries: 1,
-          messages: modelMessages,
+          messages: requestMessages,
           model: getLanguageModel(chatModel),
           onAbort() {
             logChatObservation("chat_aborted", {
@@ -938,8 +1020,10 @@ export async function POST(request: Request) {
           }
         }
 
+        let resultText = "";
+
         try {
-          await result.text;
+          resultText = await result.text;
         } catch (err) {
           /*
            * A provider can fail after it has already streamed the answer.
@@ -976,6 +1060,52 @@ export async function POST(request: Request) {
             toolCallCount: toolCalls.length,
             totalMs: Date.now() - startedAt,
           });
+
+          const usage = (await Promise.resolve(result.usage).catch(
+            () => null
+          )) as {
+            cachedInputTokens?: number | null;
+            inputTokens?: number | null;
+            outputTokens?: number | null;
+          } | null;
+          const normalizedUsage = usage
+            ? {
+                cachedTokens: usage.cachedInputTokens,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+              }
+            : null;
+
+          const hasBillableOutput =
+            hasVisibleOutput || resultText.trim().length > 0;
+
+          if (hasBillableOutput) {
+            if (chatReservation) {
+              await settleChatTask({
+                model: chatModel,
+                reservation: chatReservation,
+                usage: normalizedUsage,
+              }).catch((error) => {
+                console.error("Chat usage settlement failed:", error);
+              });
+            } else {
+              // Enforcement can be off; cost telemetry cannot. This is the
+              // difference between a measurable free tier and a guess.
+              await recordChatTask({
+                idempotencyKey: `chat:${id}:${requestId}`,
+                model: chatModel,
+                plan,
+                usage: normalizedUsage,
+                userId: session.user.id,
+              }).catch((error) => {
+                console.error("Chat usage recording failed:", error);
+              });
+            }
+          } else if (chatReservation) {
+            await releaseChatTask(chatReservation).catch((error) => {
+              console.error("Chat usage release failed:", error);
+            });
+          }
         }
       },
       generateId: generateUUID,

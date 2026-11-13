@@ -6,6 +6,7 @@ import {
   MAX_UPLOAD_BYTES,
   STORAGE_ALLOWED_MIME_TYPES,
 } from "@/lib/storage/limits";
+import { storageProvider } from "@/lib/storage/provider";
 
 /**
  * Makes the storage bucket match the limits the app enforces.
@@ -21,6 +22,10 @@ import {
 let ensured: Promise<void> | null = null;
 
 export function ensureArtifactsBucket(): Promise<void> {
+  if (storageProvider() === "r2") {
+    return Promise.resolve();
+  }
+
   ensured ??= configureBucket().catch((error: unknown) => {
     ensured = null;
     throw error;

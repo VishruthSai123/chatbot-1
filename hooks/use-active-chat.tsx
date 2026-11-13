@@ -290,6 +290,10 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     onFinish: ({ isAbort, isError }) => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("spire:usage-changed"));
+      }
+
       if (isAbort || isError) {
         cancelPendingDeviceActions(
           isAbort

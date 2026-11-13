@@ -1,11 +1,13 @@
 # Quick Search × SuperiorAI — Integration Plan
 
-Status: design proposal (no production code changed yet)
+Status: implemented; the web boundary is live in production (13 Nov 2026)
 Repos:
 - `quick-search/` — native Android launcher/search app (Kotlin, Jetpack Compose)
 - root `superiorai` — Next.js chatbot/PWA (the "Bot")
 
 This document answers one question: **how do we put the SuperiorAI chatbot inside Quick Search as a first-class "Bot" scene, with sharing and shortcuts, without breaking Quick Search's search/launcher behavior?**
+
+**Product boundary:** Quick Search local search, widgets, themes, backup and device actions stay free and accountless. Spire AI (Bot, web search, research, files, storage, downloads, Live) is the optional hosted layer. It requires a free account; Free gets 3 tasks/day, 1 web search/day, 3 Live min/month and 0.5 GB. Guests can still use local search and the on-device studios.
 
 ---
 
@@ -33,19 +35,19 @@ This document answers one question: **how do we put the SuperiorAI chatbot insid
 - Already has:
   - `app/manifest.ts` — name, 192/512/maskable icons, `standalone`, `start_url`, scope.
   - `public/sw.js` — static-asset cache only; never HTML or API.
-  - Automatic **guest** auth: `proxy.ts` redirects cookieless requests to `/api/auth/guest`, which creates a real user row + session cookie.
-  - Chat persistence in Postgres (Supabase), file uploads to Supabase Storage, SSE streaming from `POST /api/chat`.
+  - Automatic **guest** auth: `proxy.ts` redirects cookieless requests to `/api/auth/guest`, which creates a real user row + session cookie. Guests can use local search/deep links, but hosted AI, search, research, uploads, Live and downloads require a free account.
+  - Chat persistence in Postgres (Supabase), file uploads to Cloudflare R2, SSE streaming from `POST /api/chat`.
   - Text deep link: `?query=` **auto-sends** a message (only text, only once per page mount).
-- Missing for a first-class Android/TWA integration:
-  - No `/.well-known/assetlinks.json`.
-  - `proxy.ts` intercepts `/.well-known/*`, `manifest.webmanifest`, `sw.js`, and icons, so verification/PWA crawlers get redirected.
-  - `proxy.ts` drops the query string when it redirects a cold visitor to guest login, so a first-launch deep link loses its `?query=`.
-  - No image/attachment deep link, no share target, no JS bridge, no embed/mobile-only shell.
+- Implemented for a first-class Android/TWA integration:
+  - `/.well-known/assetlinks.json` is present for debug/local signing; the Play App Signing fingerprint is still required before publishing.
+  - `proxy.ts` allows `/.well-known/*`, `manifest.webmanifest`, `sw.js`, icons and `/api/maintenance`.
+  - `proxy.ts` preserves the query string when it redirects a cold visitor to guest login.
+  - Image/attachment deep link, share target, JS bridge and the mobile/embed shell are implemented.
 - Auth is Credentials + guest only — **no Google/OAuth provider** — so an Android WebView is not blocked by Google's embedded-WebView OAuth policy today.
 - Chat attachments:
-  - `POST /api/files/upload` supports sign → PUT → complete, 16 MiB cap, direct-to-Supabase.
+  - `POST /api/files/upload` supports sign → PUT → complete, 16 MiB cap, direct-to-R2.
   - The composer accepts images, PDFs, docs, sheets, audio, video and builds `file` parts with `documentId`, `url`, `mediaType`, `filename`.
-  - Guests can upload, but are rate-limited (10 messages/hour) and some studios/tools require an account.
+  - Guests cannot upload; signed-in Free is capped at 0.5 GB and the actual R2 object size is checked on completion.
 
 ---
 
@@ -585,7 +587,7 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 - Added WebView security defaults: HTTPS host allowlist, external links in Custom Tabs, file/content access off, mixed content blocked, SSL errors fail closed, WebMessage not exposed, file chooser via SAF.
 - Session cookies are persisted on activity pause.
 - Added English fallback strings to all 16 locales (parity passes).
-- Debug APK: quick-search/app/build/outputs/apk/standard/debug/app-standard-debug.apk`n
+- Debug APK: `quick-search/app/build/outputs/apk/standard/debug/app-standard-debug.apk`.
 ### Web (root SuperiorAI)
 
 - proxy.ts: preserves query strings through guest bootstrap and keeps /.well-known, manifest, service worker, icons, robots, sitemap public.
@@ -596,5 +598,5 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 
 ### Remaining deployment step
 
-The Android **text share / Ask / Bot tab** paths work against the current live site. **Image/PDF sharing** also has a compatibility bridge: when the deployed web build does not handle `?share=` yet, the WebView feeds the files into the existing composer file input. Deploying this web change is still recommended because it is cleaner, faster, and handles shared captions/PDF metadata directly. The `assetlinks.json` needs the Play App Signing SHA-256 if App Links/TWA verification is required on Play-distributed builds.
+The Android **text share / Ask / Bot** paths and the web `?share=` hand-off are deployed. The web boundary is live: guests can use local search and on-device studios, while hosted AI, search, research, uploads, Live and downloads require a free account. Image/PDF sharing uses the normal composer attachment path and R2 storage. The `assetlinks.json` still needs the Play App Signing SHA-256 before Play-distributed App Links/TWA verification.
 

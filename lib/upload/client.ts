@@ -4,6 +4,7 @@ import {
   SAFE_MULTIPART_BYTES,
   validateUpload,
 } from "@/lib/storage/limits";
+import { compressImageForUpload } from "@/lib/upload/compress-image";
 
 /**
  * Uploads go browser → Supabase Storage directly, not through a serverless
@@ -217,10 +218,12 @@ export async function uploadFile(
   file: File,
   options: UploadOptions = {}
 ): Promise<UploadedFile> {
+  const upload = await compressImageForUpload(file);
+
   const validation = validateUpload({
-    name: file.name,
-    size: file.size,
-    type: file.type,
+    name: upload.name,
+    size: upload.size,
+    type: upload.type,
   });
 
   if (!validation.ok) {
@@ -228,13 +231,13 @@ export async function uploadFile(
   }
 
   try {
-    return await uploadDirect(file, options.chatId);
+    return await uploadDirect(upload, options.chatId);
   } catch (error) {
     // If the direct upload hop fails for any reason (CORS, network, signing 502, bucket),
     // immediately fall back to the proxied server path if the file size fits within the payload limit.
-    if (file.size <= SAFE_MULTIPART_BYTES) {
+    if (upload.size <= SAFE_MULTIPART_BYTES) {
       try {
-        return await uploadProxied(file, options.chatId);
+        return await uploadProxied(upload, options.chatId);
       } catch (proxyError) {
         throw proxyError instanceof UploadError ? proxyError : error;
       }

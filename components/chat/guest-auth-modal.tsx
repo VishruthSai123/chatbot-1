@@ -31,9 +31,9 @@ interface GuestAuthModalProps {
  */
 
 const HIGHLIGHTS = [
-  "Every tool unlocked — images, PDFs, sheets, audio, notebooks, slides",
-  "Your files saved to a library you can come back to",
-  "Chat history kept when you switch device",
+  "3 hosted AI tasks a day, plus 1 web search and 3 Live minutes a month",
+  "On-device image/PDF edits and device actions stay free and unlimited",
+  "Guest chats and files are removed after 7 days; a free account keeps them",
 ];
 
 export function GuestAuthModal({
@@ -59,11 +59,11 @@ export function GuestAuthModal({
 
           <DialogHeader className="space-y-1.5">
             <DialogTitle className="text-lg font-semibold tracking-tight text-foreground">
-              {featureName ? `Unlock ${featureName}` : "Save your work"}
+              {featureName ? `Unlock ${featureName}` : "Use Spire AI"}
             </DialogTitle>
             <DialogDescription className="text-[13px] leading-relaxed text-muted-foreground">
               {description ??
-                "You are browsing as a guest. Chatting is free; tools need a free account so what you make is kept."}
+                "Spire AI needs a free account. Quick Search local search, on-device tools and device actions stay free and accountless."}
             </DialogDescription>
           </DialogHeader>
 

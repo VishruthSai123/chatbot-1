@@ -1,0 +1,152 @@
+﻿import type { PriceLane } from "@/lib/usage/pricing";
+
+export type PlanId = "free" | "go" | "plus" | "pro" | "business" | "daypass";
+
+export type PlanLimits = {
+  downloadsPerMonth: number;
+  fileOpsPerMonth: number;
+  label: string;
+  lane: PriceLane;
+  /** Hosted on-device fallback operations allowed per day. 0 = none. */
+  lightFileOpsPerDay: number;
+  liveMinutesPerMonth: number;
+  /** Burst limit, separate from the daily/monthly allowance. */
+  messagesPerHour: number;
+  model: string;
+  plan: PlanId;
+  researchPerMonth: number;
+  /** Web searches allowed per day. 0 = no daily cap. */
+  searchesPerDay: number;
+  searchesPerMonth: number;
+  storageGb: number;
+  tasksPerDay: number;
+  tasksPerMonth: number;
+  videoMinutesPerMonth: number;
+};
+
+/**
+ * The plan table from the growth plan. Limits are deliberately generous on the
+ * cheap actions and strict on the expensive ones: Live, video, research and
+ * downloads.
+ *
+ * Pure and importable by the unit suite; the database-backed entitlement lookup
+ * lives in `lib/entitlements.ts`.
+ */
+export const PLANS: Record<PlanId, PlanLimits> = {
+  business: {
+    downloadsPerMonth: 5,
+    fileOpsPerMonth: 200,
+    label: "Business",
+    lane: "priority",
+    lightFileOpsPerDay: 1000,
+    liveMinutesPerMonth: 300,
+    messagesPerHour: 300,
+    model: "gemini-3.8-flash",
+    plan: "business",
+    researchPerMonth: 20,
+    searchesPerDay: 20,
+    searchesPerMonth: 100,
+    storageGb: 100,
+    tasksPerDay: 200,
+    tasksPerMonth: 6000,
+    videoMinutesPerMonth: 40,
+  },
+  daypass: {
+    downloadsPerMonth: 0,
+    fileOpsPerMonth: 3,
+    label: "Day Pass",
+    lane: "standard",
+    lightFileOpsPerDay: 10,
+    liveMinutesPerMonth: 10,
+    messagesPerHour: 30,
+    model: "gemini-3.5-flash-lite",
+    plan: "daypass",
+    researchPerMonth: 0,
+    searchesPerDay: 5,
+    searchesPerMonth: 5,
+    storageGb: 1,
+    tasksPerDay: 30,
+    tasksPerMonth: 30,
+    videoMinutesPerMonth: 0,
+  },
+  free: {
+    downloadsPerMonth: 0,
+    fileOpsPerMonth: 0,
+    label: "Free",
+    lane: "flex",
+    lightFileOpsPerDay: 10,
+    liveMinutesPerMonth: 3,
+    messagesPerHour: 10,
+    model: "gemini-3.1-flash-lite",
+    plan: "free",
+    researchPerMonth: 0,
+    searchesPerDay: 1,
+    searchesPerMonth: 30,
+    storageGb: 0.5,
+    tasksPerDay: 3,
+    tasksPerMonth: 90,
+    videoMinutesPerMonth: 0,
+  },
+  go: {
+    downloadsPerMonth: 0,
+    fileOpsPerMonth: 10,
+    label: "Go",
+    lane: "standard",
+    lightFileOpsPerDay: 30,
+    liveMinutesPerMonth: 15,
+    messagesPerHour: 30,
+    model: "gemini-3.5-flash-lite",
+    plan: "go",
+    researchPerMonth: 1,
+    searchesPerDay: 3,
+    searchesPerMonth: 10,
+    storageGb: 2,
+    tasksPerDay: 10,
+    tasksPerMonth: 300,
+    videoMinutesPerMonth: 0,
+  },
+  plus: {
+    downloadsPerMonth: 1,
+    fileOpsPerMonth: 30,
+    label: "Plus",
+    lane: "priority",
+    lightFileOpsPerDay: 100,
+    liveMinutesPerMonth: 45,
+    messagesPerHour: 60,
+    model: "gemini-3.8-flash",
+    plan: "plus",
+    researchPerMonth: 3,
+    searchesPerDay: 5,
+    searchesPerMonth: 20,
+    storageGb: 5,
+    tasksPerDay: 30,
+    tasksPerMonth: 900,
+    videoMinutesPerMonth: 5,
+  },
+  pro: {
+    downloadsPerMonth: 3,
+    fileOpsPerMonth: 100,
+    label: "Pro",
+    lane: "priority",
+    lightFileOpsPerDay: 300,
+    liveMinutesPerMonth: 150,
+    messagesPerHour: 120,
+    model: "gemini-3.8-flash",
+    plan: "pro",
+    researchPerMonth: 10,
+    searchesPerDay: 10,
+    searchesPerMonth: 50,
+    storageGb: 50,
+    tasksPerDay: 100,
+    tasksPerMonth: 3000,
+    videoMinutesPerMonth: 20,
+  },
+};
+
+export function isPlanId(value: string): value is PlanId {
+  return value in PLANS;
+}
+
+export function limitsForPlan(plan: string): PlanLimits {
+  return isPlanId(plan) ? PLANS[plan] : PLANS.free;
+}

@@ -69,6 +69,7 @@ export const chatModels: ChatModel[] = [
 ];
 
 export const modelCapabilitiesMap: Record<string, ModelCapabilities> = {
+  "gemini-3.1-flash-lite": { reasoning: false, tools: true, vision: true },
   "gemini-3.5-flash-lite": { reasoning: false, tools: true, vision: true },
 };
 

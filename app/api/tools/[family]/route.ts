@@ -1,6 +1,9 @@
+import { ipAddress } from "@vercel/functions";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/app/(auth)/auth";
+import { getEntitlement } from "@/lib/entitlements";
+import { checkIpRateLimitFor } from "@/lib/ratelimit";
 import { runAudioResolve } from "@/lib/tools/audio/handler";
 import { runImageAction } from "@/lib/tools/image/handler";
 import {
@@ -8,7 +11,16 @@ import {
   runMediaSessions,
 } from "@/lib/tools/media/handler";
 import { runPdfAction } from "@/lib/tools/pdf/handler";
+import {
+  classifyToolAction,
+  PlanFeatureError,
+  reserveToolQuota,
+  settleToolQuota,
+} from "@/lib/tools/quota";
 import { runSheetAction } from "@/lib/tools/sheet/handler";
+import { type ActionReservation, releaseAction } from "@/lib/usage/actions";
+import { toolsQuotaEnabled } from "@/lib/usage/config";
+import { QuotaExceededError } from "@/lib/usage/ledger";
 
 export const maxDuration = 60;
 
@@ -72,24 +84,103 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const allowed = await checkIpRateLimitFor({
+      ip: ipAddress(request),
+      key: "tools",
+      limit: 60,
+    });
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "rate_limited", message: "Too many tool requests." },
+        { status: 429 }
+      );
+    }
+
     const { family } = await context.params;
     const body = await request.json();
+    const quotaClass = classifyToolAction(family, body?.action);
 
-    switch (family) {
-      case "image":
-        return await runImageAction({ body, session });
-      case "pdf":
-        return await runPdfAction({ body, session });
-      case "sheet":
-        return await runSheetAction({ body, session });
-      case "media":
-        return await runMediaSessionAction({ body, session });
-      default:
-        return NextResponse.json(
-          { error: `Unknown tool family: ${family}` },
-          { status: 404 }
-        );
+    let reservation: ActionReservation | null = null;
+    if (toolsQuotaEnabled()) {
+      const plan = await getEntitlement(session.user.id);
+      try {
+        reservation = await reserveToolQuota({
+          plan,
+          quotaClass,
+          userId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof PlanFeatureError) {
+          return NextResponse.json(
+            {
+              error: "upgrade_required",
+              feature: error.feature,
+              message:
+                "That tool is part of paid plans. Basic image and PDF edits stay free on your device.",
+            },
+            { status: 403 }
+          );
+        }
+        if (error instanceof QuotaExceededError) {
+          return NextResponse.json(
+            {
+              error: "quota_exceeded",
+              kind: error.details.kind,
+              limit: error.details.limit,
+              period: error.details.period,
+              resetAt: error.details.resetAt,
+            },
+            { status: 429 }
+          );
+        }
+        throw error;
+      }
     }
+
+    let result: Response;
+    try {
+      result = await (async () => {
+        switch (family) {
+          case "image":
+            return await runImageAction({ body, session });
+          case "pdf":
+            return await runPdfAction({ body, session });
+          case "sheet":
+            return await runSheetAction({ body, session });
+          case "media":
+            return await runMediaSessionAction({ body, session });
+          default:
+            return NextResponse.json(
+              { error: `Unknown tool family: ${family}` },
+              { status: 404 }
+            );
+        }
+      })();
+    } catch (error) {
+      if (reservation) {
+        await releaseAction(reservation).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    if (result.status >= 400) {
+      if (reservation) {
+        await releaseAction(reservation).catch(() => undefined);
+      }
+    } else {
+      await settleToolQuota({
+        action: String(body?.action ?? "unknown"),
+        family,
+        quotaClass,
+        reservation,
+        userId: session.user.id,
+      }).catch((error) => {
+        console.error("Tool usage settlement failed:", error);
+      });
+    }
+
+    return result;
   } catch (error: any) {
     console.error("Error executing tool action:", error);
     return NextResponse.json(

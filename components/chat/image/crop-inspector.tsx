@@ -12,6 +12,10 @@ import {
 import { memo, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
+  clientImageToolsEnabled,
+  runClientImageAction,
+} from "@/lib/image/client-tools";
+import {
   aspectRatioInPercent,
   boxForAspect,
   type CropBox,
@@ -158,6 +162,30 @@ export const CropInspector = memo(function InnerCropInspector({
     setIsProcessing(true);
 
     try {
+      if (clientImageToolsEnabled()) {
+        const client = await runClientImageAction({
+          action: "crop",
+          documentId,
+          imageSrc,
+          params: {
+            height: pixelHeight,
+            left: pixelLeft,
+            top: pixelTop,
+            width: pixelWidth,
+          },
+          versionIndex,
+        });
+
+        if (client) {
+          onUpdateImage(client.result.base64, true);
+          toast.success(
+            `Photo cropped to ${client.result.width}×${client.result.height} px in your browser`
+          );
+          handleResetCrop();
+          return;
+        }
+      }
+
       const response = await fetch(IMAGE_TOOL_ENDPOINT, {
         body: JSON.stringify({
           action: "crop",
@@ -214,6 +242,7 @@ export const CropInspector = memo(function InnerCropInspector({
     isProcessing,
     setIsProcessing,
     documentId,
+    imageSrc,
     pixelLeft,
     pixelTop,
     pixelWidth,

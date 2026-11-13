@@ -2,6 +2,7 @@ export type ErrorType =
   | "bad_request"
   | "unauthorized"
   | "forbidden"
+  | "auth_required"
   | "not_found"
   | "rate_limit"
   | "offline";
@@ -104,6 +105,8 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
       return "This chat belongs to another user. Please check the chat ID and try again.";
     case "unauthorized:chat":
       return "You need to sign in to view this chat. Please sign in and try again.";
+    case "auth_required:chat":
+      return "Create a free account to use Spire AI. Quick Search local search stays free and needs no account.";
     case "offline:chat":
       return "We're having trouble sending your message. Please check your internet connection and try again.";
 
@@ -128,6 +131,8 @@ function getStatusCodeByType(type: ErrorType) {
     case "unauthorized":
       return 401;
     case "forbidden":
+      return 403;
+    case "auth_required":
       return 403;
     case "not_found":
       return 404;

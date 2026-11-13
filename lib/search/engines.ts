@@ -184,6 +184,48 @@ async function serperSearch(query: string, key: string): Promise<SearchHit[]> {
     }));
 }
 
+/**
+ * SearXNG.
+ *
+ * A self-hosted meta-search instance with a JSON API. It is the cheapest
+ * reliable fallback when a keyed provider is not configured: no per-query fee,
+ * and the instance is yours. The instance must enable `format=json`.
+ */
+async function searxngSearch(
+  query: string,
+  baseUrl: string
+): Promise<SearchHit[]> {
+  const url = new URL(
+    "/search",
+    baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
+  );
+  url.searchParams.set("format", "json");
+  url.searchParams.set("language", "en");
+  url.searchParams.set("q", query);
+  url.searchParams.set("safesearch", "1");
+
+  const { body, status } = await fetchText(url.toString(), {
+    headers: { Accept: "application/json" },
+  });
+
+  if (status !== 200) {
+    throw new Error(`SearXNG answered ${status}.`);
+  }
+
+  const data = JSON.parse(body) as {
+    results?: { content?: string; title?: string; url?: string }[];
+  };
+
+  return (data.results ?? [])
+    .filter((result) => result.url)
+    .slice(0, MAX_RESULTS)
+    .map((result) => ({
+      snippet: result.content?.slice(0, 500) ?? "",
+      title: result.title ?? result.url ?? "",
+      url: result.url as string,
+    }));
+}
+
 /** DuckDuckGo's full HTML endpoint. */
 async function duckDuckGoHtml(query: string): Promise<SearchHit[]> {
   const { body, status } = await fetchText(
@@ -230,6 +272,7 @@ export async function searchProviders(query: string): Promise<SearchHit[]> {
   const serperKey = process.env.SERPER_API_KEY?.trim();
   const braveKey = process.env.BRAVE_SEARCH_API_KEY?.trim();
   const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+  const searxngUrl = process.env.SEARXNG_URL?.trim();
 
   const providers: { name: string; run: () => Promise<SearchHit[]> }[] = [];
 
@@ -251,6 +294,13 @@ export async function searchProviders(query: string): Promise<SearchHit[]> {
     providers.push({
       name: "Tavily",
       run: () => tavilySearch(query, tavilyKey),
+    });
+  }
+
+  if (searxngUrl) {
+    providers.push({
+      name: "SearXNG",
+      run: () => searxngSearch(query, searxngUrl),
     });
   }
 

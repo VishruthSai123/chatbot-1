@@ -40,3 +40,8 @@ quick-search/
 *.apk
 *.aab
 *.idsig
+
+# Internal strategy and cost documents (kept local)
+SPIRE-COST-REDUCTION.md
+SPIRE-GROWTH-PLAN.md
+SPIRE-SCALE-RAILS.md

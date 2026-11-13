@@ -3,7 +3,18 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { buildStorageKey } from "@/lib/storage/keys";
+import { recordArtifact } from "@/lib/storage/ledger";
 import { ARTIFACTS_BUCKET, safeStorageFilename } from "@/lib/storage/limits";
+import { storageProvider } from "@/lib/storage/provider";
+import {
+  r2ArtifactExists,
+  r2ArtifactSize,
+  r2CreateSignedUpload,
+  r2DeleteArtifact,
+  r2DownloadArtifact,
+  r2GetArtifactSignedUrl,
+  r2UploadArtifact,
+} from "@/lib/storage/r2";
 
 let _supabaseAdmin: SupabaseClient | null = null;
 
@@ -65,6 +76,10 @@ export type SignedUpload = {
 export async function createSignedUpload(
   storageKey: string
 ): Promise<SignedUpload> {
+  if (storageProvider() === "r2") {
+    return await r2CreateSignedUpload(storageKey);
+  }
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
     .createSignedUploadUrl(storageKey, { upsert: false });
@@ -79,11 +94,29 @@ export async function createSignedUpload(
 }
 
 export async function artifactExists(storageKey: string): Promise<boolean> {
+  if (storageProvider() === "r2") {
+    return await r2ArtifactExists(storageKey);
+  }
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
     .exists(storageKey);
 
   return Boolean(data) && !error;
+}
+
+/**
+ * Actual object size when the provider can report it. Supabase falls back to
+ * the client-reported size; R2, which production uses, can be trusted.
+ */
+export async function getArtifactSize(
+  storageKey: string
+): Promise<number | null> {
+  if (storageProvider() === "r2") {
+    return await r2ArtifactSize(storageKey);
+  }
+
+  return null;
 }
 
 /**
@@ -102,6 +135,27 @@ export async function uploadArtifact({
   userId: string;
   chatId?: string;
 }): Promise<UploadResult> {
+  if (storageProvider() === "r2") {
+    const uploaded = await r2UploadArtifact({
+      chatId,
+      contentType,
+      fileBuffer,
+      filename,
+      userId,
+    });
+
+    await recordArtifact({
+      chatId,
+      contentType,
+      filename: uploaded.pathname,
+      size: uploaded.size,
+      storageKey: uploaded.storageKey,
+      userId,
+    });
+
+    return uploaded;
+  }
+
   const safeName = safeStorageFilename(filename);
   const storageKey = buildStorageKey({ chatId, filename, userId });
 
@@ -129,6 +183,15 @@ export async function uploadArtifact({
   const byteLength =
     fileBuffer instanceof Buffer ? fileBuffer.length : fileBuffer.byteLength;
 
+  await recordArtifact({
+    chatId,
+    contentType,
+    filename: safeName,
+    size: byteLength,
+    storageKey,
+    userId,
+  });
+
   return {
     contentType,
     pathname: safeName,
@@ -145,6 +208,10 @@ export async function getArtifactSignedUrl(
   storageKey: string,
   expiresInSeconds = 3600
 ): Promise<string> {
+  if (storageProvider() === "r2") {
+    return await r2GetArtifactSignedUrl(storageKey, expiresInSeconds);
+  }
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
     .createSignedUrl(storageKey, expiresInSeconds);
@@ -160,6 +227,10 @@ export async function getArtifactSignedUrl(
  * Download an artifact as a Buffer for backend processing (PDF, Image, CSV transforms)
  */
 export async function downloadArtifact(storageKey: string): Promise<Buffer> {
+  if (storageProvider() === "r2") {
+    return await r2DownloadArtifact(storageKey);
+  }
+
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
     .download(storageKey);
@@ -176,6 +247,11 @@ export async function downloadArtifact(storageKey: string): Promise<Buffer> {
  * Delete an artifact from storage
  */
 export async function deleteArtifact(storageKey: string): Promise<void> {
+  if (storageProvider() === "r2") {
+    await r2DeleteArtifact(storageKey);
+    return;
+  }
+
   const { error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
     .remove([storageKey]);

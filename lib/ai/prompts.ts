@@ -203,6 +203,7 @@ export const systemPrompt = ({
   imageRequirement,
   deviceActionsAvailable = false,
   isGuest = false,
+  compact = false,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
@@ -210,11 +211,17 @@ export const systemPrompt = ({
   deviceActionsAvailable?: boolean;
   /** Guests can chat and read attachments; tools need an account. */
   isGuest?: boolean;
+  /** Free-plan requests get a short prompt and only the few tools they may use. */
+  compact?: boolean;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
 
   if (!supportsTools) {
     return `${regularPrompt}\n\n${requestPrompt}`;
+  }
+
+  if (compact) {
+    return `${regularPrompt}\n\n${requestPrompt}\n\n${freePlanPrompt}`;
   }
 
   const requirementPrompt = imageRequirement
@@ -225,6 +232,20 @@ export const systemPrompt = ({
 
   return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}${requirementPrompt}${devicePrompt}${guestPrompt}`;
 };
+
+/**
+ * The free plan in plain language.
+ *
+ * It is deliberately short. Free requests are the ones the cost model depends
+ * on, so the system prompt and tool schemas have to stay inside the 4k budget;
+ * the long artifact and tool instructions belong to paid plans.
+ */
+const freePlanPrompt = `
+FREE PLAN:
+- Answer in text. Use webSearch only when the user explicitly asks for current or live information, or gives a URL; it shares a 1-per-day allowance with readUrl. Do not search for greetings, definitions, or general knowledge.
+- On-device image/PDF/sheet edits are free and unlimited. If the user asks for an edit, tell them to open the relevant studio instead of calling a hosted file tool.
+- Deep Research, media downloads, slides, notebooks and heavy file tools are paid plans.
+- If a tool returns quota_exceeded or upgrade_required, explain the free limit and when it resets. Never claim the action succeeded.`;
 
 /**
  * What the model should do differently for a guest.

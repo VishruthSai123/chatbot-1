@@ -24,6 +24,11 @@ import { ArtifactCloseButton } from "@/components/chat/artifact-close-button";
 import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
+import {
+  clientPdfToolsEnabled,
+  persistClientPdfParts,
+  splitPdfInBrowser,
+} from "@/lib/pdf/client-tools";
 import { normaliseDegrees } from "@/lib/pdf/pages";
 import { canvasSizeFor, fitScale, renderDpr } from "@/lib/pdf/viewport";
 import { formatBytes } from "@/lib/storage/limits";
@@ -33,10 +38,12 @@ import { cn } from "@/lib/utils";
 /**
  * PDF Studio canvas.
  *
- * Thumbnails are drawn by pdf.js in the browser, but every *edit* runs server-side
+ * Thumbnails are drawn by pdf.js in the browser. Page extraction runs in the
+ * browser too (`NEXT_PUBLIC_CLIENT_PDF_TOOLS`), because splitting is pure page
+ * arithmetic and re-serialisation. Every other edit still runs server-side
  * through `pdf-lib`, so the operation that produces the file is the same one the
- * chat tools call. The canvas never posts bytes: it posts a page order, and the
- * server writes the result to storage and returns a reference.
+ * chat tools call. The canvas never posts source bytes: it posts a page order,
+ * and the server writes the result to storage and returns a reference.
  *
  * Two constraints shaped this component:
  *
@@ -965,6 +972,38 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
         .map((page) => String(page.sourcePage))
         .join(",");
 
+      if (clientPdfToolsEnabled() && documentId && source?.url) {
+        const parts = await splitPdfInBrowser({
+          pageRanges: ranges,
+          url: source.url,
+        });
+
+        if (parts) {
+          const stored = await persistClientPdfParts({
+            documentId,
+            parts,
+            title,
+          });
+
+          if (stored?.result) {
+            const storedParts: SplitPart[] = [
+              stored.result,
+              ...(stored.results ?? []),
+            ].map((part) => ({
+              filename: part.filename,
+              pages: part.pages,
+              url: part.url,
+            }));
+
+            setSplitParts(storedParts);
+            toast.success(
+              `Extracted ${storedParts.reduce((total, part) => total + part.pages, 0)} pages in your browser`
+            );
+            return;
+          }
+        }
+      }
+
       const payload = await request("split", { pageRanges: ranges });
 
       if (!payload) {
@@ -988,7 +1027,7 @@ export const PdfStudioCanvas = memo(function InnerPdfStudioCanvas({
     } finally {
       setIsWorking(false);
     }
-  }, [pages, request, selected]);
+  }, [documentId, pages, request, selected, source?.url, title]);
 
   const busy = isLoading || isWorking;
 

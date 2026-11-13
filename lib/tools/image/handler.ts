@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import type { Session } from "next-auth";
 
 import { guestRegex } from "@/lib/constants";
-import { getLatestDocumentByKind, saveDocument } from "@/lib/db/queries";
+import {
+  getDocumentById,
+  getLatestDocumentByKind,
+  saveDocument,
+} from "@/lib/db/queries";
 import { createCollectionDocument } from "@/lib/image/collection";
 import { persistImageBytes } from "@/lib/image/persist";
 import { encodeImageRef } from "@/lib/image/ref";
@@ -302,6 +306,62 @@ export async function runImageAction({
     case "get_metadata": {
       result = await executeGetMetadata(imageSource, fallbackContext);
       return NextResponse.json({ metadata: result, success: true });
+    }
+
+    case "persist": {
+      if (!resolvedDocumentId) {
+        return NextResponse.json(
+          { error: "Missing documentId to persist the edited image." },
+          { status: 400 }
+        );
+      }
+
+      const metadata = await executeGetMetadata(imageSource, fallbackContext);
+      const base64 = imageSource.includes(",")
+        ? imageSource.slice(imageSource.indexOf(",") + 1)
+        : imageSource;
+      const bytes = Buffer.from(base64, "base64");
+
+      // The browser sends only the document id; keep the existing library title
+      // instead of renaming every edited image to "Image".
+      if (!resolvedTitle) {
+        const existing = await getDocumentById({ id: resolvedDocumentId });
+        resolvedTitle = existing?.title ?? "Image";
+      }
+
+      const persistedRef = await persistImageBytes({
+        bytes,
+        chatId,
+        filename: `${resolvedTitle ?? "Image"}.${metadata.format === "jpeg" ? "jpg" : metadata.format}`,
+        format: metadata.format,
+        height: metadata.height,
+        userId: session.user.id,
+        width: metadata.width,
+      });
+
+      await saveDocument({
+        content: encodeImageRef(persistedRef),
+        id: resolvedDocumentId,
+        kind: "image",
+        title: resolvedTitle ?? "Image",
+        userId: session.user.id,
+      });
+
+      return NextResponse.json({
+        documentId: resolvedDocumentId,
+        persisted: true,
+        result: {
+          base64,
+          format: metadata.format,
+          height: metadata.height,
+          sizeBytes: bytes.length,
+          storageKey: persistedRef.storageKey,
+          thumbUrl: persistedRef.thumbUrl,
+          url: persistedRef.url,
+          width: metadata.width,
+        },
+        success: true,
+      });
     }
 
     /**

@@ -3,6 +3,10 @@
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  clientImageToolsEnabled,
+  runClientImageAction,
+} from "@/lib/image/client-tools";
 import { formatSupportsAlpha } from "@/lib/image/formats";
 import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
@@ -82,6 +86,28 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     setIsProcessing(true);
 
     try {
+      if (
+        clientImageToolsEnabled() &&
+        ["jpeg", "png", "webp"].includes(targetFormat)
+      ) {
+        const client = await runClientImageAction({
+          action: "convert",
+          documentId,
+          flattenAlpha: isTransparent && targetFormat === "jpeg",
+          imageSrc,
+          params: { quality, targetFormat },
+          versionIndex,
+        });
+
+        if (client) {
+          onUpdateImage(client.result.base64, true);
+          toast.success(
+            `Converted to ${client.result.format.toUpperCase()} in your browser`
+          );
+          return;
+        }
+      }
+
       const response = await fetch(IMAGE_TOOL_ENDPOINT, {
         body: JSON.stringify({
           action: "convert",
@@ -137,6 +163,7 @@ export const ConverterInspector = memo(function InnerConverterInspector({
     isProcessing,
     setIsProcessing,
     documentId,
+    imageSrc,
     quality,
     targetFormat,
     onUpdateImage,

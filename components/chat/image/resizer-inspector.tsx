@@ -3,6 +3,10 @@
 import { ChevronDown, Download, Loader2, RefreshCw } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  clientImageToolsEnabled,
+  runClientImageAction,
+} from "@/lib/image/client-tools";
 import { parseAspectRatio } from "@/lib/image/dimensions";
 import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import {
@@ -164,6 +168,29 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     setIsProcessing(true);
 
     try {
+      if (
+        clientImageToolsEnabled() &&
+        unit === "px" &&
+        width > 0 &&
+        height > 0
+      ) {
+        const client = await runClientImageAction({
+          action: "resize",
+          documentId,
+          imageSrc,
+          params: { height, width },
+          versionIndex,
+        });
+
+        if (client) {
+          onUpdateImage(client.result.base64, true);
+          toast.success(
+            `Resized to ${client.result.width}×${client.result.height} px in your browser`
+          );
+          return;
+        }
+      }
+
       const response = await fetch(IMAGE_TOOL_ENDPOINT, {
         body: JSON.stringify({
           action: "resize_physical",
@@ -222,6 +249,7 @@ export const ResizerInspector = memo(function InnerResizerInspector({
     isProcessing,
     setIsProcessing,
     documentId,
+    imageSrc,
     width,
     height,
     unit,

@@ -34,6 +34,21 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // The Live expiry cron carries its own bearer secret. It must reach the route
+  // without a user session so the scheduler can clean stale holds.
+  if (
+    pathname === "/api/live" &&
+    request.nextUrl.searchParams.get("action") === "expire"
+  ) {
+    return NextResponse.next();
+  }
+
+  // Maintenance carries its own bearer secret (CRON_SECRET), so the scheduler
+  // must reach it without a user session.
+  if (pathname === "/api/maintenance") {
+    return NextResponse.next();
+  }
+
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,

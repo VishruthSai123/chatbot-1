@@ -4,7 +4,7 @@ import { generateText } from "ai";
 
 import {
   type GroundingSource,
-  getSearchModel,
+  getSearchModelFor,
   today,
 } from "@/lib/ai/search/grounding";
 import { fetchPageText } from "@/lib/net/page";
@@ -36,6 +36,11 @@ export type WebSearchResult = {
   answer: string;
   query: string;
   sources: GroundingSource[];
+  usage?: {
+    cachedTokens?: number | null;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+  };
   /** Which path answered, so the caller can be honest about it. */
   via: "web";
 };
@@ -62,7 +67,10 @@ function searchPrompt(query: string): string {
 /**
  * Searches the web and answers from the pages it finds.
  */
-export async function searchWeb(query: string): Promise<WebSearchResult> {
+export async function searchWeb(
+  query: string,
+  options?: { model?: string }
+): Promise<WebSearchResult> {
   const hits = await searchProviders(query);
 
   if (hits.length === 0) {
@@ -92,8 +100,9 @@ export async function searchWeb(query: string): Promise<WebSearchResult> {
     )
     .join("\n\n");
 
-  const { text } = await generateText({
-    model: getSearchModel(),
+  const { text, usage } = await generateText({
+    maxOutputTokens: 700,
+    model: getSearchModelFor(options?.model),
     prompt: `${searchPrompt(query)}\n\nSEARCH RESULTS:\n${evidence}`,
   });
 
@@ -101,6 +110,12 @@ export async function searchWeb(query: string): Promise<WebSearchResult> {
     answer: text,
     query,
     sources: hits.map((hit) => ({ title: hit.title, url: hit.url })),
+    usage: {
+      cachedTokens: (usage as { cachedInputTokens?: number | null })
+        ?.cachedInputTokens,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    },
     via: "web",
   };
 }

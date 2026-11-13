@@ -277,7 +277,7 @@ export async function describePdfSource(source: ResolvedPdfSource): Promise<{
 }
 
 /** Uploads produced bytes and returns everything the studio needs to show them. */
-async function persistPdfBytes({
+export async function persistPdfBytes({
   bytes,
   chatId,
   filename,

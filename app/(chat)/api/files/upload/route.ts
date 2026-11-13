@@ -1,24 +1,32 @@
+import { ipAddress } from "@vercel/functions";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
 import { type AudioRef, encodeAudioRef, isAudioUpload } from "@/lib/audio/ref";
+import { guestRegex } from "@/lib/constants";
 import { saveDocument } from "@/lib/db/queries";
 import { parseDocument } from "@/lib/doc/native";
 import { encodeDocRef } from "@/lib/doc/ref";
+import { getEntitlement } from "@/lib/entitlements";
+import { encodeImageRef } from "@/lib/image/ref";
 import { activeImageRegistry } from "@/lib/image/session-registry";
 import { encodePdfRef } from "@/lib/pdf/ref";
+import { checkIpRateLimitFor } from "@/lib/ratelimit";
 import { encodeSheetRef } from "@/lib/sheet/ref";
 import {
   artifactExists,
   createSignedUpload,
+  deleteArtifact,
   downloadArtifact,
   getArtifactSignedUrl,
+  getArtifactSize,
   type UploadResult,
   uploadArtifact,
 } from "@/lib/storage";
 import { ensureArtifactsBucket } from "@/lib/storage/bucket";
 import { buildStorageKey, isOwnedStorageKey } from "@/lib/storage/keys";
+import { recordArtifact } from "@/lib/storage/ledger";
 import {
   ARTIFACTS_BUCKET,
   formatBytes,
@@ -27,6 +35,9 @@ import {
   safeStorageFilename,
   validateUpload,
 } from "@/lib/storage/limits";
+import { uploadQuotaEnabled } from "@/lib/usage/config";
+import { recordUsage } from "@/lib/usage/ledger";
+import { getStorageBytes } from "@/lib/usage/storage";
 import { generateUUID } from "@/lib/utils";
 
 const PREVIEW_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -91,8 +102,18 @@ async function persistImageArtifact({
 
   try {
     const candidateId = generateUUID();
+    const format = mimeType.split("/")[1] ?? undefined;
+    const content = storageKey
+      ? encodeImageRef({
+          filename,
+          format,
+          sizeBytes: Math.floor((base64.length * 3) / 4),
+          storageKey,
+        })
+      : base64;
+
     await saveDocument({
-      content: base64,
+      content,
       id: candidateId,
       kind: "image",
       title: filename,
@@ -397,6 +418,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const isGuest =
+    session.user.type === "guest" || guestRegex.test(session.user.email ?? "");
+
+  if (isGuest) {
+    return NextResponse.json(
+      {
+        error: "Create a free account to upload files to Spire AI.",
+        requiresAuth: true,
+      },
+      { status: 403 }
+    );
+  }
+
+  const allowed = await checkIpRateLimitFor({
+    ip: ipAddress(request),
+    key: "upload",
+    limit: 60,
+  });
+
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many uploads." },
+      { status: 429 }
+    );
+  }
+
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
@@ -441,6 +488,23 @@ async function handleMetadataUpload(request: Request, userId: string) {
       { error: validation.message },
       { status: body.size > MAX_UPLOAD_BYTES ? 413 : 400 }
     );
+  }
+
+  if (uploadQuotaEnabled()) {
+    const plan = await getEntitlement(userId);
+    const usedBytes = await getStorageBytes(userId);
+    const limitBytes = plan.storageGb * 1_000_000_000;
+    if (usedBytes + body.size > limitBytes) {
+      return NextResponse.json(
+        {
+          error: "storage_quota_exceeded",
+          limitBytes,
+          plan: plan.plan,
+          usedBytes,
+        },
+        { status: 413 }
+      );
+    }
   }
 
   // Best effort: a bucket-configuration hiccup must not block an upload the app
@@ -503,6 +567,28 @@ async function handleMetadataUpload(request: Request, userId: string) {
   }
 
   const pathname = safeStorageFilename(body.filename);
+  const actualSize = (await getArtifactSize(storageKey)) ?? body.size;
+
+  if (uploadQuotaEnabled()) {
+    const plan = await getEntitlement(userId);
+    const usedBytes = await getStorageBytes(userId);
+
+    if (usedBytes + actualSize > plan.storageGb * 1_000_000_000) {
+      await deleteArtifact(storageKey).catch((error) => {
+        console.warn("Failed to delete over-quota upload:", error);
+      });
+
+      return NextResponse.json(
+        {
+          error: "storage_quota_exceeded",
+          limitBytes: plan.storageGb * 1_000_000_000,
+          usedBytes,
+        },
+        { status: 413 }
+      );
+    }
+  }
+
   let url: string;
 
   try {
@@ -518,10 +604,30 @@ async function handleMetadataUpload(request: Request, userId: string) {
   const data: UploadResult = {
     contentType: body.contentType,
     pathname,
-    size: body.size,
+    size: actualSize,
     storageKey,
     url,
   };
+
+  // The direct-to-storage path never goes through `uploadArtifact`, so the
+  // storage ledger row has to be written here or the quota check sees zero.
+  await recordArtifact({
+    chatId: body.chatId,
+    contentType: body.contentType,
+    filename: pathname,
+    size: actualSize,
+    storageKey,
+    userId,
+  });
+
+  await recordUsage({
+    bytesIn: actualSize,
+    kind: "upload",
+    metadata: { contentType: body.contentType, storageKey },
+    userId,
+  }).catch((error) => {
+    console.error("Upload usage recording failed:", error);
+  });
 
   let documentId: string | undefined;
 

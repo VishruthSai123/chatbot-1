@@ -9,6 +9,10 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import {
+  clientImageToolsEnabled,
+  runClientImageAction,
+} from "@/lib/image/client-tools";
 import { imageDownloadName, imageSrcToDataUrl } from "@/lib/image/mime";
 import { IMAGE_TOOL_ENDPOINT } from "@/lib/tools/endpoint";
 import { cn } from "@/lib/utils";
@@ -115,6 +119,28 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     setIsProcessing(true);
 
     try {
+      if (clientImageToolsEnabled()) {
+        const client = await runClientImageAction({
+          action: "compress",
+          documentId,
+          flattenAlpha: isTransparent && format === "jpeg",
+          imageSrc,
+          params: {
+            format,
+            quality,
+            targetSizeKb: targetKb || undefined,
+          },
+          versionIndex,
+        });
+
+        if (client) {
+          onUpdateImage(client.result.base64, true);
+          const finalKb = Math.round(client.result.sizeBytes / 1024);
+          toast.success(`Compressed photo to ${finalKb} KB in your browser`);
+          return;
+        }
+      }
+
       const response = await fetch(IMAGE_TOOL_ENDPOINT, {
         body: JSON.stringify({
           action: "compress",
@@ -176,6 +202,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     quality,
     targetKb,
     format,
+    imageSrc,
     onUpdateImage,
     versionIndex,
     confirmAlphaLoss,

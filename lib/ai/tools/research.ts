@@ -8,14 +8,22 @@ import type { Session } from "next-auth";
 import { z } from "zod";
 import {
   type GroundingSource,
-  getGroundingModel,
+  getGroundingModelFor,
 } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
+import { getEntitlement } from "@/lib/entitlements";
 import { fetchPageText } from "@/lib/net/page";
 import type { ResearchRun } from "@/lib/research/ref";
 import { findResearchRun, saveResearchRun } from "@/lib/research/store";
 import { searchWeb } from "@/lib/search/web";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
+import { QuotaExceededError } from "@/lib/usage/ledger";
+import {
+  type ResearchReservation,
+  releaseResearchTask,
+  reserveResearchTask,
+  settleResearchTask,
+} from "@/lib/usage/research";
 
 type ResearchToolsProps = {
   dataStream: UIMessageStreamWriter<ChatMessage>;
@@ -43,6 +51,28 @@ const DEPTH_BUDGET: Record<
 
 /** How much of one page is kept for the synthesis step. */
 const SNIPPET_CHARS = 3000;
+
+type TokenTotals = {
+  cachedTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+function addUsage(
+  totals: TokenTotals,
+  usage:
+    | {
+        cachedInputTokens?: number | null;
+        inputTokens?: number | null;
+        outputTokens?: number | null;
+      }
+    | null
+    | undefined
+): void {
+  totals.cachedTokens += Math.max(0, usage?.cachedInputTokens ?? 0);
+  totals.inputTokens += Math.max(0, usage?.inputTokens ?? 0);
+  totals.outputTokens += Math.max(0, usage?.outputTokens ?? 0);
+}
 
 function checkIsGuest(session: Session): boolean {
   return (
@@ -99,6 +129,40 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
       }
 
       const budget = DEPTH_BUDGET[depth] ?? DEPTH_BUDGET.standard;
+      const plan = await getEntitlement(session.user.id);
+
+      let reservation: ResearchReservation;
+      try {
+        reservation = await reserveResearchTask({
+          plan,
+          userId: session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return {
+            code: "quota_exceeded",
+            error:
+              plan.researchPerMonth > 0
+                ? "You have used your research reports for this period. Local search and on-device tools are still free."
+                : "Deep Research is part of paid plans. Free includes chat and on-device tools.",
+            kind: error.details.kind,
+            limit: error.details.limit,
+            period: error.details.period,
+            requiresUpgrade: plan.researchPerMonth <= 0,
+            resetAt: error.details.resetAt,
+            used: error.details.used,
+          };
+        }
+        throw error;
+      }
+
+      const usageTotals: TokenTotals = {
+        cachedTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      };
+      let didWork = false;
+      let searchesRun = 0;
 
       try {
         // ── 0. Pick up an earlier run, if there is one ──────────────────
@@ -132,8 +196,9 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
             : "Planning the research…"
         );
 
-        const { object: plan } = await generateObject({
-          model: getGroundingModel(),
+        const { object: searchPlan, usage: planUsage } = await generateObject({
+          maxOutputTokens: 300,
+          model: getGroundingModelFor(plan.model),
           prompt: [
             `Break this research topic into ${budget.queries} specific web search queries.`,
             "Each query should attack a different angle of the topic, and each should be a phrase a person would actually type into a search engine.",
@@ -151,9 +216,13 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           }),
         });
 
-        const queries = plan.queries
+        addUsage(usageTotals, planUsage);
+        didWork = true;
+
+        const queries = searchPlan.queries
           .filter((query) => !alreadyAsked.has(query.toLowerCase()))
           .slice(0, budget.queries);
+        searchesRun = queries.length;
 
         if (queries.length === 0) {
           // Everything planned has been asked. Report what the run has, rather
@@ -178,7 +247,7 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
         const searchResults = await Promise.all(
           queries.map(async (query) => {
             try {
-              const result = await searchWeb(query);
+              const result = await searchWeb(query, { model: plan.model });
 
               return {
                 query,
@@ -253,8 +322,9 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
                   console.warn("Research page fetch failed:", error);
                 }
 
-                const { text } = await generateText({
-                  model: getGroundingModel(),
+                const { text, usage } = await generateText({
+                  maxOutputTokens: 500,
+                  model: getGroundingModelFor(plan.model),
                   prompt: [
                     `Read the page at ${source.url}.`,
                     "Extract the facts it states that are relevant to the research, with the specifics: figures, dates, names and conditions.",
@@ -263,6 +333,8 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
                     pageContent ? `\nPAGE CONTENT:\n${pageContent}` : "",
                   ].join("\n"),
                 });
+
+                addUsage(usageTotals, usage);
 
                 return { source, text: text.slice(0, SNIPPET_CHARS) };
               } catch (error) {
@@ -328,8 +400,9 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
           .filter(Boolean)
           .join("\n");
 
-        const { text: report } = await generateText({
-          model: getGroundingModel(),
+        const { text: report, usage: reportUsage } = await generateText({
+          maxOutputTokens: 1400,
+          model: getGroundingModelFor(plan.model),
           prompt: [
             `Write a research report on: ${topic}`,
             "",
@@ -348,6 +421,7 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
         });
 
         // The report is kept, so a later continuation can build on it.
+        addUsage(usageTotals, reportUsage);
         run.report = report;
         run.updatedAt = new Date().toISOString();
 
@@ -370,6 +444,23 @@ export const research = ({ dataStream, session }: ResearchToolsProps) =>
         return {
           error: error?.message ?? "The research could not be completed.",
         };
+      } finally {
+        if (reservation) {
+          if (didWork) {
+            await settleResearchTask({
+              model: plan.model,
+              reservation,
+              searches: searchesRun,
+              usage: usageTotals,
+            }).catch((error) => {
+              console.error("Research usage settlement failed:", error);
+            });
+          } else {
+            await releaseResearchTask(reservation).catch((error) => {
+              console.error("Research usage release failed:", error);
+            });
+          }
+        }
       }
     },
     inputSchema: z.object({
