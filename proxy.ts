@@ -13,6 +13,7 @@ import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
  */
 const PUBLIC_PREFIXES = [
   "/api/auth",
+  "/api/quick-answer",
   "/.well-known/",
   "/149e9513-",
   "/manifest.webmanifest",

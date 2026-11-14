@@ -12,7 +12,7 @@ import {
 import { periodBounds, type UsagePeriod } from "./periods";
 import { liveCost } from "./pricing";
 
-export type SubjectType = "user" | "org";
+export type SubjectType = "user" | "org" | "device";
 
 export type ReserveInput = {
   amount: number;

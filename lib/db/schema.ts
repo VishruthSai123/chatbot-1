@@ -471,6 +471,39 @@ export const liveSession = pgTable(
 
 export type LiveSession = InferSelectModel<typeof liveSession>;
 
+/**
+ * Costed events for the free, accountless Spire quick-answer path.
+ *
+ * These requests have no `User` row, so they cannot use `UsageEvent.userId`.
+ * The install id is a random per-install UUID, not a hardware identifier.
+ */
+export const quickAnswerEvent = pgTable(
+  "QuickAnswerEvent",
+  {
+    costUsd: numeric("costUsd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    createdAt: timestamp("createdAt", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    inputTokens: integer("inputTokens").notNull().default(0),
+    installId: uuid("installId").notNull(),
+    ipHash: text("ipHash"),
+    model: varchar("model", { length: 64 }),
+    outputTokens: integer("outputTokens").notNull().default(0),
+  },
+  (table) => ({
+    createdIdx: index("QuickAnswerEvent_created_idx").on(table.createdAt),
+    installCreatedIdx: index("QuickAnswerEvent_install_created_idx").on(
+      table.installId,
+      table.createdAt
+    ),
+  })
+);
+
+export type QuickAnswerEvent = InferSelectModel<typeof quickAnswerEvent>;
+
 export const priceBook = pgTable(
   "PriceBook",
   {
