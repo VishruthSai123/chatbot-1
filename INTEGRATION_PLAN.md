@@ -7,7 +7,7 @@ Repos:
 
 This document answers one question: **how do we put the SuperiorAI chatbot inside Quick Search as a first-class "Bot" scene, with sharing and shortcuts, without breaking Quick Search's search/launcher behavior?**
 
-**Product boundary:** Quick Search local search, widgets, themes, backup and device actions stay free and accountless. Spire AI (Bot, web search, research, files, storage, downloads, Live) is the optional hosted layer. It requires a free account; Free gets 3 tasks/day, 1 web search/day, 3 Live min/month and 0.5 GB. Guests can still use local search and the on-device studios.
+**Product boundary:** Quick Search local search, widgets, themes, backup and device actions stay free and accountless. Spire AI (Bot, web search, research, files, storage, downloads, Live) is the optional hosted layer. It requires a free account; Free gets 90 tasks/month (6/day, 30/week), 1 web search/day, 3 Live min/month and 0.5 GB. Guests can still use local search and the on-device studios.
 
 ---
 
