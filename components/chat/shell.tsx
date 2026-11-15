@@ -103,11 +103,11 @@ export function ChatShell() {
         });
         const uploaded = await uploadFile(file, { chatId });
 
-        window.history.pushState(
-          {},
-          "",
-          withAndroidEmbed(`${basePath}/chat/${chatId}`)
-        );
+        const targetUrl = withAndroidEmbed(`${basePath}/chat/${chatId}`);
+        const currentUrl = `${window.location.pathname}${window.location.search}`;
+        if (currentUrl !== targetUrl) {
+          window.history.pushState({}, "", targetUrl);
+        }
         setCapabilitiesOpen(false);
 
         // Built as a variable rather than inline: the file part carries

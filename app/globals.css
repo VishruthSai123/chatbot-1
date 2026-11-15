@@ -530,10 +530,13 @@ html[data-embed="android"] a[href*="vercel.com/d?to="] {
   display: none;
 }
 /*
- * Keep the website header visible inside the Android shell. The native Spire
- * top bar sits above the WebView, so the web header naturally starts below it
- * and keeps the model, visibility and export controls available.
+ * The native Spire top bar owns the app chrome in the Android shell. Hide the
+ * web header so the page starts directly below it instead of stacking a second
+ * sticky header under the native one.
  */
+html[data-embed="android"] header.sticky {
+  display: none;
+}
 html[data-embed="android"] body {
   overscroll-behavior-y: none;
 }

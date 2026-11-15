@@ -288,13 +288,15 @@ function PureMultimodalInput({
   );
 
   const submitForm = useCallback(() => {
-    window.history.pushState(
-      {},
-      "",
-      withAndroidEmbed(
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
-      )
+    const targetUrl = withAndroidEmbed(
+      `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
+    const currentUrl = `${window.location.pathname}${window.location.search}`;
+    // Do not add a duplicate history entry for every message. Otherwise the
+    // Android Back button has to be pressed once per sent message.
+    if (currentUrl !== targetUrl) {
+      window.history.pushState({}, "", targetUrl);
+    }
 
     const messageText =
       input.trim() ||
