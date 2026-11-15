@@ -109,23 +109,27 @@ export function VisibilitySelector({
       <DropdownMenuTrigger
         asChild
         className={cn(
-          "w-fit data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+          "w-fit shrink-0 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
           className
         )}
       >
         <Button
+          aria-label={`Chat visibility: ${selectedVisibility?.label ?? "Private"}`}
           className="gap-1.5 rounded-lg border-border/50 text-muted-foreground shadow-none transition-colors hover:text-foreground focus-visible:ring-0 focus-visible:border-border/50 active:translate-y-0"
           data-testid="visibility-selector"
           size="sm"
           variant="outline"
         >
           {selectedVisibility?.icon}
-          <span className="md:sr-only">{selectedVisibility?.label}</span>
+          <span className="hidden xl:inline">{selectedVisibility?.label}</span>
           <ChevronDownIcon />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="min-w-[300px]">
+      <DropdownMenuContent
+        align="start"
+        className="w-[min(300px,calc(100vw-24px))]"
+      >
         {visibilities.map((visibility) => (
           <VisibilitySelectorItem
             key={visibility.id}

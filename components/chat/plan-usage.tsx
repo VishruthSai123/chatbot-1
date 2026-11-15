@@ -114,13 +114,14 @@ export function PlanUsage({ className }: { className?: string }) {
     return (
       <Link
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-card",
+          "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-card sm:px-2.5",
           className
         )}
         href={`/register?next=${encodeURIComponent(pathname || "/")}`}
       >
         <Sparkles className="size-3" />
-        Sign in for free AI
+        <span className="hidden xl:inline">Sign in for free AI</span>
+        <span className="xl:hidden">Sign in</span>
       </Link>
     );
   }
@@ -136,8 +137,9 @@ export function PlanUsage({ className }: { className?: string }) {
     <Popover>
       <PopoverTrigger asChild>
         <button
+          aria-label={`${data.planLabel} plan. ${tasksLeft} tasks left today. Open usage.`}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-card",
+            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-card sm:px-2.5",
             className
           )}
           type="button"
@@ -147,15 +149,23 @@ export function PlanUsage({ className }: { className?: string }) {
           ) : (
             <Crown className="size-3" />
           )}
-          {data.planLabel}
-          {isFree && (
-            <span className="text-muted-foreground">
-              {tasksLeft} left today
-            </span>
-          )}
+          <span className="hidden xl:inline">{data.planLabel}</span>
+          {isFree ? (
+            <>
+              <span className="hidden text-muted-foreground xl:inline">
+                {tasksLeft} left today
+              </span>
+              <span className="text-muted-foreground xl:hidden">
+                {tasksLeft} left
+              </span>
+            </>
+          ) : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-3.5">
+      <PopoverContent
+        align="end"
+        className="w-[min(18rem,calc(100vw-24px))] p-3.5"
+      >
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold">{data.planLabel} plan</p>
           <p className="text-[10px] text-muted-foreground">

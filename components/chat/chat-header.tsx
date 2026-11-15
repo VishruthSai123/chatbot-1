@@ -59,25 +59,30 @@ function PureChatHeader({
    * for a new visitor.
    */
   return (
-    <header className="sticky top-0 flex h-14 items-center gap-2 bg-sidebar px-3">
-      <Button
-        aria-label="Open the sidebar"
-        className="md:hidden"
-        onClick={toggleSidebar}
-        size="icon-sm"
-        variant="ghost"
-      >
-        <PanelLeftIcon className="size-4" />
-      </Button>
+    <header
+      className="sticky top-0 z-20 flex h-14 w-full shrink-0 items-center gap-1.5 bg-sidebar px-3 sm:gap-2"
+      data-testid="chat-header"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <Button
+          aria-label="Open the sidebar"
+          className="shrink-0 md:hidden"
+          onClick={toggleSidebar}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <PanelLeftIcon className="size-4" />
+        </Button>
 
-      {!isReadonly && (
-        <VisibilitySelector
-          chatId={chatId}
-          selectedVisibilityType={selectedVisibilityType}
-        />
-      )}
+        {!isReadonly && (
+          <VisibilitySelector
+            chatId={chatId}
+            selectedVisibilityType={selectedVisibilityType}
+          />
+        )}
+      </div>
 
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -86,7 +91,7 @@ function PureChatHeader({
               }
               aria-pressed={isArtifactVisible}
               className={cn(
-                "flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground",
+                "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground",
                 isArtifactVisible && "bg-muted/60 text-foreground"
               )}
               onClick={handleTogglePanel}

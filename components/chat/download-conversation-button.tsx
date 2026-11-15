@@ -47,13 +47,13 @@ export function DownloadConversationButton({
   return (
     <Button
       aria-label="Download this conversation as Markdown"
-      className="h-8 gap-1.5 rounded-lg px-2 text-[11px] text-muted-foreground"
+      className="h-8 shrink-0 gap-1.5 rounded-lg px-2 text-[11px] text-muted-foreground"
       onClick={handleDownload}
       size="sm"
       variant="ghost"
     >
       <DownloadIcon className="size-3.5" />
-      <span className="hidden sm:inline">Export</span>
+      <span className="hidden xl:inline">Export</span>
     </Button>
   );
 }

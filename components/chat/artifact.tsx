@@ -489,16 +489,16 @@ function PureArtifact({
             <div className="flex min-w-0 items-center gap-3">
               <ArtifactCloseButton />
               <div className="flex min-w-0 flex-col gap-0.5">
-                <div className="max-w-[320px] truncate text-sm font-semibold leading-tight tracking-tight">
+                <div className="min-w-0 max-w-[320px] truncate text-sm font-semibold leading-tight tracking-tight">
                   {isEmptyWorkspace ? "Workspace" : artifact.title}
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
                   {isEmptyWorkspace ? (
-                    <div className="max-w-[320px] truncate text-xs text-muted-foreground">
+                    <div className="min-w-0 max-w-[320px] truncate text-xs text-muted-foreground">
                       Nothing open yet
                     </div>
                   ) : artifact.kind === "search" && artifact.subtitle ? (
-                    <div className="max-w-[320px] truncate text-xs text-muted-foreground">
+                    <div className="min-w-0 max-w-[320px] truncate text-xs text-muted-foreground">
                       {artifact.subtitle}
                     </div>
                   ) : isContentDirty ? (
