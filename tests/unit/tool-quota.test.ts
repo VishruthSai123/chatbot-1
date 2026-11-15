@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { PLANS } from "../../lib/plans";
+import { chatCallLimits, PLANS } from "../../lib/plans";
 import { classifyToolAction } from "../../lib/tools/quota-class";
 
 test.describe("tool quota classes", () => {
@@ -52,6 +52,22 @@ test.describe("free plan boundary", () => {
       expect(plan.tasksPerDay).toBeLessThanOrEqual(plan.tasksPerWeek);
       expect(plan.tasksPerWeek).toBeLessThanOrEqual(plan.tasksPerMonth);
       expect(plan.tasksPerWeek).toBeGreaterThan(0);
+    }
+  });
+
+  test("the hidden call budget leaves room for multi-step turns", () => {
+    const free = chatCallLimits(PLANS.free);
+    expect(free.day).toBe(36);
+    expect(free.week).toBe(180);
+    expect(free.month).toBe(540);
+
+    for (const plan of Object.values(PLANS)) {
+      const calls = chatCallLimits(plan);
+      expect(calls.day).toBeGreaterThanOrEqual(plan.tasksPerDay);
+      expect(calls.week).toBeGreaterThanOrEqual(plan.tasksPerWeek);
+      expect(calls.month).toBeGreaterThanOrEqual(plan.tasksPerMonth);
+      expect(calls.day).toBeLessThanOrEqual(calls.week);
+      expect(calls.week).toBeLessThanOrEqual(calls.month);
     }
   });
 

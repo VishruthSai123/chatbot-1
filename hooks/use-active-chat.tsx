@@ -35,7 +35,6 @@ import {
   rememberAndroidEmbed,
   withAndroidEmbed,
 } from "@/lib/embed";
-import { ChatbotError } from "@/lib/errors";
 import {
   cancelPendingDeviceActions,
   type DeviceActionInput,
@@ -283,14 +282,15 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (error instanceof ChatbotError) {
-        toast({ description: error.message, type: "error" });
-      } else {
-        toast({
-          description: error.message,
-          type: "error",
-        });
-      }
+      // `fetchWithErrorHandlers` keeps the server's explicit message in
+      // `cause`. Prefer it over the generic code message so quota and auth
+      // responses show the real reason and reset window.
+      const { cause } = error as { cause?: unknown };
+      toast({
+        description:
+          typeof cause === "string" && cause.trim() ? cause : error.message,
+        type: "error",
+      });
     },
     onFinish: ({ isAbort, isError }) => {
       mutate(unstable_serialize(getChatHistoryPaginationKey));

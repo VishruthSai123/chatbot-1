@@ -119,10 +119,14 @@ import {
 import { checkIpRateLimit } from "@/lib/ratelimit";
 import type { ChatMessage, WaitingStatusData } from "@/lib/types";
 import {
+  type ChatCallReservation,
   type ChatReservation,
   recordChatTask,
+  releaseChatCall,
   releaseChatTask,
+  reserveChatCall,
   reserveChatTask,
+  settleChatCall,
   settleChatTask,
 } from "@/lib/usage/chat";
 import { chatQuotaEnabled } from "@/lib/usage/config";
@@ -206,6 +210,10 @@ function chatQuotaMessage(
 ): string {
   const reset = formatResetDate(resetAt);
 
+  if (kind.startsWith("chat_calls_")) {
+    return `This conversation used too many AI steps. Please retry with a simpler request. The step limit resets on ${reset}.`;
+  }
+
   if (kind === "chat_tasks_month") {
     return `You've used this month's ${limit} included Spire AI tasks. They reset on ${reset}. Local search and on-device tools stay free.`;
   }
@@ -217,7 +225,10 @@ function chatQuotaMessage(
   return `You've reached today's fair-use limit for Spire AI. It resets on ${reset}. Your monthly allowance is not lost.`;
 }
 
-function quotaScope(kind: string): "day" | "week" | "month" {
+function quotaScope(kind: string): "day" | "week" | "month" | "steps" {
+  if (kind.startsWith("chat_calls_")) {
+    return "steps";
+  }
   if (kind === "chat_tasks_month") {
     return "month";
   }
@@ -559,19 +570,29 @@ export async function POST(request: Request) {
       : modelMessages;
 
     let chatReservation: ChatReservation | null = null;
+    let chatCallReservation: ChatCallReservation | null = null;
     // A tool approval or continuation is part of the turn the user already
     // paid for. Count one task per user message; every model call is still
-    // cost-logged below.
-    if (chatQuotaEnabled() && !isToolApprovalFlow) {
+    // cost-logged below. The hidden call budget bounds runaway turns without
+    // spending the visible monthly allowance.
+    if (chatQuotaEnabled()) {
       try {
-        chatReservation = await reserveChatTask({
-          plan,
-          userId: session.user.id,
-        });
+        if (isToolApprovalFlow) {
+          chatCallReservation = await reserveChatCall({
+            plan,
+            userId: session.user.id,
+          });
+        } else {
+          chatReservation = await reserveChatTask({
+            plan,
+            userId: session.user.id,
+          });
+        }
       } catch (error) {
         if (error instanceof QuotaExceededError) {
           return Response.json(
             {
+              code: "rate_limit:chat",
               error: "quota_exceeded",
               kind: error.details.kind,
               limit: error.details.limit,
@@ -1157,10 +1178,23 @@ export async function POST(request: Request) {
                 console.error("Chat usage recording failed:", error);
               });
             }
-          } else if (chatReservation) {
-            await releaseChatTask(chatReservation).catch((error) => {
-              console.error("Chat usage release failed:", error);
-            });
+
+            if (chatCallReservation) {
+              await settleChatCall(chatCallReservation).catch((error) => {
+                console.error("Chat call settlement failed:", error);
+              });
+            }
+          } else {
+            if (chatReservation) {
+              await releaseChatTask(chatReservation).catch((error) => {
+                console.error("Chat usage release failed:", error);
+              });
+            }
+            if (chatCallReservation) {
+              await releaseChatCall(chatCallReservation).catch((error) => {
+                console.error("Chat call release failed:", error);
+              });
+            }
           }
         }
       },

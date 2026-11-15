@@ -155,6 +155,29 @@ export function isPlanId(value: string): value is PlanId {
   return value in PLANS;
 }
 
+/**
+ * Hidden safety rail for multi-step turns.
+ *
+ * A user message may need several model calls (tool approval, continuations,
+ * regeneration). Those do not consume another visible task, but they must not
+ * be unlimited either: a client could otherwise send a continuation-shaped
+ * request forever and skip the task counters. This budget is intentionally not
+ * shown in the usage pill; it only trips on abusive or runaway turns.
+ */
+export const CHAT_CALLS_PER_TASK = 6;
+
+export function chatCallLimits(plan: PlanLimits): {
+  day: number;
+  month: number;
+  week: number;
+} {
+  return {
+    day: plan.tasksPerDay * CHAT_CALLS_PER_TASK,
+    month: plan.tasksPerMonth * CHAT_CALLS_PER_TASK,
+    week: plan.tasksPerWeek * CHAT_CALLS_PER_TASK,
+  };
+}
+
 export function limitsForPlan(plan: string): PlanLimits {
   return isPlanId(plan) ? PLANS[plan] : PLANS.free;
 }
