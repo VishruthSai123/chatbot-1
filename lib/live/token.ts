@@ -19,6 +19,8 @@ import {
 const DEFAULT_LIVE_MODEL = "models/gemini-2.5-flash-native-audio-latest";
 const TOKEN_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/auth_tokens";
+const MAX_TOKEN_SECONDS = 20 * 60;
+const MIN_TOKEN_SECONDS = 60;
 
 type AuthTokenResponse = {
   name?: string;
@@ -86,9 +88,13 @@ function quotaResponse(error: QuotaExceededError) {
 }
 
 async function reserveLiveSeconds(userId: string, limitSeconds: number) {
-  // The token is valid for 20 minutes. Reserve the whole possible session so a
-  // disconnect or a lost finalize cannot leave the last 15 minutes unbooked.
-  const desired = Math.min(20 * 60, Math.max(1, Math.floor(limitSeconds)));
+  // The token is valid only for the reserved amount. Reserve the whole possible
+  // session so a disconnect or a lost finalize cannot leave the last minutes
+  // unbooked.
+  const desired = Math.min(
+    MAX_TOKEN_SECONDS,
+    Math.max(MIN_TOKEN_SECONDS, Math.floor(limitSeconds))
+  );
 
   try {
     return await reserve({
@@ -97,7 +103,7 @@ async function reserveLiveSeconds(userId: string, limitSeconds: number) {
       limit: limitSeconds,
       period: "month",
       subjectId: userId,
-      ttlSeconds: 20 * 60,
+      ttlSeconds: MAX_TOKEN_SECONDS,
     });
   } catch (error) {
     if (error instanceof QuotaExceededError) {
@@ -107,14 +113,14 @@ async function reserveLiveSeconds(userId: string, limitSeconds: number) {
           error.details.limit - error.details.used - error.details.reserved
         )
       );
-      if (remaining >= 1) {
+      if (remaining >= MIN_TOKEN_SECONDS) {
         return await reserve({
           amount: remaining,
           kind: "live_seconds",
           limit: limitSeconds,
           period: "month",
           subjectId: userId,
-          ttlSeconds: 20 * 60,
+          ttlSeconds: MAX_TOKEN_SECONDS,
         });
       }
     }
@@ -122,10 +128,16 @@ async function reserveLiveSeconds(userId: string, limitSeconds: number) {
   }
 }
 
-async function mintToken(apiKey: string, model: string) {
+async function mintToken(apiKey: string, model: string, maxSeconds: number) {
   const now = Date.now();
-  const expireTime = new Date(now + 20 * 60 * 1000).toISOString();
-  const newSessionExpireTime = new Date(now + 2 * 60 * 1000).toISOString();
+  const durationSeconds = Math.min(
+    MAX_TOKEN_SECONDS,
+    Math.max(MIN_TOKEN_SECONDS, Math.floor(maxSeconds))
+  );
+  const expireTime = new Date(now + durationSeconds * 1000).toISOString();
+  const newSessionExpireTime = new Date(
+    now + Math.min(2 * 60, durationSeconds) * 1000
+  ).toISOString();
 
   const constrainedBody = {
     expireTime,
@@ -201,7 +213,11 @@ export async function handleLiveTokenRequest() {
   const model = process.env.GEMINI_LIVE_MODEL?.trim() || DEFAULT_LIVE_MODEL;
 
   if (!usageRailsEnabled()) {
-    const { attempt, expireTime } = await mintToken(apiKey, model);
+    const { attempt, expireTime } = await mintToken(
+      apiKey,
+      model,
+      MAX_TOKEN_SECONDS
+    );
     if (!(attempt.ok && attempt.detail)) {
       console.error(
         "Live token request failed:",
@@ -307,7 +323,11 @@ export async function handleLiveTokenRequest() {
     );
   }
 
-  const { attempt, expireTime } = await mintToken(apiKey, model);
+  const { attempt, expireTime } = await mintToken(
+    apiKey,
+    model,
+    reservation.amount
+  );
 
   if (!(attempt.ok && attempt.detail)) {
     await release(reservation.id);

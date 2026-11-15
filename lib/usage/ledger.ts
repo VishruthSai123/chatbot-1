@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gt, lt, lte } from "drizzle-orm";
 
 import { db } from "@/lib/db/client";
 import {
@@ -397,13 +397,16 @@ export async function getUsageSummary(input: {
     used: number;
   }>
 > {
+  const now = new Date();
   const rows = await db
     .select()
     .from(usageCounter)
     .where(
       and(
         eq(usageCounter.subjectType, input.subjectType ?? "user"),
-        eq(usageCounter.subjectId, input.subjectId)
+        eq(usageCounter.subjectId, input.subjectId),
+        lte(usageCounter.periodStart, now),
+        gt(usageCounter.periodEnd, now)
       )
     );
 

@@ -84,10 +84,13 @@ async function settleLiveSession(input: {
   const elapsedSeconds = session.startedAt
     ? Math.max(0, (Date.now() - session.startedAt.getTime()) / 1000)
     : session.reservedSeconds;
+  // Never let a modified client report less than the server-observed elapsed
+  // time. The token itself expires at the reserved amount, so this cannot bill
+  // beyond the session cap.
   const seconds = Math.max(
     0,
     Math.min(
-      Math.round(input.seconds ?? elapsedSeconds),
+      Math.round(Math.max(input.seconds ?? 0, elapsedSeconds)),
       session.reservedSeconds
     )
   );

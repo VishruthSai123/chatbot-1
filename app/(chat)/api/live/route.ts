@@ -1,10 +1,12 @@
 import { ipAddress } from "@vercel/functions";
 import { type ModelMessage, streamText } from "ai";
+import { and, inArray, lt } from "drizzle-orm";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { guestRegex } from "@/lib/constants";
+import { db } from "@/lib/db/client";
 import {
   getChatById,
   getMessageCountByUserId,
@@ -12,7 +14,7 @@ import {
   saveChat,
   saveMessages,
 } from "@/lib/db/queries";
-import type { DBMessage } from "@/lib/db/schema";
+import { type DBMessage, liveSession } from "@/lib/db/schema";
 import { getEntitlement } from "@/lib/entitlements";
 import { ChatbotError } from "@/lib/errors";
 import { handleLiveFinalizeRequest } from "@/lib/live/finalize";
@@ -261,9 +263,23 @@ async function handleExpireRequest(request: Request) {
   }
 
   const result = await expireStaleReservations(500);
-  return Response.json(result, {
-    headers: { "Cache-Control": "no-store" },
-  });
+  const expiredSessions = await db
+    .update(liveSession)
+    .set({ endedAt: new Date(), status: "expired" })
+    .where(
+      and(
+        inArray(liveSession.status, ["reserved", "active"]),
+        lt(liveSession.expireAt, new Date())
+      )
+    )
+    .returning({ id: liveSession.id });
+
+  return Response.json(
+    { ...result, expiredSessions: expiredSessions.length },
+    {
+      headers: { "Cache-Control": "no-store" },
+    }
+  );
 }
 
 export async function GET(request: Request) {
