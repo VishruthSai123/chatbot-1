@@ -16,7 +16,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useArtifact } from "@/hooks/use-artifact";
+import { withAndroidEmbed } from "@/lib/embed";
 import { cn } from "@/lib/utils";
+import { WebReadySignal } from "../web-ready-signal";
 
 /**
  * The Library.
@@ -179,14 +181,9 @@ export function Library() {
   }, [kind, load, query]);
 
   const returnToChat = useCallback(() => {
-    const embed =
-      typeof window === "undefined"
-        ? null
-        : new URLSearchParams(window.location.search).get("embed");
-
     // The chat shell owns the artifact panel, so the document is opened from
     // the chat rather than from the library itself.
-    router.push(embed === "android" ? "/?embed=android" : "/");
+    router.push(withAndroidEmbed("/"));
   }, [router]);
 
   const handleOpenDocumentId = useCallback(
@@ -279,6 +276,7 @@ export function Library() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-6 md:py-8">
+      <WebReadySignal />
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Library

@@ -33,6 +33,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { isAndroidEmbed, withAndroidEmbed } from "@/lib/embed";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,7 +62,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
 
   const handleNewChat = useCallback(() => {
     setOpenMobile(false);
-    router.push("/");
+    router.push(withAndroidEmbed("/"));
   }, [router, setOpenMobile]);
 
   const handleShowDeleteAllDialog = useCallback(() => {
@@ -70,7 +71,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
 
   const handleDeleteAll = useCallback(() => {
     setShowDeleteAllDialog(false);
-    router.replace("/");
+    router.replace(withAndroidEmbed("/"));
     mutate(unstable_serialize(getChatHistoryPaginationKey), [], {
       revalidate: false,
     });
@@ -94,7 +95,16 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   className="h-8 w-auto !px-1 items-center justify-center group-data-[collapsible=icon]:group-hover/logo:opacity-0"
                   tooltip="Spire"
                 >
-                  <Link href="/" onClick={closeMobile}>
+                  <Link
+                    href="/"
+                    onClick={(event) => {
+                      if (isAndroidEmbed()) {
+                        event.preventDefault();
+                        router.push(withAndroidEmbed("/"));
+                      }
+                      closeMobile();
+                    }}
+                  >
                     <SpireMark className="size-4 text-sidebar-foreground/60" />
                     <SpireWordmark className="h-4 text-sidebar-foreground/80 group-data-[collapsible=icon]:hidden" />
                   </Link>
@@ -139,7 +149,11 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     className="rounded-lg text-sidebar-foreground/40 transition-colors duration-150 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     tooltip="Library"
                   >
-                    <Link href="/library" onClick={closeMobile}>
+                    <Link
+                      href="/library"
+                      onClick={closeMobile}
+                      prefetch={false}
+                    >
                       <LibraryIcon className="size-4" />
                       <span className="text-[13px]">Library</span>
                     </Link>

@@ -7,10 +7,12 @@ import {
   useArtifact,
   useArtifactSelector,
 } from "@/hooks/use-artifact";
+import { withAndroidEmbed } from "@/lib/embed";
 import type { SampleFile } from "@/lib/samples";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { uploadFile } from "@/lib/upload/client";
 import { cn } from "@/lib/utils";
+import { WebReadySignal } from "../web-ready-signal";
 import { Artifact } from "./artifact";
 import { CapabilitiesDialog } from "./capabilities-dialog";
 import { ChatHeader } from "./chat-header";
@@ -101,7 +103,11 @@ export function ChatShell() {
         });
         const uploaded = await uploadFile(file, { chatId });
 
-        window.history.pushState({}, "", `${basePath}/chat/${chatId}`);
+        window.history.pushState(
+          {},
+          "",
+          withAndroidEmbed(`${basePath}/chat/${chatId}`)
+        );
         setCapabilitiesOpen(false);
 
         // Built as a variable rather than inline: the file part carries
@@ -176,6 +182,7 @@ export function ChatShell() {
 
   return (
     <>
+      <WebReadySignal />
       <div className="flex h-dvh w-full flex-row overflow-hidden">
         <div
           className={cn(

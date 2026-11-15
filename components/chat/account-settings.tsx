@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { WebReadySignal } from "@/components/web-ready-signal";
 import { cn } from "@/lib/utils";
 
 export function AccountSettings({
@@ -95,6 +96,7 @@ export function AccountSettings({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 md:px-6 md:py-8">
+      <WebReadySignal />
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Account & data

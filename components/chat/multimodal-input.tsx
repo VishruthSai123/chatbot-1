@@ -48,6 +48,7 @@ import {
   type ModelCapabilities,
   modelCapabilitiesMap,
 } from "@/lib/ai/models";
+import { withAndroidEmbed } from "@/lib/embed";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import {
   UploadError,
@@ -219,7 +220,7 @@ function PureMultimodalInput({
       setInput("");
       switch (cmd.action) {
         case "new":
-          router.push("/");
+          router.push(withAndroidEmbed("/"));
           break;
         case "clear":
           setMessages(() => []);
@@ -248,7 +249,7 @@ function PureMultimodalInput({
                   `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/api/chat?id=${chatId}`,
                   { method: "DELETE" }
                 );
-                router.push("/");
+                router.push(withAndroidEmbed("/"));
                 toast.success("Chat deleted");
               },
             },
@@ -265,7 +266,7 @@ function PureMultimodalInput({
                     method: "DELETE",
                   }
                 );
-                router.push("/");
+                router.push(withAndroidEmbed("/"));
                 toast.success("All chats deleted");
               },
             },
@@ -290,7 +291,9 @@ function PureMultimodalInput({
     window.history.pushState(
       {},
       "",
-      `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
+      withAndroidEmbed(
+        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
+      )
     );
 
     const messageText =

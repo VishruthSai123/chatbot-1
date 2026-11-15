@@ -34,7 +34,11 @@ export async function GET(request: Request) {
 
   if (token) {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    return NextResponse.redirect(new URL(`${base}/`, request.url));
+    const targetPath =
+      base && !redirectUrl.startsWith(base)
+        ? `${base}${redirectUrl}`
+        : redirectUrl;
+    return NextResponse.redirect(new URL(targetPath, request.url));
   }
 
   return signIn("guest", { redirect: true, redirectTo: redirectUrl });

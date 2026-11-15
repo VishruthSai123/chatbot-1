@@ -13,15 +13,21 @@ import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
  */
 const PUBLIC_PREFIXES = [
   "/api/auth",
+  "/api/models",
   "/api/quick-answer",
   "/.well-known/",
   "/149e9513-",
-  "/manifest.webmanifest",
-  "/sw.js",
-  "/icons/",
+  "/brand/",
+  "/embed-boot.js",
   "/favicon.ico",
+  "/icons/",
+  "/manifest.webmanifest",
+  "/opengraph-image",
+  "/preview.png",
   "/robots.txt",
   "/sitemap.xml",
+  "/sw.js",
+  "/twitter-image",
 ] as const;
 
 export async function proxy(request: NextRequest) {
@@ -57,6 +63,13 @@ export async function proxy(request: NextRequest) {
   });
 
   const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+  // Auth pages do not need a guest session. Creating one here used to burn
+  // guest sessions during link prefetches and could turn a cookie problem into
+  // a redirect loop. Signed-in visitors are still redirected below.
+  if (!token && (pathname === "/login" || pathname === "/register")) {
+    return NextResponse.next();
+  }
 
   if (!token) {
     // Keep the query string: Android deep links (`?query=`, `?draft=`,

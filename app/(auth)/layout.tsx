@@ -1,6 +1,7 @@
 import { SpireMark, SpireWordmark } from "@/components/brand/spire-mark";
 import { AuthBackLink } from "@/components/chat/auth-back-link";
 import { Preview } from "@/components/chat/preview";
+import { WebReadySignal } from "@/components/web-ready-signal";
 
 export default function AuthLayout({
   children,
@@ -9,6 +10,7 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex h-dvh w-screen bg-sidebar">
+      <WebReadySignal />
       <div className="flex w-full flex-col bg-background p-8 md:p-16 xl:w-[600px] xl:shrink-0 xl:rounded-r-2xl xl:border-r xl:border-border/40">
         <AuthBackLink />
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-10">

@@ -30,6 +30,11 @@ import { useAutoResume } from "@/hooks/use-auto-resume";
 import { allowedModelIds, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { isToolContinuation } from "@/lib/chat/message-state";
 import type { Vote } from "@/lib/db/schema";
+import {
+  isAndroidEmbed,
+  rememberAndroidEmbed,
+  withAndroidEmbed,
+} from "@/lib/embed";
 import { ChatbotError } from "@/lib/errors";
 import {
   cancelPendingDeviceActions,
@@ -527,7 +532,9 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       window.history.replaceState(
         {},
         "",
-        `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
+        withAndroidEmbed(
+          `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
+        )
       );
       sendMessage({
         parts: [{ text: query, type: "text" }],
@@ -554,7 +561,8 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     hasHydratedAndroidExtrasRef.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get("embed") === "android") {
+    rememberAndroidEmbed();
+    if (isAndroidEmbed()) {
       document.documentElement.dataset.embed = "android";
     }
 
