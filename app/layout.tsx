@@ -28,13 +28,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // No `maximumScale`: blocking pinch-zoom is an accessibility failure, and a
-  // chat app with code and documents in it is exactly where people zoom.
   initialScale: 1,
   themeColor: [
     { color: "hsl(0 0% 100%)", media: "(prefers-color-scheme: light)" },
     { color: "hsl(240deg 10% 3.92%)", media: "(prefers-color-scheme: dark)" },
   ],
+  // Without an explicit device width, Android WebView lays the app out at the
+  // desktop ~980px width and scales it down. That turns the mobile bottom sheet
+  // into the desktop sidebar, clips its header and leaves the page unscrollable.
+  width: "device-width",
 };
 
 /**
