@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { cleanupInactiveGuests } from "@/lib/maintenance/guest-cleanup";
+import { cleanupQuickAnswerEvents } from "@/lib/maintenance/quick-answer-cleanup";
 
 export const maxDuration = 60;
 
@@ -33,9 +34,18 @@ export async function GET(request: Request) {
     inactivityDays: 7,
     limit,
   });
+  const quickAnswerCleanup = await cleanupQuickAnswerEvents({
+    limit: 5000,
+    olderThanDays: 90,
+  });
 
   return NextResponse.json(
-    { action, result, success: result.errors === 0 },
+    {
+      action,
+      quickAnswerCleanup,
+      result,
+      success: result.errors === 0 && quickAnswerCleanup.errors === 0,
+    },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

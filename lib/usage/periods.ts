@@ -1,4 +1,4 @@
-export type UsagePeriod = "day" | "month";
+export type UsagePeriod = "day" | "week" | "month";
 
 export type PeriodBounds = {
   start: Date;
@@ -21,6 +21,18 @@ export function periodBounds(
     );
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 1);
+    return { end, start };
+  }
+
+  if (period === "week") {
+    const start = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    // getUTCDay(): Sunday is 0. Weeks start on Monday, like the reset copy.
+    const daysSinceMonday = (start.getUTCDay() + 6) % 7;
+    start.setUTCDate(start.getUTCDate() - daysSinceMonday);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 7);
     return { end, start };
   }
 

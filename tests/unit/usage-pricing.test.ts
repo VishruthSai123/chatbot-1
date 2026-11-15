@@ -15,6 +15,13 @@ test.describe("usage periods", () => {
     expect(bounds.start.toISOString()).toBe("2026-11-01T00:00:00.000Z");
     expect(bounds.end.toISOString()).toBe("2026-12-01T00:00:00.000Z");
   });
+
+  test("uses Monday UTC boundaries for weekly quotas", () => {
+    // 2026-11-15 is a Sunday; the current week started on Monday the 9th.
+    const bounds = periodBounds("week", new Date("2026-11-15T23:59:00.000Z"));
+    expect(bounds.start.toISOString()).toBe("2026-11-09T00:00:00.000Z");
+    expect(bounds.end.toISOString()).toBe("2026-11-16T00:00:00.000Z");
+  });
 });
 
 test.describe("model pricing", () => {
