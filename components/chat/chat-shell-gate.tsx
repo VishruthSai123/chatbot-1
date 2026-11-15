@@ -14,7 +14,7 @@ import { ChatShell } from "./shell";
 export function ChatShellGate() {
   const pathname = usePathname();
 
-  if (pathname?.startsWith("/library")) {
+  if (pathname?.startsWith("/library") || pathname?.startsWith("/settings")) {
     return null;
   }
 

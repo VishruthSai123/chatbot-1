@@ -11,6 +11,7 @@ import {
   ilike,
   inArray,
   lt,
+  or,
   type SQL,
 } from "drizzle-orm";
 import type { ArtifactKind } from "@/components/chat/artifact";
@@ -24,6 +25,8 @@ import {
   chat,
   type DBMessage,
   document,
+  entitlement,
+  liveSession,
   type MediaSession,
   mediaSession,
   message,
@@ -31,7 +34,11 @@ import {
   stream,
   suggestion,
   task,
+  taskStep,
   type User,
+  usageCounter,
+  usageEvent,
+  usageReservation,
   user,
   vote,
 } from "./schema";
@@ -49,6 +56,16 @@ export function isValidUUID(str?: string | null): boolean {
 export async function getUser(email: string): Promise<User[]> {
   try {
     return await db.select().from(user).where(eq(user.email, email));
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/** Returns the account row, including the password hash, for server-side checks. */
+export async function getUserById(id: string): Promise<User | undefined> {
+  try {
+    const [row] = await db.select().from(user).where(eq(user.id, id)).limit(1);
+    return row;
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -207,27 +224,48 @@ export async function deleteChatById({ id }: { id: string }) {
 
 export async function deleteAllChatsByUserId({ userId }: { userId: string }) {
   try {
-    const userChats = await db
-      .select({ id: chat.id })
-      .from(chat)
-      .where(eq(chat.userId, userId));
+    return await db.transaction(async (tx) => {
+      const userChats = await tx
+        .select({ id: chat.id })
+        .from(chat)
+        .where(eq(chat.userId, userId));
 
-    if (userChats.length === 0) {
-      return { deletedCount: 0 };
-    }
+      if (userChats.length === 0) {
+        return { deletedCount: 0 };
+      }
 
-    const chatIds = userChats.map((c) => c.id);
+      const chatIds = userChats.map((c) => c.id);
 
-    await db.delete(vote).where(inArray(vote.chatId, chatIds));
-    await db.delete(message).where(inArray(message.chatId, chatIds));
-    await db.delete(stream).where(inArray(stream.chatId, chatIds));
+      const userTasks = await tx
+        .select({ id: task.id })
+        .from(task)
+        .where(or(eq(task.userId, userId), inArray(task.chatId, chatIds)));
+      const taskIds = userTasks.map((row) => row.id);
 
-    const deletedChats = await db
-      .delete(chat)
-      .where(eq(chat.userId, userId))
-      .returning();
+      if (taskIds.length > 0) {
+        await tx.delete(taskStep).where(inArray(taskStep.taskId, taskIds));
+      }
+      await tx
+        .delete(task)
+        .where(or(eq(task.userId, userId), inArray(task.chatId, chatIds)));
 
-    return { deletedCount: deletedChats.length };
+      await tx.delete(vote).where(inArray(vote.chatId, chatIds));
+      await tx.delete(message).where(inArray(message.chatId, chatIds));
+      await tx.delete(stream).where(inArray(stream.chatId, chatIds));
+
+      // Library files outlive their chat. Detach them before the chat rows go.
+      await tx
+        .update(artifact)
+        .set({ chatId: null, updatedAt: new Date() })
+        .where(inArray(artifact.chatId, chatIds));
+
+      const deletedChats = await tx
+        .delete(chat)
+        .where(eq(chat.userId, userId))
+        .returning();
+
+      return { deletedCount: deletedChats.length };
+    });
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }
@@ -958,6 +996,149 @@ export async function deleteMediaSession({
         )
       )
       .execute();
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+/**
+ * Permanently removes every row owned by an account.
+ *
+ * Storage objects are deleted by the caller first because the keys live in the
+ * `Artifact` table. The transaction keeps the relational cleanup atomic: a
+ * failure rolls back instead of leaving a half-deleted account.
+ */
+export async function deleteUserAccountData({
+  userId,
+}: {
+  userId: string;
+}): Promise<{
+  artifacts: number;
+  chats: number;
+  documents: number;
+  messages: number;
+  tasks: number;
+  usageEvents: number;
+}> {
+  if (!userId) {
+    throw new ChatbotError("bad_request:database", {
+      cause: new Error("A user id is required."),
+    });
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const userChats = await tx
+        .select({ id: chat.id })
+        .from(chat)
+        .where(eq(chat.userId, userId));
+      const chatIds = userChats.map((row) => row.id);
+
+      const taskScope =
+        chatIds.length > 0
+          ? or(eq(task.userId, userId), inArray(task.chatId, chatIds))
+          : eq(task.userId, userId);
+      const userTasks = await tx
+        .select({ id: task.id })
+        .from(task)
+        .where(taskScope);
+      const taskIds = userTasks.map((row) => row.id);
+
+      if (taskIds.length > 0) {
+        await tx.delete(taskStep).where(inArray(taskStep.taskId, taskIds));
+      }
+      const deletedTasks = await tx.delete(task).where(taskScope).returning({
+        id: task.id,
+      });
+
+      if (chatIds.length > 0) {
+        await tx.delete(vote).where(inArray(vote.chatId, chatIds));
+      }
+      const deletedMessages =
+        chatIds.length > 0
+          ? await tx
+              .delete(message)
+              .where(inArray(message.chatId, chatIds))
+              .returning({ id: message.id })
+          : [];
+
+      if (chatIds.length > 0) {
+        await tx.delete(stream).where(inArray(stream.chatId, chatIds));
+      }
+
+      const userDocuments = await tx
+        .select({ id: document.id })
+        .from(document)
+        .where(eq(document.userId, userId));
+      const documentIds = userDocuments.map((row) => row.id);
+
+      await tx
+        .delete(suggestion)
+        .where(
+          documentIds.length > 0
+            ? or(
+                eq(suggestion.userId, userId),
+                inArray(suggestion.documentId, documentIds)
+              )
+            : eq(suggestion.userId, userId)
+        );
+      const deletedDocuments = await tx
+        .delete(document)
+        .where(eq(document.userId, userId))
+        .returning({ id: document.id });
+
+      const artifactScope =
+        chatIds.length > 0
+          ? or(eq(artifact.userId, userId), inArray(artifact.chatId, chatIds))
+          : eq(artifact.userId, userId);
+      const deletedArtifacts = await tx
+        .delete(artifact)
+        .where(artifactScope)
+        .returning({ id: artifact.id });
+
+      await tx.delete(mediaSession).where(eq(mediaSession.userId, userId));
+      await tx.delete(liveSession).where(eq(liveSession.userId, userId));
+      const deletedUsageEvents = await tx
+        .delete(usageEvent)
+        .where(eq(usageEvent.userId, userId))
+        .returning({ id: usageEvent.id });
+      await tx
+        .delete(usageCounter)
+        .where(
+          and(
+            eq(usageCounter.subjectType, "user"),
+            eq(usageCounter.subjectId, userId)
+          )
+        );
+      await tx
+        .delete(usageReservation)
+        .where(
+          and(
+            eq(usageReservation.subjectType, "user"),
+            eq(usageReservation.subjectId, userId)
+          )
+        );
+      await tx.delete(entitlement).where(eq(entitlement.userId, userId));
+
+      const deletedChats =
+        chatIds.length > 0
+          ? await tx
+              .delete(chat)
+              .where(eq(chat.userId, userId))
+              .returning({ id: chat.id })
+          : [];
+
+      await tx.delete(user).where(eq(user.id, userId));
+
+      return {
+        artifacts: deletedArtifacts.length,
+        chats: deletedChats.length,
+        documents: deletedDocuments.length,
+        messages: deletedMessages.length,
+        tasks: deletedTasks.length,
+        usageEvents: deletedUsageEvents.length,
+      };
+    });
   } catch (error) {
     throw new ChatbotError("bad_request:database", { cause: error });
   }

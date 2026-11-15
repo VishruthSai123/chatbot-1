@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronUp } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { User } from "next-auth";
 import { signOut } from "next-auth/react";
@@ -17,6 +18,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { guestRegex } from "@/lib/constants";
 
@@ -30,6 +32,7 @@ function emailToHue(email: string): number {
 
 export function SidebarUserNav({ user }: { user: User }) {
   const router = useRouter();
+  const { setOpenMobile } = useSidebar();
   const { setTheme, resolvedTheme } = useTheme();
 
   const isGuest = guestRegex.test(user?.email ?? "");
@@ -84,6 +87,15 @@ export function SidebarUserNav({ user }: { user: User }) {
               {`Toggle ${resolvedTheme === "light" ? "dark" : "light"} mode`}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild data-testid="user-nav-item-account">
+              <Link
+                className="w-full cursor-pointer text-[13px]"
+                href="/settings/account"
+                onClick={() => setOpenMobile(false)}
+              >
+                Account & data
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild data-testid="user-nav-item-auth">
               <button
                 className="w-full cursor-pointer text-[13px]"
