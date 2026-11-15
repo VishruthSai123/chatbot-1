@@ -50,7 +50,7 @@ const RESERVE_ORDER: QuotaScope[] = ["month", "week", "day"];
 const IP_DAILY_LIMIT = positiveIntEnv("QUICK_ANSWER_IP_DAILY_LIMIT", 40);
 const DAILY_COST_CAP_USD = nonNegativeNumberEnv(
   "QUICK_ANSWER_DAILY_COST_CAP_USD",
-  5
+  2
 );
 
 const requestSchema = z.object({
@@ -58,9 +58,8 @@ const requestSchema = z.object({
   query: z.string().trim().min(2).max(MAX_QUERY_CHARS),
 });
 
-const systemPrompt = `You are Spire Quick Answer.
-Reply in one short paragraph, at most two sentences, plain text only. No markdown, bullets, headings or code fences.
-Answer the question directly. If it needs live or current data you cannot verify, say so briefly instead of guessing.`;
+const systemPrompt =
+  "Answer in 1-2 plain sentences. No markdown. If live data is unavailable, say so.";
 
 function positiveIntEnv(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -167,6 +166,14 @@ export async function POST(request: Request) {
     );
   }
 
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > 4096) {
+    return NextResponse.json(
+      { error: "bad_request", message: "The request is too large." },
+      { status: 413 }
+    );
+  }
+
   let body: z.infer<typeof requestSchema>;
   try {
     body = requestSchema.parse(await request.json());
@@ -254,11 +261,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await generateText({
-      maxOutputTokens: 250,
+      maxOutputTokens: 120,
       model: getLanguageModel(QUICK_ANSWER_MODEL),
       prompt: body.query,
       system: systemPrompt,
-      temperature: 0.4,
+      temperature: 0.2,
     });
 
     const inputTokens = Math.max(0, result.usage?.inputTokens ?? 0);
@@ -330,7 +337,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     await releaseReservations(reservations);
-    console.error("Quick answer provider failed:", error);
+    console.error(
+      "Quick answer provider failed:",
+      error instanceof Error ? `${error.name}: ${error.message}` : "unknown"
+    );
     return NextResponse.json(
       {
         error: "quick_answer_unavailable",
