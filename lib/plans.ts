@@ -21,6 +21,8 @@ export type PlanLimits = {
   storageGb: number;
   tasksPerDay: number;
   tasksPerMonth: number;
+  /** Weekly fair-use cap inside the monthly allowance. */
+  tasksPerWeek: number;
   videoMinutesPerMonth: number;
 };
 
@@ -49,6 +51,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     storageGb: 100,
     tasksPerDay: 200,
     tasksPerMonth: 6000,
+    tasksPerWeek: 1000,
     videoMinutesPerMonth: 40,
   },
   daypass: {
@@ -67,6 +70,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     storageGb: 1,
     tasksPerDay: 30,
     tasksPerMonth: 30,
+    tasksPerWeek: 30,
     videoMinutesPerMonth: 0,
   },
   free: {
@@ -83,8 +87,9 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     searchesPerDay: 1,
     searchesPerMonth: 30,
     storageGb: 0.5,
-    tasksPerDay: 3,
+    tasksPerDay: 6,
     tasksPerMonth: 90,
+    tasksPerWeek: 30,
     videoMinutesPerMonth: 0,
   },
   go: {
@@ -103,6 +108,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     storageGb: 2,
     tasksPerDay: 10,
     tasksPerMonth: 300,
+    tasksPerWeek: 50,
     videoMinutesPerMonth: 0,
   },
   plus: {
@@ -121,6 +127,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     storageGb: 5,
     tasksPerDay: 30,
     tasksPerMonth: 900,
+    tasksPerWeek: 150,
     videoMinutesPerMonth: 5,
   },
   pro: {
@@ -139,6 +146,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     storageGb: 50,
     tasksPerDay: 100,
     tasksPerMonth: 3000,
+    tasksPerWeek: 500,
     videoMinutesPerMonth: 20,
   },
 };

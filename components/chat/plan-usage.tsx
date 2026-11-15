@@ -31,6 +31,7 @@ type UsagePayload = {
     storageGb: number;
     tasksPerDay: number;
     tasksPerMonth: number;
+    tasksPerWeek: number;
   };
   plan: string;
   planLabel: string;
@@ -43,6 +44,7 @@ type UsagePayload = {
     storageLimitBytes: number;
     tasksDay: Counter;
     tasksMonth: Counter;
+    tasksWeek: Counter;
   };
 };
 
@@ -130,14 +132,14 @@ export function PlanUsage({ className }: { className?: string }) {
     return null;
   }
 
-  const tasksLeft = remaining(data.usage.tasksDay);
+  const tasksLeft = remaining(data.usage.tasksMonth);
   const isFree = data.plan === "free";
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
-          aria-label={`${data.planLabel} plan. ${tasksLeft} tasks left today. Open usage.`}
+          aria-label={`${data.planLabel} plan. ${tasksLeft} tasks left this month. Open usage.`}
           className={cn(
             "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border/60 bg-card/60 px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-card sm:px-2.5",
             className
@@ -153,7 +155,7 @@ export function PlanUsage({ className }: { className?: string }) {
           {isFree ? (
             <>
               <span className="hidden text-muted-foreground xl:inline">
-                {tasksLeft} left today
+                {tasksLeft} left this month
               </span>
               <span className="text-muted-foreground xl:hidden">
                 {tasksLeft} left
@@ -169,15 +171,11 @@ export function PlanUsage({ className }: { className?: string }) {
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold">{data.planLabel} plan</p>
           <p className="text-[10px] text-muted-foreground">
-            resets {resetLabel(data.usage.tasksDay.resetAt)}
+            resets {resetLabel(data.usage.tasksMonth.resetAt)}
           </p>
         </div>
 
         <div className="mt-3 space-y-2 text-[11px]">
-          <Row
-            label="Chat tasks today"
-            value={`${remaining(data.usage.tasksDay)} of ${data.limits.tasksPerDay} left`}
-          />
           <Row
             label="Chat tasks this month"
             value={`${remaining(data.usage.tasksMonth)} of ${data.limits.tasksPerMonth} left`}

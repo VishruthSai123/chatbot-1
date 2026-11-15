@@ -37,12 +37,22 @@ test.describe("tool quota classes", () => {
 
 test.describe("free plan boundary", () => {
   test("free is a real allowance, not unlimited", () => {
-    expect(PLANS.free.tasksPerDay).toBe(3);
+    expect(PLANS.free.tasksPerDay).toBe(6);
+    expect(PLANS.free.tasksPerWeek).toBe(30);
+    expect(PLANS.free.tasksPerMonth).toBe(90);
     expect(PLANS.free.searchesPerDay).toBe(1);
     expect(PLANS.free.researchPerMonth).toBe(0);
     expect(PLANS.free.downloadsPerMonth).toBe(0);
     expect(PLANS.free.liveMinutesPerMonth).toBe(3);
     expect(PLANS.free.storageGb).toBe(0.5);
+  });
+
+  test("every plan keeps the daily, weekly and monthly windows ordered", () => {
+    for (const plan of Object.values(PLANS)) {
+      expect(plan.tasksPerDay).toBeLessThanOrEqual(plan.tasksPerWeek);
+      expect(plan.tasksPerWeek).toBeLessThanOrEqual(plan.tasksPerMonth);
+      expect(plan.tasksPerWeek).toBeGreaterThan(0);
+    }
   });
 
   test("free keeps a light on-device fallback allowance", () => {

@@ -39,16 +39,25 @@ export async function GET() {
   );
 
   const daily = periodBounds("day");
+  const weekly = periodBounds("week");
   const monthly = periodBounds("month");
 
-  const counter = (kind: string, period: "day" | "month", limit: number) => {
+  const counter = (
+    kind: string,
+    period: "day" | "week" | "month",
+    limit: number
+  ) => {
     const row = counters.get(`${kind}:${period}`);
+    const fallback =
+      period === "day"
+        ? daily.end
+        : period === "week"
+          ? weekly.end
+          : monthly.end;
     return {
       limit,
       reserved: row?.reserved ?? 0,
-      resetAt: (
-        row?.periodEnd ?? (period === "day" ? daily.end : monthly.end)
-      ).toISOString(),
+      resetAt: (row?.periodEnd ?? fallback).toISOString(),
       used: row?.used ?? 0,
     };
   };
@@ -65,6 +74,7 @@ export async function GET() {
         storageGb: plan.storageGb,
         tasksPerDay: plan.tasksPerDay,
         tasksPerMonth: plan.tasksPerMonth,
+        tasksPerWeek: plan.tasksPerWeek,
       },
       plan: plan.plan,
       planLabel: plan.label,
@@ -89,6 +99,7 @@ export async function GET() {
         storageLimitBytes: Math.round(plan.storageGb * 1_000_000_000),
         tasksDay: counter("chat_tasks", "day", plan.tasksPerDay),
         tasksMonth: counter("chat_tasks_month", "month", plan.tasksPerMonth),
+        tasksWeek: counter("chat_tasks_week", "week", plan.tasksPerWeek),
       },
     },
     { headers: { "Cache-Control": "no-store" } }

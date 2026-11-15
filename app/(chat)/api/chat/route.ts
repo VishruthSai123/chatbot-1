@@ -179,6 +179,54 @@ function askedForQuiz(text: string): boolean {
   return /\bquiz\b/i.test(text) || /\btest me\b/i.test(text);
 }
 
+function formatResetDate(resetAt: string): string {
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(resetAt));
+}
+
+function retryAfterSeconds(resetAt: string): number {
+  const seconds = Math.ceil((new Date(resetAt).getTime() - Date.now()) / 1000);
+  return Math.max(60, seconds);
+}
+
+/**
+ * One message for the window that actually ran out.
+ *
+ * The monthly allowance is the visible budget, so only it mentions a number.
+ * The daily and weekly caps are fair-use guardrails; telling the user the reset
+ * date is enough, and it avoids implying their monthly budget is gone.
+ */
+function chatQuotaMessage(
+  kind: string,
+  limit: number,
+  resetAt: string
+): string {
+  const reset = formatResetDate(resetAt);
+
+  if (kind === "chat_tasks_month") {
+    return `You've used this month's ${limit} included Spire AI tasks. They reset on ${reset}. Local search and on-device tools stay free.`;
+  }
+
+  if (kind === "chat_tasks_week") {
+    return `You've reached this week's fair-use limit for Spire AI. It resets on ${reset}. Your monthly allowance is not lost.`;
+  }
+
+  return `You've reached today's fair-use limit for Spire AI. It resets on ${reset}. Your monthly allowance is not lost.`;
+}
+
+function quotaScope(kind: string): "day" | "week" | "month" {
+  if (kind === "chat_tasks_month") {
+    return "month";
+  }
+  if (kind === "chat_tasks_week") {
+    return "week";
+  }
+  return "day";
+}
+
 function getStreamContext() {
   try {
     return createResumableStreamContext({ waitUntil: after });
@@ -511,7 +559,10 @@ export async function POST(request: Request) {
       : modelMessages;
 
     let chatReservation: ChatReservation | null = null;
-    if (chatQuotaEnabled()) {
+    // A tool approval or continuation is part of the turn the user already
+    // paid for. Count one task per user message; every model call is still
+    // cost-logged below.
+    if (chatQuotaEnabled() && !isToolApprovalFlow) {
       try {
         chatReservation = await reserveChatTask({
           plan,
@@ -524,17 +575,22 @@ export async function POST(request: Request) {
               error: "quota_exceeded",
               kind: error.details.kind,
               limit: error.details.limit,
-              message:
-                error.details.kind === "chat_tasks"
-                  ? "You have used your free AI tasks for today. Your allowance resets tomorrow; local search and on-device tools are still free."
-                  : "You have used your free AI allowance for this period. Local search and on-device tools are still free.",
+              message: chatQuotaMessage(
+                error.details.kind,
+                error.details.limit,
+                error.details.resetAt
+              ),
               period: error.details.period,
               reserved: error.details.reserved,
               resetAt: error.details.resetAt,
+              scope: quotaScope(error.details.kind),
               used: error.details.used,
             },
             {
-              headers: { "Cache-Control": "no-store" },
+              headers: {
+                "Cache-Control": "no-store",
+                "Retry-After": String(retryAfterSeconds(error.details.resetAt)),
+              },
               status: 429,
             }
           );

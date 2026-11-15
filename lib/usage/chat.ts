@@ -9,6 +9,7 @@ export type ChatReservation = {
   monthlyId: string;
   plan: PlanLimits;
   userId: string;
+  weeklyId: string;
 };
 
 export type ChatUsage = {
@@ -17,18 +18,19 @@ export type ChatUsage = {
   outputTokens?: number | null;
 };
 
+/**
+ * Holds every window before the provider is called.
+ *
+ * The monthly allowance is the real budget; the week and day counters are
+ * fair-use guardrails that stop a single burst from spending the month in a
+ * few hours. Check the most expensive window first so a used-up month fails
+ * without creating two rows that are immediately released.
+ */
 export async function reserveChatTask(input: {
   plan: PlanLimits;
   userId: string;
 }): Promise<ChatReservation> {
-  const daily = await reserve({
-    amount: 1,
-    kind: "chat_tasks",
-    limit: input.plan.tasksPerDay,
-    period: "day",
-    subjectId: input.userId,
-    ttlSeconds: 10 * 60,
-  });
+  const held: string[] = [];
 
   try {
     const monthly = await reserve({
@@ -39,15 +41,37 @@ export async function reserveChatTask(input: {
       subjectId: input.userId,
       ttlSeconds: 10 * 60,
     });
+    held.push(monthly.id);
+
+    const weekly = await reserve({
+      amount: 1,
+      kind: "chat_tasks_week",
+      limit: input.plan.tasksPerWeek,
+      period: "week",
+      subjectId: input.userId,
+      ttlSeconds: 10 * 60,
+    });
+    held.push(weekly.id);
+
+    const daily = await reserve({
+      amount: 1,
+      kind: "chat_tasks",
+      limit: input.plan.tasksPerDay,
+      period: "day",
+      subjectId: input.userId,
+      ttlSeconds: 10 * 60,
+    });
+    held.push(daily.id);
 
     return {
       dailyId: daily.id,
       monthlyId: monthly.id,
       plan: input.plan,
       userId: input.userId,
+      weeklyId: weekly.id,
     };
   } catch (error) {
-    await release(daily.id);
+    await Promise.allSettled(held.map((id) => release(id)));
     throw error;
   }
 }
@@ -93,6 +117,11 @@ export async function settleChatTask(input: {
 
   await settle({
     amount: 1,
+    reservationId: input.reservation.weeklyId,
+  });
+
+  await settle({
+    amount: 1,
     reservationId: input.reservation.monthlyId,
   });
 }
@@ -100,8 +129,11 @@ export async function settleChatTask(input: {
 export async function releaseChatTask(
   reservation: ChatReservation
 ): Promise<void> {
-  await release(reservation.dailyId);
-  await release(reservation.monthlyId);
+  await Promise.all([
+    release(reservation.dailyId),
+    release(reservation.weeklyId),
+    release(reservation.monthlyId),
+  ]);
 }
 
 /**

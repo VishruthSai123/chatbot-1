@@ -31,7 +31,7 @@ interface GuestAuthModalProps {
  */
 
 const HIGHLIGHTS = [
-  "3 hosted AI tasks a day, plus 1 web search and 3 Live minutes a month",
+  "90 hosted AI tasks a month, plus 1 web search and 3 Live minutes a month",
   "On-device image/PDF edits and device actions stay free and unlimited",
   "Guest chats and files are removed after 7 days; a free account keeps them",
 ];

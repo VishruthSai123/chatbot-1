@@ -85,6 +85,7 @@ export async function getEntitlement(userId: string): Promise<PlanLimits> {
     storageGb: numberOverride(flags, "storageGb", plan.storageGb),
     tasksPerDay: numberOverride(flags, "tasksPerDay", plan.tasksPerDay),
     tasksPerMonth: numberOverride(flags, "tasksPerMonth", plan.tasksPerMonth),
+    tasksPerWeek: numberOverride(flags, "tasksPerWeek", plan.tasksPerWeek),
     videoMinutesPerMonth: numberOverride(
       flags,
       "videoMinutesPerMonth",
