@@ -103,7 +103,7 @@ export const PreviewAttachment = ({
       className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-border/40 bg-muted"
       data-testid="input-attachment-preview"
     >
-      {isImage ? (
+      {isImage && url ? (
         <button
           className="size-full cursor-pointer focus:outline-none"
           onClick={handleOpenStudio}

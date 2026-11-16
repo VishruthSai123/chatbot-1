@@ -10,7 +10,7 @@ import {
 import { withAndroidEmbed } from "@/lib/embed";
 import type { SampleFile } from "@/lib/samples";
 import type { Attachment, ChatMessage } from "@/lib/types";
-import { uploadFile } from "@/lib/upload/client";
+import { UploadError, uploadFile } from "@/lib/upload/client";
 import { cn } from "@/lib/utils";
 import { WebReadySignal } from "../web-ready-signal";
 import { Artifact } from "./artifact";
@@ -20,6 +20,7 @@ import { DataStreamHandler } from "./data-stream-handler";
 import { submitEditedMessage } from "./message-editor";
 import { Messages } from "./messages";
 import { MultimodalInput } from "./multimodal-input";
+import { toast } from "./toast";
 
 export function ChatShell() {
   const {
@@ -39,8 +40,6 @@ export function ChatShell() {
     votes,
     currentModelId,
     setCurrentModelId,
-    pendingAttachments,
-    setPendingAttachments,
   } = useActiveChat();
 
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(
@@ -54,20 +53,174 @@ export function ChatShell() {
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
   const { setArtifact } = useArtifact();
 
-  // Android share sheet files arrive asynchronously after the page loads.
-  // Append them to the composer once, then clear the hand-off queue.
+  const focusComposer = useCallback(() => {
+    let tries = 0;
+    const focus = () => {
+      const composer = document.querySelector<HTMLTextAreaElement>(
+        '[data-testid="multimodal-input"]'
+      );
+      if (composer) {
+        composer.focus();
+        return;
+      }
+      tries += 1;
+      if (tries < 12) {
+        window.setTimeout(focus, 50);
+      }
+    };
+    requestAnimationFrame(focus);
+  }, []);
+
+  /**
+   * Android share hand-off.
+   *
+   * Files are shown in the composer as soon as the tiny native manifest
+   * arrives, then uploaded in parallel. The user sees the attachment and a
+   * spinner immediately instead of a blank composer while a large file
+   * uploads. Each placeholder is replaced in place when its upload finishes.
+   */
+  const hasHydratedShareRef = useRef(false);
   useEffect(() => {
-    if (pendingAttachments.length === 0) {
+    if (hasHydratedShareRef.current) {
       return;
     }
-    setAttachments((current) => [...current, ...pendingAttachments]);
-    setPendingAttachments([]);
-    requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLTextAreaElement>('[data-testid="multimodal-input"]')
-        ?.focus();
-    });
-  }, [pendingAttachments, setPendingAttachments]);
+    hasHydratedShareRef.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const share = params.get("share");
+    if (!share) {
+      return;
+    }
+
+    // Tells the Android WebView fallback not to inject the same files again.
+    document.documentElement.dataset.androidShare = "handled";
+
+    const cleanShareUrl = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("share");
+      window.history.replaceState({}, "", url.toString());
+    };
+    const shareBase = "https://appassets.androidplatform.net";
+
+    // biome-ignore lint/complexity/noVoid: the async block handles its own errors
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${shareBase}/share/${encodeURIComponent(share)}/manifest.json`
+        );
+        if (!response.ok) {
+          throw new Error(`Share manifest ${response.status}`);
+        }
+        const manifest = (await response.json()) as {
+          text?: string;
+          files?: Array<{ name: string; type: string; url: string }>;
+        };
+        const files = Array.isArray(manifest.files) ? manifest.files : [];
+        // The manifest and files are in memory now; drop the token so a
+        // refresh cannot import the same share twice.
+        cleanShareUrl();
+
+        if (manifest.text) {
+          setInput(manifest.text);
+        }
+        const localIds = files.map((_file, index) => `${share}:${index}`);
+        if (files.length > 0) {
+          setAttachments((current) => [
+            ...current,
+            ...files.map((file, index) => ({
+              contentType: file.type || "application/octet-stream",
+              localId: localIds[index],
+              name: file.name || "Shared file",
+              uploading: true,
+              url: "",
+            })),
+          ]);
+          focusComposer();
+        }
+
+        let failedUploads = 0;
+        let firstError: string | null = null;
+        await Promise.all(
+          files.map(async (file, index) => {
+            const localId = localIds[index];
+            let localUrl: string | null = null;
+            try {
+              const fileResponse = await fetch(file.url);
+              if (!fileResponse.ok) {
+                throw new Error(`Shared file ${fileResponse.status}`);
+              }
+              const blob = await fileResponse.blob();
+              localUrl = URL.createObjectURL(blob);
+              setAttachments((current) =>
+                current.map((attachment) =>
+                  attachment.localId === localId
+                    ? { ...attachment, url: localUrl ?? "" }
+                    : attachment
+                )
+              );
+
+              const uploaded = await uploadFile(
+                new File([blob], file.name, {
+                  type: file.type || blob.type || "application/octet-stream",
+                }),
+                { chatId }
+              );
+              setAttachments((current) =>
+                current.map((attachment) =>
+                  attachment.localId === localId
+                    ? {
+                        contentType: uploaded.contentType,
+                        documentId: uploaded.documentId,
+                        name: uploaded.name,
+                        url: uploaded.url,
+                      }
+                    : attachment
+                )
+              );
+            } catch (error) {
+              failedUploads += 1;
+              firstError =
+                error instanceof UploadError
+                  ? error.message
+                  : "Could not attach the shared file. Try again.";
+              console.error("Could not attach a shared file", error);
+              setAttachments((current) =>
+                current.filter((attachment) => attachment.localId !== localId)
+              );
+            } finally {
+              if (localUrl) {
+                // Let React paint the uploaded URL before the blob is freed.
+                const blobUrl = localUrl;
+                window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+              }
+            }
+          })
+        );
+
+        if (failedUploads > 0) {
+          toast({
+            description:
+              failedUploads === files.length
+                ? (firstError ?? "Could not attach the shared file. Try again.")
+                : "Some files could not be attached.",
+            type: "error",
+          });
+        }
+        focusComposer();
+      } catch (error) {
+        console.error("Could not import the shared file", error);
+        toast({
+          description:
+            error instanceof UploadError
+              ? error.message
+              : "Could not attach the shared file. Try again.",
+          type: "error",
+        });
+        focusComposer();
+        cleanShareUrl();
+      }
+    })();
+  }, [chatId, focusComposer, setInput]);
 
   /**
    * The capability panel lives here rather than in the composer: it is opened

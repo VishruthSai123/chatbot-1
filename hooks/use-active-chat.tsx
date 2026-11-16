@@ -40,8 +40,7 @@ import {
   type DeviceActionInput,
   requestDeviceAction,
 } from "@/lib/spire-device-bridge";
-import type { Attachment, ChatMessage } from "@/lib/types";
-import { uploadFile } from "@/lib/upload/client";
+import type { ChatMessage } from "@/lib/types";
 import { fetcher, fetchWithErrorHandlers, generateUUID } from "@/lib/utils";
 
 type ActiveChatContextValue = {
@@ -63,13 +62,6 @@ type ActiveChatContextValue = {
   setCurrentModelId: (id: string) => void;
   showCreditCardAlert: boolean;
   setShowCreditCardAlert: Dispatch<SetStateAction<boolean>>;
-  /**
-   * Files handed over by the Android WebView shell (share sheet). The chat
-   * shell appends these to the composer once, so the user can add their own
-   * prompt before sending.
-   */
-  pendingAttachments: Attachment[];
-  setPendingAttachments: Dispatch<SetStateAction<Attachment[]>>;
 };
 
 const ActiveChatContext = createContext<ActiveChatContextValue | null>(null);
@@ -174,9 +166,6 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
 
   const [input, setInput] = useState("");
   const [showCreditCardAlert, setShowCreditCardAlert] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>(
-    []
-  );
   const pendingDeviceActionsRef = useRef(new Set<string>());
   const resolvedDeviceActionsRef = useRef(new Set<string>());
   const stopRequestedRef = useRef(false);
@@ -544,14 +533,11 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
   }, [sendMessage, chatId]);
 
   /**
-   * Android shell hand-off.
+   * Android shell text hand-off.
    *
-   * The native app opens `?query=` for a text share or Ask action, `?draft=`
-   * to prefill only, and `?share=<token>` for images/PDFs. The token maps to a
-   * small manifest served by the WebView from
-   * `https://appassets.androidplatform.net`. Files are fetched here and sent
-   * through the same `uploadFile` path as a normal attachment, so the native
-   * side never needs the HttpOnly session cookie.
+   * The native app opens `?query=` for an Ask action and `?draft=` to prefill
+   * only. File shares (`?share=<token>`) are hydrated by the chat shell, which
+   * can show the upload immediately in the composer.
    */
   const hasHydratedAndroidExtrasRef = useRef(false);
   useEffect(() => {
@@ -565,8 +551,15 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
     if (isAndroidEmbed()) {
       document.documentElement.dataset.embed = "android";
     }
+    if (params.get("share")) {
+      // Set early so the WebView fallback never injects the same files.
+      document.documentElement.dataset.androidShare = "handled";
+    }
 
-    const focusComposer = () => {
+    const draft = params.get("draft");
+    if (draft) {
+      // Incoming content wins over a persisted draft from an earlier session.
+      setInput(draft);
       window.setTimeout(() => {
         const composer = document.querySelector<HTMLTextAreaElement>(
           '[data-testid="multimodal-input"]'
@@ -577,100 +570,11 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         composer.focus({ preventScroll: true });
         composer.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 80);
-    };
-
-    const draft = params.get("draft");
-    if (draft) {
-      // Incoming content wins over a persisted draft from an earlier session.
-      setInput(draft);
-      focusComposer();
-    }
-
-    const cleanUrl = () => {
       const url = new URL(window.location.href);
-      url.searchParams.delete("share");
       url.searchParams.delete("draft");
       window.history.replaceState({}, "", url.toString());
-    };
-
-    const share = params.get("share");
-    if (!share) {
-      if (draft) {
-        cleanUrl();
-      }
-      return;
     }
-
-    // Tells the Android WebView fallback not to inject the same files again.
-    document.documentElement.dataset.androidShare = "handled";
-
-    const shareBase = "https://appassets.androidplatform.net";
-    // biome-ignore lint/complexity/noVoid: the async block handles its own errors
-    void (async () => {
-      try {
-        const response = await fetch(
-          `${shareBase}/share/${encodeURIComponent(share)}/manifest.json`
-        );
-        if (!response.ok) {
-          throw new Error(`Share manifest ${response.status}`);
-        }
-        const manifest = (await response.json()) as {
-          text?: string;
-          files?: Array<{ name: string; type: string; url: string }>;
-        };
-
-        if (manifest.text) {
-          setInput(manifest.text);
-        }
-
-        const sharedFiles = manifest.files ?? [];
-        const uploaded: Attachment[] = [];
-        for (const file of sharedFiles) {
-          try {
-            // biome-ignore lint/performance/noAwaitInLoops: uploads stay in share-sheet order
-            const fileResponse = await fetch(file.url);
-            if (!fileResponse.ok) {
-              throw new Error(`Shared file ${fileResponse.status}`);
-            }
-            const blob = await fileResponse.blob();
-            const result = await uploadFile(
-              new File([blob], file.name, {
-                type: file.type || blob.type || "application/octet-stream",
-              }),
-              { chatId }
-            );
-            uploaded.push({
-              contentType: result.contentType,
-              documentId: result.documentId,
-              name: result.name,
-              url: result.url,
-            });
-          } catch (error) {
-            console.error("Could not attach a shared file", error);
-          }
-        }
-
-        if (uploaded.length > 0) {
-          setPendingAttachments((current) => [...current, ...uploaded]);
-        } else if (sharedFiles.length > 0) {
-          toast({
-            description: "Could not attach the shared file. Try again.",
-            type: "error",
-          });
-        }
-        focusComposer();
-        cleanUrl();
-      } catch (error) {
-        console.error("Could not import the shared file", error);
-        toast({
-          description: "Could not attach the shared file. Try again.",
-          type: "error",
-        });
-        focusComposer();
-        cleanUrl();
-      }
-    })();
-  }, [chatId]);
+  }, []);
 
   useAutoResume({
     autoResume: !isNewChat && !!chatData,
@@ -698,13 +602,11 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading: !isNewChat && isLoading,
       isReadonly,
       messages,
-      pendingAttachments,
       regenerate,
       sendMessage,
       setCurrentModelId,
       setInput,
       setMessages,
-      setPendingAttachments,
       setShowCreditCardAlert,
       showCreditCardAlert,
       status,
@@ -728,7 +630,6 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       isLoading,
       votes,
       currentModelId,
-      pendingAttachments,
       showCreditCardAlert,
     ]
   );

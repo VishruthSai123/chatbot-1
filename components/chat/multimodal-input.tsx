@@ -182,7 +182,8 @@ function PureMultimodalInput({
     status === "submitted" || status === "streaming";
   const canSend =
     (Boolean(input.trim()) || attachments.length > 0) &&
-    uploadQueue.length === 0;
+    uploadQueue.length === 0 &&
+    !attachments.some((attachment) => attachment.uploading);
 
   // Adaptive beam size: "line" when files attached, expanded height, or while sending/generating; otherwise "md"
   const beamSize: BorderBeamSize =
@@ -282,6 +283,13 @@ function PureMultimodalInput({
   );
 
   const submitForm = useCallback(() => {
+    const readyAttachments = attachments.filter(
+      (attachment) => !attachment.uploading
+    );
+    if (attachments.length > 0 && readyAttachments.length === 0) {
+      return;
+    }
+
     const targetUrl = withAndroidEmbed(
       `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/chat/${chatId}`
     );
@@ -294,13 +302,13 @@ function PureMultimodalInput({
 
     const messageText =
       input.trim() ||
-      (attachments.length > 0
-        ? `Attached: ${attachments.map((a) => a.name).join(", ")}`
+      (readyAttachments.length > 0
+        ? `Attached: ${readyAttachments.map((a) => a.name).join(", ")}`
         : "");
 
     sendMessage({
       parts: [
-        ...attachments.map((attachment) => ({
+        ...readyAttachments.map((attachment) => ({
           documentId: attachment.documentId,
           filename: attachment.name,
           mediaType: attachment.contentType,
@@ -712,7 +720,7 @@ function PureMultimodalInput({
                 <AttachmentPreviewItem
                   attachment={attachment}
                   fileInputRef={fileInputRef}
-                  key={attachment.url}
+                  key={attachment.localId ?? attachment.url}
                   setAttachments={setAttachments}
                 />
               ))}
@@ -830,14 +838,24 @@ function PureAttachmentPreviewItem({
 }) {
   const handleRemove = useCallback(() => {
     setAttachments((currentAttachments) =>
-      currentAttachments.filter((a) => a.url !== attachment.url)
+      currentAttachments.filter((a) =>
+        attachment.localId
+          ? a.localId !== attachment.localId
+          : a.url !== attachment.url
+      )
     );
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [attachment.url, fileInputRef, setAttachments]);
+  }, [attachment.localId, attachment.url, fileInputRef, setAttachments]);
 
-  return <PreviewAttachment attachment={attachment} onRemove={handleRemove} />;
+  return (
+    <PreviewAttachment
+      attachment={attachment}
+      isUploading={attachment.uploading}
+      onRemove={handleRemove}
+    />
+  );
 }
 
 const AttachmentPreviewItem = memo(PureAttachmentPreviewItem);

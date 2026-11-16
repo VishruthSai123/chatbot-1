@@ -224,4 +224,8 @@ export type Attachment = {
   url: string;
   contentType: string;
   documentId?: string;
+  /** Stable id used to replace an optimistic shared attachment in place. */
+  localId?: string;
+  /** True while an incoming Android share is still uploading. */
+  uploading?: boolean;
 };
