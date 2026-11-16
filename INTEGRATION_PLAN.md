@@ -598,5 +598,5 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 
 ### Remaining deployment step
 
-The Android **text share / Ask / Bot** paths and the web `?share=` hand-off are deployed. The web boundary is live: guests can use local search and on-device studios, while hosted AI, search, research, uploads and downloads require a free account. Image/PDF sharing uses the normal composer attachment path and R2 storage. The `assetlinks.json` still needs the Play App Signing SHA-256 before Play-distributed App Links/TWA verification.
+The Android **text share / Ask / Bot** paths and the web `?share=` hand-off are deployed. Dropping files on the floating bubble uses the same `?share=` manifest and attachment pipeline; dropped text uses `?draft=`, so nothing is sent automatically. The web boundary is live: guests can use local search and on-device studios, while hosted AI, search, research, uploads and downloads require a free account. Image/PDF sharing uses the normal composer attachment path and R2 storage. The `assetlinks.json` still needs the Play App Signing SHA-256 before Play-distributed App Links/TWA verification.
 

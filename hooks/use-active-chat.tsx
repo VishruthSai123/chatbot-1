@@ -566,9 +566,24 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
       document.documentElement.dataset.embed = "android";
     }
 
+    const focusComposer = () => {
+      window.setTimeout(() => {
+        const composer = document.querySelector<HTMLTextAreaElement>(
+          '[data-testid="multimodal-input"]'
+        );
+        if (!composer) {
+          return;
+        }
+        composer.focus({ preventScroll: true });
+        composer.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 80);
+    };
+
     const draft = params.get("draft");
     if (draft) {
-      setInput((current) => current || draft);
+      // Incoming content wins over a persisted draft from an earlier session.
+      setInput(draft);
+      focusComposer();
     }
 
     const cleanUrl = () => {
@@ -605,37 +620,53 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         };
 
         if (manifest.text) {
-          setInput((current) => current || manifest.text || "");
+          setInput(manifest.text);
         }
 
+        const sharedFiles = manifest.files ?? [];
         const uploaded: Attachment[] = [];
-        for (const file of manifest.files ?? []) {
-          // biome-ignore lint/performance/noAwaitInLoops: uploads stay in share-sheet order
-          const fileResponse = await fetch(file.url);
-          if (!fileResponse.ok) {
-            continue;
+        for (const file of sharedFiles) {
+          try {
+            // biome-ignore lint/performance/noAwaitInLoops: uploads stay in share-sheet order
+            const fileResponse = await fetch(file.url);
+            if (!fileResponse.ok) {
+              throw new Error(`Shared file ${fileResponse.status}`);
+            }
+            const blob = await fileResponse.blob();
+            const result = await uploadFile(
+              new File([blob], file.name, {
+                type: file.type || blob.type || "application/octet-stream",
+              }),
+              { chatId }
+            );
+            uploaded.push({
+              contentType: result.contentType,
+              documentId: result.documentId,
+              name: result.name,
+              url: result.url,
+            });
+          } catch (error) {
+            console.error("Could not attach a shared file", error);
           }
-          const blob = await fileResponse.blob();
-          const result = await uploadFile(
-            new File([blob], file.name, {
-              type: file.type || blob.type || "application/octet-stream",
-            }),
-            { chatId }
-          );
-          uploaded.push({
-            contentType: result.contentType,
-            documentId: result.documentId,
-            name: result.name,
-            url: result.url,
-          });
         }
 
         if (uploaded.length > 0) {
           setPendingAttachments((current) => [...current, ...uploaded]);
+        } else if (sharedFiles.length > 0) {
+          toast({
+            description: "Could not attach the shared file. Try again.",
+            type: "error",
+          });
         }
+        focusComposer();
         cleanUrl();
       } catch (error) {
         console.error("Could not import the shared file", error);
+        toast({
+          description: "Could not attach the shared file. Try again.",
+          type: "error",
+        });
+        focusComposer();
         cleanUrl();
       }
     })();
