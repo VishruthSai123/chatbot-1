@@ -166,11 +166,6 @@ function PureMultimodalInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
   const [isExpandedHeight, setIsExpandedHeight] = useState(false);
-  const [geminiAvailable, setGeminiAvailable] = useState(false);
-
-  useEffect(() => {
-    setGeminiAvailable(Boolean(window.SpireAndroid?.supportsGemini?.()));
-  }, []);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -759,24 +754,6 @@ function PureMultimodalInput({
                 onModelChange={onModelChange}
                 selectedModelId={selectedModelId}
               />
-              {geminiAvailable ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      aria-label="Gemini Live"
-                      className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
-                      data-testid="gemini-button"
-                      onClick={() => window.SpireAndroid?.openGemini?.()}
-                      type="button"
-                    >
-                      <SparklesIcon className="size-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    Gemini Live — opens Gemini
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button

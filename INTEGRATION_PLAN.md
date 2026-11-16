@@ -7,7 +7,7 @@ Repos:
 
 This document answers one question: **how do we put the SuperiorAI chatbot inside Quick Search as a first-class "Bot" scene, with sharing and shortcuts, without breaking Quick Search's search/launcher behavior?**
 
-**Product boundary:** Quick Search local search, widgets, themes, backup and device actions stay free and accountless. Spire AI (Bot, web search, research, files, storage, downloads) is the optional hosted layer. It requires a free account; Free gets 90 tasks/month (6/day, 30/week), 1 web search/day and 0.5 GB. Gemini Live is a handoff to Google's Gemini app, not a hosted Spire feature. Guests can still use local search and the on-device studios.
+**Product boundary:** Quick Search local search, widgets, themes, backup and device actions stay free and accountless. Spire AI (Bot, web search, research, files, storage, downloads) is the optional hosted layer. It requires a free account; Free gets 90 tasks/month (6/day, 30/week), 1 web search/day and 0.5 GB. Spire Live was removed; the floating bubble opens Quick Search on tap and Ask Spire on hold. Guests can still use local search and the on-device studios.
 
 ---
 
@@ -35,7 +35,7 @@ This document answers one question: **how do we put the SuperiorAI chatbot insid
 - Already has:
   - `app/manifest.ts` — name, 192/512/maskable icons, `standalone`, `start_url`, scope.
   - `public/sw.js` — static-asset cache only; never HTML or API.
-  - Automatic **guest** auth: `proxy.ts` redirects cookieless requests to `/api/auth/guest`, which creates a real user row + session cookie. Guests can use local search/deep links, but hosted AI, search, research, uploads and downloads require a free account. Gemini Live opens Google's Gemini app and needs no Spire session.
+  - Automatic **guest** auth: `proxy.ts` redirects cookieless requests to `/api/auth/guest`, which creates a real user row + session cookie. Guests can use local search/deep links, but hosted AI, search, research, uploads and downloads require a free account.
   - Chat persistence in Postgres (Supabase), file uploads to Cloudflare R2, SSE streaming from `POST /api/chat`.
   - Text deep link: `?query=` **auto-sends** a message (only text, only once per page mount).
 - Implemented for a first-class Android/TWA integration:
@@ -598,5 +598,5 @@ If you want a single app with a persistent native nav, **do not choose TWA**. Ch
 
 ### Remaining deployment step
 
-The Android **text share / Ask / Bot** paths and the web `?share=` hand-off are deployed. The web boundary is live: guests can use local search and on-device studios, while hosted AI, search, research, uploads and downloads require a free account. Gemini Live is a handoff to Google's Gemini app. Image/PDF sharing uses the normal composer attachment path and R2 storage. The `assetlinks.json` still needs the Play App Signing SHA-256 before Play-distributed App Links/TWA verification.
+The Android **text share / Ask / Bot** paths and the web `?share=` hand-off are deployed. The web boundary is live: guests can use local search and on-device studios, while hosted AI, search, research, uploads and downloads require a free account. Image/PDF sharing uses the normal composer attachment path and R2 storage. The `assetlinks.json` still needs the Play App Signing SHA-256 before Play-distributed App Links/TWA verification.
 
