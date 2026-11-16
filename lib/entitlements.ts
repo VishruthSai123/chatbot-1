@@ -57,11 +57,6 @@ export async function getEntitlement(userId: string): Promise<PlanLimits> {
       "lightFileOpsPerDay",
       plan.lightFileOpsPerDay
     ),
-    liveMinutesPerMonth: numberOverride(
-      flags,
-      "liveMinutesPerMonth",
-      plan.liveMinutesPerMonth
-    ),
     messagesPerHour: numberOverride(
       flags,
       "messagesPerHour",

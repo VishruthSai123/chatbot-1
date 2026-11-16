@@ -24,9 +24,9 @@ import {
 /**
  * Builds a portable JSON copy of everything Spire stores for an account.
  *
- * Secrets are deliberately excluded: the password hash, media cookies and Live
- * token names never leave the database. Everything the user created — chats,
- * messages, documents, artifacts, tasks and usage — is included.
+ * Secrets are deliberately excluded: the password hash, media cookies and
+ * access tokens never leave the database. Everything the user created - chats,
+ * messages, documents, artifacts, tasks and usage - is included.
  */
 export async function getUserDataExport(userId: string) {
   if (!userId) {

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 
 import { cleanupInactiveGuests } from "@/lib/maintenance/guest-cleanup";
 import { cleanupQuickAnswerEvents } from "@/lib/maintenance/quick-answer-cleanup";
+import { expireStaleReservations } from "@/lib/usage/ledger";
 
 export const maxDuration = 60;
 
 /**
- * Scheduled maintenance, protected by the same bearer secret as the Live
- * expiry job. It is public at the proxy only for this path; the secret is the
- * actual gate.
+ * Scheduled maintenance, protected by a bearer secret. It is public at the
+ * proxy only for this path; the secret is the actual gate.
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -38,10 +38,12 @@ export async function GET(request: Request) {
     limit: 5000,
     olderThanDays: 90,
   });
+  const expiredReservations = await expireStaleReservations(200);
 
   return NextResponse.json(
     {
       action,
+      expiredReservations,
       quickAnswerCleanup,
       result,
       success: result.errors === 0 && quickAnswerCleanup.errors === 0,

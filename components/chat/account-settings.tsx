@@ -137,7 +137,8 @@ export function AccountSettings({
         </h2>
         <p className="mt-1 text-[12px] text-muted-foreground">
           Get a JSON copy of your chats, documents, files, tasks and usage
-          history. Passwords, media cookies and Live tokens are never included.
+          history. Passwords, media cookies and access tokens are never
+          included.
         </p>
         <Button asChild className="mt-3" size="sm" variant="outline">
           <a download href="/api/account/export">

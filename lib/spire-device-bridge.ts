@@ -20,7 +20,8 @@ export type DeviceActionResult = {
 
 type NativeBridge = {
   requestAction: (requestId: string, action: string, argsJson: string) => void;
-  startLive?: () => void;
+  openGemini?: () => void;
+  supportsGemini?: () => boolean;
 };
 
 declare global {

@@ -66,7 +66,6 @@ export async function GET() {
     {
       limits: {
         downloadsPerMonth: plan.downloadsPerMonth,
-        liveMinutesPerMonth: plan.liveMinutesPerMonth,
         messagesPerHour: plan.messagesPerHour,
         researchPerMonth: plan.researchPerMonth,
         searchesPerDay: plan.searchesPerDay,
@@ -79,11 +78,6 @@ export async function GET() {
       plan: plan.plan,
       planLabel: plan.label,
       usage: {
-        liveSecondsMonth: counter(
-          "live_seconds",
-          "month",
-          plan.liveMinutesPerMonth * 60
-        ),
         researchMonth: counter(
           "research_tasks",
           "month",

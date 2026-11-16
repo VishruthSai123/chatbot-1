@@ -43,7 +43,6 @@ test.describe("free plan boundary", () => {
     expect(PLANS.free.searchesPerDay).toBe(1);
     expect(PLANS.free.researchPerMonth).toBe(0);
     expect(PLANS.free.downloadsPerMonth).toBe(0);
-    expect(PLANS.free.liveMinutesPerMonth).toBe(3);
     expect(PLANS.free.storageGb).toBe(0.5);
   });
 

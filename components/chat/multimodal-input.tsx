@@ -9,7 +9,6 @@ import {
   EyeIcon,
   EyeOffIcon,
   LockIcon,
-  Mic,
   SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -167,10 +166,10 @@ function PureMultimodalInput({
   const [slashIndex, setSlashIndex] = useState(0);
   const [mediaSessionOpen, setMediaSessionOpen] = useState(false);
   const [isExpandedHeight, setIsExpandedHeight] = useState(false);
-  const [androidLiveAvailable, setAndroidLiveAvailable] = useState(false);
+  const [geminiAvailable, setGeminiAvailable] = useState(false);
 
   useEffect(() => {
-    setAndroidLiveAvailable(Boolean(window.SpireAndroid?.startLive));
+    setGeminiAvailable(Boolean(window.SpireAndroid?.supportsGemini?.()));
   }, []);
 
   useEffect(() => {
@@ -760,20 +759,22 @@ function PureMultimodalInput({
                 onModelChange={onModelChange}
                 selectedModelId={selectedModelId}
               />
-              {androidLiveAvailable ? (
+              {geminiAvailable ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      aria-label="Spire Live"
+                      aria-label="Gemini Live"
                       className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
-                      data-testid="live-button"
-                      onClick={() => window.SpireAndroid?.startLive?.()}
+                      data-testid="gemini-button"
+                      onClick={() => window.SpireAndroid?.openGemini?.()}
                       type="button"
                     >
-                      <Mic className="size-3.5" />
+                      <SparklesIcon className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Spire Live</TooltipContent>
+                  <TooltipContent side="top">
+                    Gemini Live — opens Gemini
+                  </TooltipContent>
                 </Tooltip>
               ) : null}
               <Tooltip>

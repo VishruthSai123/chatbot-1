@@ -1,4 +1,4 @@
-﻿import type { PriceLane } from "@/lib/usage/pricing";
+import type { PriceLane } from "@/lib/usage/pricing";
 
 export type PlanId = "free" | "go" | "plus" | "pro" | "business" | "daypass";
 
@@ -9,7 +9,6 @@ export type PlanLimits = {
   lane: PriceLane;
   /** Hosted on-device fallback operations allowed per day. 0 = none. */
   lightFileOpsPerDay: number;
-  liveMinutesPerMonth: number;
   /** Burst limit, separate from the daily/monthly allowance. */
   messagesPerHour: number;
   model: string;
@@ -41,7 +40,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Business",
     lane: "priority",
     lightFileOpsPerDay: 1000,
-    liveMinutesPerMonth: 300,
     messagesPerHour: 300,
     model: "gemini-3.8-flash",
     plan: "business",
@@ -60,7 +58,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Day Pass",
     lane: "standard",
     lightFileOpsPerDay: 10,
-    liveMinutesPerMonth: 10,
     messagesPerHour: 30,
     model: "gemini-3.5-flash-lite",
     plan: "daypass",
@@ -79,7 +76,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Free",
     lane: "flex",
     lightFileOpsPerDay: 10,
-    liveMinutesPerMonth: 3,
     messagesPerHour: 10,
     model: "gemini-3.1-flash-lite",
     plan: "free",
@@ -98,7 +94,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Go",
     lane: "standard",
     lightFileOpsPerDay: 30,
-    liveMinutesPerMonth: 15,
     messagesPerHour: 30,
     model: "gemini-3.5-flash-lite",
     plan: "go",
@@ -117,7 +112,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Plus",
     lane: "priority",
     lightFileOpsPerDay: 100,
-    liveMinutesPerMonth: 45,
     messagesPerHour: 60,
     model: "gemini-3.8-flash",
     plan: "plus",
@@ -136,7 +130,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     label: "Pro",
     lane: "priority",
     lightFileOpsPerDay: 300,
-    liveMinutesPerMonth: 150,
     messagesPerHour: 120,
     model: "gemini-3.8-flash",
     plan: "pro",

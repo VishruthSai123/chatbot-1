@@ -24,7 +24,6 @@ type Counter = {
 type UsagePayload = {
   limits: {
     downloadsPerMonth: number;
-    liveMinutesPerMonth: number;
     researchPerMonth: number;
     searchesPerDay: number;
     searchesPerMonth: number;
@@ -36,7 +35,6 @@ type UsagePayload = {
   plan: string;
   planLabel: string;
   usage: {
-    liveSecondsMonth: Counter;
     researchMonth: Counter;
     searchesDay: Counter;
     searchesMonth: Counter;
@@ -199,10 +197,6 @@ export function PlanUsage({ className }: { className?: string }) {
                 ? `${remaining(data.usage.researchMonth)} of ${data.limits.researchPerMonth} left`
                 : "Paid plans only"
             }
-          />
-          <Row
-            label="Live"
-            value={`${Math.max(0, Math.floor(remaining(data.usage.liveSecondsMonth) / 60))} of ${data.limits.liveMinutesPerMonth} min left`}
           />
           <Row
             label="Storage"
