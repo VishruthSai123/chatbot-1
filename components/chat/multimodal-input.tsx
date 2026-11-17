@@ -95,6 +95,9 @@ function PureMultimodalInput({
   onModelChange,
   editingMessage,
   onCancelEdit,
+  onRequestAuth,
+  guestLimitReached,
+  onGuestLimitReached,
   onShowCapabilities,
 }: {
   chatId: string;
@@ -113,6 +116,9 @@ function PureMultimodalInput({
   onModelChange?: (modelId: string) => void;
   editingMessage?: ChatMessage | null;
   onCancelEdit?: () => void;
+  onRequestAuth?: () => void;
+  guestLimitReached?: boolean;
+  onGuestLimitReached?: () => void;
   onShowCapabilities?: (familyId?: string) => void;
 }) {
   const router = useRouter();
@@ -183,7 +189,10 @@ function PureMultimodalInput({
   const canSend =
     (Boolean(input.trim()) || attachments.length > 0) &&
     uploadQueue.length === 0 &&
-    !attachments.some((attachment) => attachment.uploading);
+    !guestLimitReached &&
+    !attachments.some(
+      (attachment) => attachment.uploading || attachment.authRequired
+    );
 
   // Adaptive beam size: "line" when files attached, expanded height, or while sending/generating; otherwise "md"
   const beamSize: BorderBeamSize =
@@ -284,9 +293,13 @@ function PureMultimodalInput({
 
   const submitForm = useCallback(() => {
     const readyAttachments = attachments.filter(
-      (attachment) => !attachment.uploading
+      (attachment) => !(attachment.uploading || attachment.authRequired)
     );
-    if (attachments.length > 0 && readyAttachments.length === 0) {
+    if (
+      attachments.some(
+        (attachment) => attachment.uploading || attachment.authRequired
+      )
+    ) {
       return;
     }
 
@@ -550,8 +563,16 @@ function PureMultimodalInput({
   }, []);
 
   const handlePromptSubmit = useCallback(() => {
-    if (isGuest) {
-      setAuthOpen(true);
+    if (guestLimitReached) {
+      onGuestLimitReached?.();
+      return;
+    }
+    if (attachments.some((attachment) => attachment.authRequired)) {
+      if (onRequestAuth) {
+        onRequestAuth();
+      } else {
+        setAuthOpen(true);
+      }
       return;
     }
     if (input.startsWith("/")) {
@@ -571,10 +592,12 @@ function PureMultimodalInput({
       toast.error("Please wait for the model to finish its response!");
     }
   }, [
-    attachments.length,
+    attachments,
+    guestLimitReached,
     handleSlashSelect,
     input,
-    isGuest,
+    onGuestLimitReached,
+    onRequestAuth,
     status,
     submitForm,
   ]);
@@ -711,6 +734,20 @@ function PureMultimodalInput({
           className="[&>div]:rounded-2xl [&>div]:border [&>div]:border-border/30 [&>div]:bg-card/70"
           onSubmit={handlePromptSubmit}
         >
+          {guestLimitReached ? (
+            <div className="mx-3 mt-3 flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+              <span>
+                Guest limit reached. Create a free account to keep chatting.
+              </span>
+              <button
+                className="shrink-0 font-medium text-foreground underline underline-offset-2"
+                onClick={onGuestLimitReached}
+                type="button"
+              >
+                Sign up
+              </button>
+            </div>
+          ) : null}
           {(attachments.length > 0 || uploadQueue.length > 0) && (
             <div
               className="flex w-full self-start flex-row gap-2 overflow-x-auto px-3 pt-3 no-scrollbar"
@@ -721,6 +758,7 @@ function PureMultimodalInput({
                   attachment={attachment}
                   fileInputRef={fileInputRef}
                   key={attachment.localId ?? attachment.url}
+                  onRequestAuth={onRequestAuth}
                   setAttachments={setAttachments}
                 />
               ))}
@@ -813,6 +851,9 @@ export const MultimodalInput = memo(
     if (prevProps.status !== nextProps.status) {
       return false;
     }
+    if (prevProps.guestLimitReached !== nextProps.guestLimitReached) {
+      return false;
+    }
     if (!equal(prevProps.attachments, nextProps.attachments)) {
       return false;
     }
@@ -830,10 +871,12 @@ export const MultimodalInput = memo(
 function PureAttachmentPreviewItem({
   attachment,
   fileInputRef,
+  onRequestAuth,
   setAttachments,
 }: {
   attachment: Attachment;
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
+  onRequestAuth?: () => void;
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
 }) {
   const handleRemove = useCallback(() => {
@@ -854,6 +897,7 @@ function PureAttachmentPreviewItem({
       attachment={attachment}
       isUploading={attachment.uploading}
       onRemove={handleRemove}
+      onRequestAuth={onRequestAuth}
     />
   );
 }

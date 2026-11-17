@@ -8,7 +8,7 @@ import { useCallback, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { unstable_serialize } from "swr/infinite";
-
+import { resendVerificationEmail } from "@/app/(auth)/recovery-actions";
 import { deleteAccount } from "@/app/(chat)/account-actions";
 import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
 import {
@@ -28,9 +28,11 @@ import { cn } from "@/lib/utils";
 
 export function AccountSettings({
   email,
+  emailVerified,
   isGuest,
 }: {
   email: string;
+  emailVerified: boolean;
   isGuest: boolean;
 }) {
   const router = useRouter();
@@ -40,6 +42,7 @@ export function AccountSettings({
   const [showDeleteChats, setShowDeleteChats] = useState(false);
   const [isDeletingChats, setIsDeletingChats] = useState(false);
   const [isDeletingAccount, startDeleteAccount] = useTransition();
+  const [isSendingVerification, startSendVerification] = useTransition();
 
   const canDeleteAccount =
     confirmation === "DELETE" && (isGuest || password.length > 0);
@@ -94,6 +97,22 @@ export function AccountSettings({
     });
   }, [canDeleteAccount, confirmation, isGuest, password]);
 
+  const handleResendVerification = useCallback(() => {
+    startSendVerification(async () => {
+      const result = await resendVerificationEmail();
+
+      if (result.status === "sent") {
+        toast.success("Verification email sent");
+      } else if (result.status === "already_verified") {
+        toast.success("Your email is already verified");
+      } else if (result.status === "rate_limited") {
+        toast.error("Too many requests. Please wait and try again.");
+      } else {
+        toast.error("Could not send the verification email. Try again.");
+      }
+    });
+  }, []);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 md:px-6 md:py-8">
       <WebReadySignal />
@@ -113,6 +132,25 @@ export function AccountSettings({
         <p className="mt-1 text-[12px] text-muted-foreground">
           {email || "Guest"}
         </p>
+        {isGuest ? null : (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className="text-[12px] text-muted-foreground">
+              {emailVerified ? "Email verified" : "Email not verified"}
+            </span>
+            {emailVerified ? null : (
+              <Button
+                disabled={isSendingVerification}
+                onClick={handleResendVerification}
+                size="sm"
+                variant="outline"
+              >
+                {isSendingVerification
+                  ? "Sending..."
+                  : "Send verification email"}
+              </Button>
+            )}
+          </div>
+        )}
       </section>
 
       {isGuest ? (

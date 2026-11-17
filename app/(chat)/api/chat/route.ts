@@ -112,6 +112,7 @@ import {
 import type { DBMessage } from "@/lib/db/schema";
 import { getEntitlement } from "@/lib/entitlements";
 import { ChatbotError } from "@/lib/errors";
+import { GUEST_MESSAGE_LIMIT } from "@/lib/guest";
 import {
   describeRequirement,
   parseImageRequirement,
@@ -304,17 +305,22 @@ export async function POST(request: Request) {
     let modelOutputBudget = 8192;
 
     const userType: UserType = session.user.type;
+    const isToolApprovalFlow = Boolean(messages);
 
-    // Quick Search's local layer stays free and accountless. Hosted Spire AI is
-    // the optional, metered layer, so anonymous guests get an explicit prompt
-    // instead of an untracked free allowance they can reset by clearing cookies.
-    if (userType === "guest") {
-      return new ChatbotError("auth_required:chat").toResponse();
+    // Quick Search's local layer stays free and accountless. Hosted Spire AI
+    // remains account-first, with a small, counted guest trial so "Continue as
+    // guest" can actually send a few messages before the signup prompt.
+    if (userType === "guest" && !isToolApprovalFlow) {
+      const guestMessageCount = await getMessageCountByUserId({
+        id: session.user.id,
+      });
+      if (guestMessageCount >= GUEST_MESSAGE_LIMIT) {
+        return new ChatbotError("guest_limit:chat").toResponse();
+      }
     }
 
     const plan = await getEntitlement(session.user.id);
     const isFreePlan = plan.plan === "free";
-
     if (modelRoutingEnabled()) {
       const routed = resolveChatModel({ plan, requestedModel: chatModel });
       chatModel = routed.id;
@@ -338,8 +344,6 @@ export async function POST(request: Request) {
     if (messageCount > plan.messagesPerHour) {
       return new ChatbotError("rate_limit:chat").toResponse();
     }
-
-    const isToolApprovalFlow = Boolean(messages);
 
     let messagesFromDb: DBMessage[] = [];
     let titlePromise: Promise<string> | null = null;
@@ -753,8 +757,7 @@ export async function POST(request: Request) {
             compact: isFreePlan,
             deviceActionsAvailable: Boolean(androidBridge),
             imageRequirement: imageRequirementHint,
-            // Guests are rejected above; hosted chat is the account layer.
-            isGuest: false,
+            isGuest: userType === "guest",
             requestHints,
             supportsTools,
           }),

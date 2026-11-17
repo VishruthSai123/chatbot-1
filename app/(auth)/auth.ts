@@ -58,7 +58,9 @@ export const {
   providers: [
     Credentials({
       async authorize(credentials) {
-        const email = String(credentials.email ?? "");
+        const email = String(credentials.email ?? "")
+          .trim()
+          .toLowerCase();
         const password = String(credentials.password ?? "");
         const users = await getUser(email);
 

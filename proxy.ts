@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
 import { safeNextPath } from "./lib/auth/next";
-import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
+import { readAuthToken } from "./lib/auth-token";
+import { guestRegex } from "./lib/constants";
 
 /**
  * Paths that must stay public even without a session.
@@ -11,6 +11,13 @@ import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
  * from install checks and browsers that do not carry the chat session. Sending
  * them through guest login would turn them into redirects.
  */
+const AUTH_PAGES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+] as const;
+
 const PUBLIC_PREFIXES = [
   "/api/auth",
   "/api/models",
@@ -47,18 +54,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET,
-    secureCookie: !isDevelopmentEnvironment,
-  });
+  const token = await readAuthToken(request);
 
   const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
   // Auth pages do not need a guest session. Creating one here used to burn
   // guest sessions during link prefetches and could turn a cookie problem into
   // a redirect loop. Signed-in visitors are still redirected below.
-  if (!token && (pathname === "/login" || pathname === "/register")) {
+  if (!token && AUTH_PAGES.includes(pathname as (typeof AUTH_PAGES)[number])) {
     return NextResponse.next();
   }
 
@@ -77,7 +80,13 @@ export async function proxy(request: NextRequest) {
 
   const isGuest = guestRegex.test(token?.email ?? "");
 
-  if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
+  if (
+    token &&
+    !isGuest &&
+    ["/login", "/register", "/forgot-password", "/reset-password"].includes(
+      pathname
+    )
+  ) {
     // An already-signed-in visitor who followed a `?next=` link goes where the
     // link pointed, not to the home page.
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));

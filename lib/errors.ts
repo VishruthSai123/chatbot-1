@@ -1,8 +1,11 @@
+import { GUEST_MESSAGE_LIMIT } from "./guest";
+
 export type ErrorType =
   | "bad_request"
   | "unauthorized"
   | "forbidden"
   | "auth_required"
+  | "guest_limit"
   | "not_found"
   | "rate_limit"
   | "offline";
@@ -22,7 +25,6 @@ export type Surface =
 export type ErrorCode = `${ErrorType}:${Surface}`;
 
 export type ErrorVisibility = "response" | "log" | "none";
-
 export const visibilityBySurface: Record<Surface, ErrorVisibility> = {
   activate_gateway: "response",
   api: "response",
@@ -107,6 +109,8 @@ export function getMessageByErrorCode(errorCode: ErrorCode): string {
       return "You need to sign in to view this chat. Please sign in and try again.";
     case "auth_required:chat":
       return "Create a free account to use Spire AI. Quick Search local search stays free and needs no account.";
+    case "guest_limit:chat":
+      return `You've used your ${GUEST_MESSAGE_LIMIT} free guest messages. Create a free account to keep chatting. Quick Search local search stays free.`;
     case "offline:chat":
       return "We're having trouble sending your message. Please check your internet connection and try again.";
 
@@ -133,6 +137,8 @@ function getStatusCodeByType(type: ErrorType) {
     case "forbidden":
       return 403;
     case "auth_required":
+      return 403;
+    case "guest_limit":
       return 403;
     case "not_found":
       return 404;

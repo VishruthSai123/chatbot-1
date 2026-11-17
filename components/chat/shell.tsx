@@ -7,8 +7,15 @@ import {
   useArtifact,
   useArtifactSelector,
 } from "@/hooks/use-artifact";
+import { useGuestStatus } from "@/hooks/use-guest-status";
 import { withAndroidEmbed } from "@/lib/embed";
+import { GUEST_MESSAGE_LIMIT } from "@/lib/guest";
 import type { SampleFile } from "@/lib/samples";
+import {
+  clearPendingShare,
+  readPendingShare,
+  savePendingShare,
+} from "@/lib/share/pending-share";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import { UploadError, uploadFile } from "@/lib/upload/client";
 import { cn } from "@/lib/utils";
@@ -17,10 +24,15 @@ import { Artifact } from "./artifact";
 import { CapabilitiesDialog } from "./capabilities-dialog";
 import { ChatHeader } from "./chat-header";
 import { DataStreamHandler } from "./data-stream-handler";
+import { GuestAuthModal } from "./guest-auth-modal";
 import { submitEditedMessage } from "./message-editor";
 import { Messages } from "./messages";
 import { MultimodalInput } from "./multimodal-input";
 import { toast } from "./toast";
+
+function needsAuthentication(error: unknown): boolean {
+  return error instanceof UploadError && error.requiresAuth;
+}
 
 export function ChatShell() {
   const {
@@ -50,8 +62,25 @@ export function ChatShell() {
   const [capabilitiesFamily, setCapabilitiesFamily] = useState<
     string | undefined
   >(undefined);
+  const [authPromptOpen, setAuthPromptOpen] = useState(false);
+  const [authPromptName, setAuthPromptName] = useState<string | null>(null);
+  const [guestLimitOpen, setGuestLimitOpen] = useState(false);
+  const [pendingShareImported, setPendingShareImported] = useState(false);
+  const pendingShareTokenRef = useRef<string | null>(null);
+  const previousGuestExhaustedRef = useRef<boolean | null>(null);
+  const previousStatusRef = useRef(status);
+  const { status: guestStatus, refresh: refreshGuestStatus } = useGuestStatus();
+  const guestLimitReached = Boolean(
+    guestStatus?.isGuest && guestStatus.exhausted
+  );
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
   const { setArtifact } = useArtifact();
+
+  const requestAttachmentAuth = useCallback(() => {
+    const blocked = attachments.find((attachment) => attachment.authRequired);
+    setAuthPromptName(blocked?.name ?? null);
+    setAuthPromptOpen(true);
+  }, [attachments]);
 
   const focusComposer = useCallback(() => {
     let tries = 0;
@@ -78,22 +107,32 @@ export function ChatShell() {
    * arrives, then uploaded in parallel. The user sees the attachment and a
    * spinner immediately instead of a blank composer while a large file
    * uploads. Each placeholder is replaced in place when its upload finishes.
+   *
+   * If the upload needs an account, the attachment is kept in place and a
+   * sign-in prompt is shown. The token is also kept in session storage so the
+   * same files can be restored after the login page returns.
    */
   const hasHydratedShareRef = useRef(false);
   useEffect(() => {
     if (hasHydratedShareRef.current) {
       return;
     }
-    hasHydratedShareRef.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    const share = params.get("share");
+    const urlShare = params.get("share");
+    const path = window.location.pathname;
+    // A share that was interrupted by sign-in is resumed from storage.
+    const pending = urlShare ? null : readPendingShare(path);
+    const share = urlShare ?? pending?.token;
     if (!share) {
       return;
     }
+    hasHydratedShareRef.current = true;
 
-    // Tells the Android WebView fallback not to inject the same files again.
-    document.documentElement.dataset.androidShare = "handled";
+    if (urlShare) {
+      // Tells the Android WebView fallback not to inject the same files again.
+      document.documentElement.dataset.androidShare = "handled";
+    }
 
     const cleanShareUrl = () => {
       const url = new URL(window.location.href);
@@ -102,6 +141,10 @@ export function ChatShell() {
     };
     const shareBase = "https://appassets.androidplatform.net";
 
+    // Persist before cleanup so the login navigation cannot lose the file.
+    const savedPending = savePendingShare(share, path);
+    pendingShareTokenRef.current = savedPending?.token ?? share;
+
     // biome-ignore lint/complexity/noVoid: the async block handles its own errors
     void (async () => {
       try {
@@ -109,6 +152,10 @@ export function ChatShell() {
           `${shareBase}/share/${encodeURIComponent(share)}/manifest.json`
         );
         if (!response.ok) {
+          if (response.status === 404) {
+            clearPendingShare(share);
+            pendingShareTokenRef.current = null;
+          }
           throw new Error(`Share manifest ${response.status}`);
         }
         const manifest = (await response.json()) as {
@@ -116,34 +163,44 @@ export function ChatShell() {
           files?: Array<{ name: string; type: string; url: string }>;
         };
         const files = Array.isArray(manifest.files) ? manifest.files : [];
-        // The manifest and files are in memory now; drop the token so a
-        // refresh cannot import the same share twice.
+        // The manifest and files are in memory now; drop the query token so a
+        // refresh uses the stored pending share instead of a duplicate URL.
         cleanShareUrl();
 
         if (manifest.text) {
           setInput(manifest.text);
         }
-        const localIds = files.map((_file, index) => `${share}:${index}`);
-        if (files.length > 0) {
-          setAttachments((current) => [
-            ...current,
-            ...files.map((file, index) => ({
-              contentType: file.type || "application/octet-stream",
-              localId: localIds[index],
-              name: file.name || "Shared file",
-              uploading: true,
-              url: "",
-            })),
-          ]);
+        if (files.length === 0) {
+          clearPendingShare(share);
+          pendingShareTokenRef.current = null;
           focusComposer();
+          return;
         }
+
+        const localIds = files.map((_file, index) => `${share}:${index}`);
+        setAttachments((current) => [
+          ...current,
+          ...files.map((file, index) => ({
+            contentType: file.type || "application/octet-stream",
+            localId: localIds[index],
+            name: file.name || "Shared file",
+            uploading: true,
+            url: "",
+          })),
+        ]);
+        setPendingShareImported(true);
+        focusComposer();
 
         let failedUploads = 0;
         let firstError: string | null = null;
+        let authRequiredCount = 0;
+        let firstAuthName: string | null = null;
+
         await Promise.all(
           files.map(async (file, index) => {
             const localId = localIds[index];
             let localUrl: string | null = null;
+            let keepPreview = false;
             try {
               const fileResponse = await fetch(file.url);
               if (!fileResponse.ok) {
@@ -169,26 +226,50 @@ export function ChatShell() {
                 current.map((attachment) =>
                   attachment.localId === localId
                     ? {
+                        ...attachment,
+                        authRequired: false,
                         contentType: uploaded.contentType,
                         documentId: uploaded.documentId,
                         name: uploaded.name,
+                        uploading: false,
                         url: uploaded.url,
                       }
                     : attachment
                 )
               );
             } catch (error) {
-              failedUploads += 1;
-              firstError =
-                error instanceof UploadError
-                  ? error.message
-                  : "Could not attach the shared file. Try again.";
-              console.error("Could not attach a shared file", error);
-              setAttachments((current) =>
-                current.filter((attachment) => attachment.localId !== localId)
-              );
+              if (needsAuthentication(error)) {
+                // Keep the file visible; the sign-in prompt resumes it.
+                keepPreview = true;
+                authRequiredCount += 1;
+                if (!firstAuthName) {
+                  firstAuthName = file.name;
+                }
+                setAttachments((current) =>
+                  current.map((attachment) =>
+                    attachment.localId === localId
+                      ? {
+                          ...attachment,
+                          authRequired: true,
+                          uploading: false,
+                          url: localUrl ?? attachment.url,
+                        }
+                      : attachment
+                  )
+                );
+              } else {
+                failedUploads += 1;
+                firstError =
+                  error instanceof UploadError
+                    ? error.message
+                    : "Could not attach the shared file. Try again.";
+                console.error("Could not attach a shared file", error);
+                setAttachments((current) =>
+                  current.filter((attachment) => attachment.localId !== localId)
+                );
+              }
             } finally {
-              if (localUrl) {
+              if (localUrl && !keepPreview) {
                 // Let React paint the uploaded URL before the blob is freed.
                 const blobUrl = localUrl;
                 window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
@@ -196,6 +277,13 @@ export function ChatShell() {
             }
           })
         );
+
+        if (authRequiredCount > 0) {
+          setAuthPromptName(authRequiredCount === 1 ? firstAuthName : null);
+          setAuthPromptOpen(true);
+        } else {
+          setAuthPromptName(null);
+        }
 
         if (failedUploads > 0) {
           toast({
@@ -221,6 +309,65 @@ export function ChatShell() {
       }
     })();
   }, [chatId, focusComposer, setInput]);
+
+  /**
+   * Clear the stored share only once none of its placeholders still need work.
+   * Removing a locked attachment therefore cancels the deferred import too.
+   */
+  useEffect(() => {
+    const token = pendingShareTokenRef.current;
+    if (!token || !pendingShareImported) {
+      return;
+    }
+    const mine = attachments.filter((attachment) =>
+      attachment.localId?.startsWith(`${token}:`)
+    );
+    if (
+      mine.length === 0 ||
+      !mine.some(
+        (attachment) => attachment.uploading || attachment.authRequired
+      )
+    ) {
+      clearPendingShare(token);
+      pendingShareTokenRef.current = null;
+      setPendingShareImported(false);
+    }
+  }, [attachments, pendingShareImported]);
+
+  // The guest allowance is account-wide. Refresh after each turn so the
+  // composer locks as soon as the third message has been used.
+  useEffect(() => {
+    if (
+      previousStatusRef.current !== status &&
+      (status === "ready" || status === "error")
+    ) {
+      refreshGuestStatus().catch(() => undefined);
+    }
+    previousStatusRef.current = status;
+  }, [status, refreshGuestStatus]);
+
+  useEffect(() => {
+    if (!guestStatus?.isGuest) {
+      previousGuestExhaustedRef.current = null;
+      return;
+    }
+    const { exhausted } = guestStatus;
+    if (previousGuestExhaustedRef.current === false && exhausted) {
+      setGuestLimitOpen(true);
+    }
+    previousGuestExhaustedRef.current = exhausted;
+  }, [guestStatus]);
+
+  // A stale client can still reach the server; the guest-limit error brings
+  // the prompt back without relying on the cached status.
+  useEffect(() => {
+    const handler = () => {
+      setGuestLimitOpen(true);
+      refreshGuestStatus().catch(() => undefined);
+    };
+    window.addEventListener("spire:guest-limit", handler);
+    return () => window.removeEventListener("spire:guest-limit", handler);
+  }, [refreshGuestStatus]);
 
   /**
    * The capability panel lives here rather than in the composer: it is opened
@@ -376,9 +523,12 @@ export function ChatShell() {
                   attachments={attachments}
                   chatId={chatId}
                   editingMessage={editingMessage}
+                  guestLimitReached={guestLimitReached}
                   input={input}
                   onCancelEdit={handleCancelEdit}
+                  onGuestLimitReached={() => setGuestLimitOpen(true)}
                   onModelChange={setCurrentModelId}
+                  onRequestAuth={requestAttachmentAuth}
                   onShowCapabilities={showCapabilities}
                   selectedModelId={currentModelId}
                   sendMessage={
@@ -408,6 +558,25 @@ export function ChatShell() {
               ?.focus();
           }}
           open={capabilitiesOpen}
+        />
+
+        <GuestAuthModal
+          description={
+            authPromptName
+              ? `“${authPromptName}” is saved in the composer. Sign in or create a free account to attach it to Spire AI — it will upload automatically when you come back.`
+              : "Your files are saved in the composer. Sign in or create a free account to attach them to Spire AI — they will upload automatically when you come back."
+          }
+          featureName="file attachments"
+          onOpenChange={setAuthPromptOpen}
+          open={authPromptOpen}
+        />
+
+        <GuestAuthModal
+          allowGuestContinue={false}
+          description={`You've used all ${guestStatus?.limit ?? GUEST_MESSAGE_LIMIT} free guest messages. Create a free account to keep chatting — local Quick Search and on-device tools stay free.`}
+          featureName="Spire AI"
+          onOpenChange={setGuestLimitOpen}
+          open={guestLimitOpen}
         />
 
         <Artifact

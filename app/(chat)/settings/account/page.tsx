@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/app/(auth)/auth";
 import { AccountSettings } from "@/components/chat/account-settings";
 import { guestRegex } from "@/lib/constants";
+import { getUserById } from "@/lib/db/queries";
 
 export const metadata = {
   title: "Account & data",
@@ -15,12 +16,15 @@ export default async function AccountSettingsPage() {
     redirect("/");
   }
 
-  const email = session.user.email ?? "";
+  const account = await getUserById(session.user.id);
+  const email = account?.email ?? session.user.email ?? "";
+  const isGuest = session.user.type === "guest" || guestRegex.test(email);
 
   return (
     <AccountSettings
       email={email}
-      isGuest={session.user.type === "guest" || guestRegex.test(email)}
+      emailVerified={Boolean(account?.emailVerified)}
+      isGuest={isGuest}
     />
   );
 }

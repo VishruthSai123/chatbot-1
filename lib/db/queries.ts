@@ -119,6 +119,38 @@ export async function upgradeGuestUser({
   }
 }
 
+export async function setEmailVerified(userId: string) {
+  try {
+    const [updated] = await db
+      .update(user)
+      .set({ emailVerified: true, updatedAt: new Date() })
+      .where(eq(user.id, userId))
+      .returning({ email: user.email, id: user.id });
+
+    return updated;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
+export async function updateUserPassword(userId: string, password: string) {
+  try {
+    const [updated] = await db
+      .update(user)
+      .set({
+        emailVerified: true,
+        password: generateHashedPassword(password),
+        updatedAt: new Date(),
+      })
+      .where(eq(user.id, userId))
+      .returning({ email: user.email, id: user.id });
+
+    return updated;
+  } catch (error) {
+    throw new ChatbotError("bad_request:database", { cause: error });
+  }
+}
+
 /**
  * Moves an anonymous visitor's work onto the account they just signed in to.
  *
@@ -835,24 +867,24 @@ export async function getMessageCountByUserId({
   differenceInHours,
 }: {
   id: string;
-  differenceInHours: number;
+  differenceInHours?: number;
 }) {
   try {
-    const cutoffTime = new Date(
-      Date.now() - differenceInHours * 60 * 60 * 1000
-    );
+    const filters = [eq(chat.userId, id), eq(message.role, "user")];
+    if (typeof differenceInHours === "number") {
+      filters.push(
+        gte(
+          message.createdAt,
+          new Date(Date.now() - differenceInHours * 60 * 60 * 1000)
+        )
+      );
+    }
 
     const [stats] = await db
       .select({ count: count(message.id) })
       .from(message)
       .innerJoin(chat, eq(message.chatId, chat.id))
-      .where(
-        and(
-          eq(chat.userId, id),
-          gte(message.createdAt, cutoffTime),
-          eq(message.role, "user")
-        )
-      )
+      .where(and(...filters))
       .execute();
 
     return stats?.count ?? 0;

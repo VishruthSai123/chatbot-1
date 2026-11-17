@@ -3,11 +3,22 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { migrationDecision } from "./migration-policy";
+
 config({
   path: ".env.local",
 });
 
 const runMigrate = async () => {
+  const decision = migrationDecision(
+    process.env as Parameters<typeof migrationDecision>[0]
+  );
+
+  if (!decision.run) {
+    console.log(`Skipping migrations: ${decision.reason}.`);
+    process.exit(0);
+  }
+
   if (!process.env.POSTGRES_URL) {
     console.log("POSTGRES_URL not defined, skipping migrations");
     process.exit(0);
@@ -16,7 +27,7 @@ const runMigrate = async () => {
   const connection = postgres(process.env.POSTGRES_URL, { max: 1 });
   const db = drizzle(connection);
 
-  console.log("Running migrations...");
+  console.log(`Running migrations (${decision.reason})...`);
 
   const start = Date.now();
   await migrate(db, { migrationsFolder: "./lib/db/migrations" });

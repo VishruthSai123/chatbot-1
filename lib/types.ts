@@ -228,4 +228,6 @@ export type Attachment = {
   localId?: string;
   /** True while an incoming Android share is still uploading. */
   uploading?: boolean;
+  /** The file is kept in the composer while the user signs in. */
+  authRequired?: boolean;
 };

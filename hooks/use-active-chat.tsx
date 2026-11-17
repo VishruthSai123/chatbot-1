@@ -261,6 +261,18 @@ export function ActiveChatProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const detail = (error as { cause?: unknown }).cause;
+      const detailText = typeof detail === "string" ? detail : error.message;
+      if (
+        (error as { type?: unknown }).type === "guest_limit" ||
+        detailText?.includes("free guest messages")
+      ) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("spire:guest-limit"));
+        }
+        return;
+      }
+
       /*
        * The SDK uses "An error occurred." for late stream/tool noise, including
        * turns where the answer has already streamed. The message itself renders

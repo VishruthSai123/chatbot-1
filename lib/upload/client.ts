@@ -31,11 +31,18 @@ export type UploadedFile = {
 
 export class UploadError extends Error {
   readonly status?: number;
+  readonly requiresAuth: boolean;
 
-  constructor(message: string, status?: number, options?: ErrorOptions) {
+  constructor(
+    message: string,
+    status?: number,
+    options?: ErrorOptions,
+    requiresAuth = false
+  ) {
     super(message, options);
     this.name = "UploadError";
     this.status = status;
+    this.requiresAuth = requiresAuth;
   }
 }
 
@@ -45,35 +52,57 @@ type UploadOptions = {
   chatId?: string;
 };
 
-async function readErrorMessage(
-  response: Response,
+export function parseUploadErrorBody(
+  raw: string,
+  status: number,
   fallback: string
-): Promise<string> {
-  const raw = await response.text().catch(() => "");
+): { message: string; requiresAuth: boolean } {
   const trimmed = raw.trim();
+  let message = fallback;
+  let requiresAuth = status === 401;
 
   if (trimmed.startsWith("{")) {
     try {
-      const parsed = JSON.parse(trimmed) as { error?: unknown };
+      const parsed = JSON.parse(trimmed) as {
+        error?: unknown;
+        requiresAuth?: unknown;
+      };
+      if (parsed.requiresAuth === true) {
+        requiresAuth = true;
+      }
       if (typeof parsed.error === "string" && parsed.error.trim()) {
-        return parsed.error;
+        message = parsed.error;
       }
     } catch {
       // Fall through to the raw text below.
     }
   }
 
-  if (response.status === 413) {
-    return `That file is larger than the server accepts. The limit is ${formatBytes(
+  if (message === fallback && status === 413) {
+    message = `That file is larger than the server accepts. The limit is ${formatBytes(
       MAX_UPLOAD_BYTES
     )}.`;
   }
 
-  if (trimmed) {
-    return trimmed.slice(0, 240);
+  if (message === fallback && trimmed) {
+    message = trimmed.slice(0, 240);
   }
 
-  return fallback;
+  return { message, requiresAuth };
+}
+
+async function toUploadError(
+  response: Response,
+  fallback: string
+): Promise<UploadError> {
+  const raw = await response.text().catch(() => "");
+  const parsed = parseUploadErrorBody(raw, response.status, fallback);
+  return new UploadError(
+    parsed.message,
+    response.status,
+    undefined,
+    parsed.requiresAuth
+  );
 }
 
 function baseMetadata(file: File, chatId?: string) {
@@ -97,10 +126,7 @@ async function uploadDirect(
   });
 
   if (!signResponse.ok) {
-    throw new UploadError(
-      await readErrorMessage(signResponse, "Could not prepare the upload."),
-      signResponse.status
-    );
+    throw await toUploadError(signResponse, "Could not prepare the upload.");
   }
 
   const signed = (await signResponse.json()) as {
@@ -158,10 +184,7 @@ async function uploadDirect(
   });
 
   if (!completeResponse.ok) {
-    throw new UploadError(
-      await readErrorMessage(completeResponse, "Could not finish the upload."),
-      completeResponse.status
-    );
+    throw await toUploadError(completeResponse, "Could not finish the upload.");
   }
 
   const data = (await completeResponse.json()) as {
@@ -193,10 +216,7 @@ async function uploadProxied(
   const response = await fetch(API_PATH, { body: formData, method: "POST" });
 
   if (!response.ok) {
-    throw new UploadError(
-      await readErrorMessage(response, "Upload failed"),
-      response.status
-    );
+    throw await toUploadError(response, "Upload failed");
   }
 
   const data = (await response.json()) as {
@@ -233,6 +253,11 @@ export async function uploadFile(
   try {
     return await uploadDirect(upload, options.chatId);
   } catch (error) {
+    // Auth failures are final: another request with the same session cannot
+    // succeed. Surface them immediately so the composer can prompt sign-in.
+    if (error instanceof UploadError && error.requiresAuth) {
+      throw error;
+    }
     // If the direct upload hop fails for any reason (CORS, network, signing 502, bucket),
     // immediately fall back to the proxied server path if the file size fits within the payload limit.
     if (upload.size <= SAFE_MULTIPART_BYTES) {

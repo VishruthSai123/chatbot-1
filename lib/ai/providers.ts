@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: credential and provider attempts are sequential by design
 import "server-only";
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -10,6 +11,7 @@ import {
 } from "ai";
 
 import { isTestEnvironment } from "../constants";
+import { readGoogleApiKeys } from "./api-keys";
 import { shouldUseFallback } from "./fallback";
 import { DEFAULT_CHAT_MODEL, titleModel, visionModel } from "./models";
 import { errorStatusCode } from "./observability";
@@ -20,29 +22,27 @@ import { errorStatusCode } from "./observability";
  * Gemini is the default and the only provider in the normal path. OpenRouter
  * exists only as an explicit, opt-in fallback for deployments that have
  * configured it; it is never selected silently, and it is never the default.
+ *
+ * Multiple Gemini keys are supported for rolling rotation. The first key is
+ * primary; later keys are tried only after a retryable provider failure. This
+ * keeps an invalid replacement key from taking down the last working one.
  */
 
-const GOOGLE_KEY_NAMES = [
-  "GEMINI_API_KEY",
-  "GOOGLE_GENERATIVE_AI_API_KEY",
-] as const;
+export function getGoogleApiKeys(): string[] {
+  return readGoogleApiKeys();
+}
 
 export function getGoogleApiKey(): string | undefined {
-  for (const name of GOOGLE_KEY_NAMES) {
-    const value = process.env[name]?.trim();
-    if (value) {
-      return value;
-    }
-  }
+  return getGoogleApiKeys()[0];
 }
 
 export function isGoogleConfigured(): boolean {
-  return Boolean(getGoogleApiKey());
+  return getGoogleApiKeys().length > 0;
 }
 
-export function getGoogleProvider() {
-  const apiKey = getGoogleApiKey();
-
+export function getGoogleProvider(
+  apiKey: string | undefined = getGoogleApiKey()
+) {
   if (!apiKey) {
     throw new Error(
       "Gemini is not configured. Set GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY."
@@ -115,6 +115,24 @@ function logFallback(modelId: string, error: unknown) {
   );
 }
 
+function logCredentialFallback(
+  modelId: string,
+  fromIndex: number,
+  toIndex: number,
+  error: unknown
+) {
+  console.warn(
+    JSON.stringify({
+      errorClass: (error as Error | undefined)?.name ?? "UnknownError",
+      event: "ai_credential_fallback",
+      fromCredential: fromIndex + 1,
+      modelId,
+      statusCode: errorStatusCode(error),
+      toCredential: toIndex + 1,
+    })
+  );
+}
+
 function getFallbackModel(): LanguageModel | null {
   if (!isOpenRouterFallbackEnabled()) {
     return null;
@@ -128,47 +146,91 @@ function getFallbackModel(): LanguageModel | null {
 }
 
 /**
- * Retries the *initial* provider call on the fallback model.
+ * Tries the configured credentials in order and then the opt-in provider
+ * fallback once. Only retryable provider failures advance to the next
+ * credential; a bad request or an aborted stream does not.
  *
- * Quota, auth and connection failures happen before the first stream chunk, so
- * this is enough to keep a deployment answering when Gemini is unavailable.
- * A failure after the stream has started is surfaced as an error part instead
- * of silently switching models mid-answer.
+ * This is deliberately bounded: each key is attempted at most once and the
+ * fallback provider at most once. There is no retry loop.
  */
-function withFallback(
-  primary: LanguageModel,
+function withCredentialFallback(
+  candidates: LanguageModel[],
   fallback: LanguageModel | null,
   modelId: string
 ): LanguageModel {
-  if (!fallback) {
+  const [primary, ...rest] = candidates;
+
+  if (!primary) {
+    if (fallback) {
+      return fallback;
+    }
+    throw new Error("No AI credential is configured.");
+  }
+
+  if (rest.length === 0 && !fallback) {
     return primary;
   }
 
-  const fallbackModel = fallback as unknown as LanguageModelV4;
+  const additional = rest as unknown as LanguageModelV4[];
+  const fallbackModel = fallback as unknown as LanguageModelV4 | null;
 
   const middleware: LanguageModelMiddleware = {
     specificationVersion: "v4",
     wrapGenerate: async ({ doGenerate, params }) => {
-      try {
-        return await doGenerate();
-      } catch (error) {
-        if (!shouldUseFallback(error)) {
-          throw error;
+      let lastError: unknown;
+      const attempts = [
+        () => doGenerate(),
+        ...additional.map((candidate) => () => candidate.doGenerate(params)),
+      ];
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        try {
+          return await attempts[index]();
+        } catch (error) {
+          lastError = error;
+          if (!shouldUseFallback(error)) {
+            throw error;
+          }
+          if (index < attempts.length - 1) {
+            logCredentialFallback(modelId, index, index + 1, error);
+          }
         }
-        logFallback(modelId, error);
+      }
+
+      if (fallbackModel && shouldUseFallback(lastError)) {
+        logFallback(modelId, lastError);
         return fallbackModel.doGenerate(params);
       }
+
+      throw lastError ?? new Error("No AI provider is available.");
     },
     wrapStream: async ({ doStream, params }) => {
-      try {
-        return await doStream();
-      } catch (error) {
-        if (!shouldUseFallback(error)) {
-          throw error;
+      let lastError: unknown;
+      const attempts = [
+        () => doStream(),
+        ...additional.map((candidate) => () => candidate.doStream(params)),
+      ];
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        try {
+          return await attempts[index]();
+        } catch (error) {
+          lastError = error;
+          if (!shouldUseFallback(error)) {
+            throw error;
+          }
+          if (index < attempts.length - 1) {
+            logCredentialFallback(modelId, index, index + 1, error);
+          }
         }
-        logFallback(modelId, error);
+      }
+
+      if (fallbackModel && shouldUseFallback(lastError)) {
+        logFallback(modelId, lastError);
         return fallbackModel.doStream(params);
       }
+
+      throw lastError ?? new Error("No AI provider is available.");
     },
   };
 
@@ -192,9 +254,10 @@ export function getLanguageModel(modelId?: string): LanguageModel {
     return myProvider.chat;
   }
 
+  const keys = getGoogleApiKeys();
   const fallback = getFallbackModel();
 
-  if (!isGoogleConfigured()) {
+  if (keys.length === 0) {
     if (fallback) {
       logFallback(id, new Error("Gemini API key is missing"));
       return fallback;
@@ -204,9 +267,11 @@ export function getLanguageModel(modelId?: string): LanguageModel {
     );
   }
 
-  const primary = getGoogleProvider()(id) as unknown as LanguageModel;
+  const candidates = keys.map(
+    (key) => getGoogleProvider(key)(id) as unknown as LanguageModel
+  );
 
-  return withFallback(primary, fallback, id);
+  return withCredentialFallback(candidates, fallback, id);
 }
 
 export function getTitleModel(): LanguageModel {

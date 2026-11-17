@@ -27,10 +27,37 @@ export default function Page() {
 
   const { update: updateSession } = useSession();
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("verified") === "1") {
+      toast({
+        description: "Email verified. Sign in to continue.",
+        type: "success",
+      });
+    } else if (params.get("verify") === "invalid") {
+      toast({
+        description: "That verification link is invalid or has expired.",
+        type: "error",
+      });
+    } else if (params.get("verify") === "rate_limited") {
+      toast({
+        description: "Too many verification attempts. Please wait and retry.",
+        type: "error",
+      });
+    }
+  }, []);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: router and updateSession are stable refs
   useEffect(() => {
     if (state.status === "failed") {
       toast({ description: "Invalid credentials!", type: "error" });
+    } else if (state.status === "rate_limited") {
+      toast({
+        description:
+          "Too many sign-in attempts. Please wait a few minutes and try again.",
+        type: "error",
+      });
     } else if (state.status === "invalid_data") {
       toast({
         description: "Failed validating your submission!",
@@ -56,15 +83,23 @@ export default function Page() {
       </p>
       <AuthForm action={handleSubmit} defaultEmail={email}>
         <SubmitButton isSuccessful={isSuccessful}>Sign in</SubmitButton>
-        <p className="text-center text-[13px] text-muted-foreground">
-          {"No account? "}
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-center text-[13px] text-muted-foreground">
           <Link
             className="text-foreground underline-offset-4 hover:underline"
-            href={signUpHref}
+            href="/forgot-password"
           >
-            Sign up
+            Forgot password?
           </Link>
-        </p>
+          <span>
+            {"No account? "}
+            <Link
+              className="text-foreground underline-offset-4 hover:underline"
+              href={signUpHref}
+            >
+              Sign up
+            </Link>
+          </span>
+        </div>
       </AuthForm>
     </>
   );

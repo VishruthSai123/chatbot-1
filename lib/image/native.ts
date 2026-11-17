@@ -155,7 +155,7 @@ export async function resizeToSpec({
     pipeline = pipeline.withMetadata({ density: geometry.dpi });
   }
 
-  let outputBuffer = await applyFormat(
+  let outputBuffer: Buffer = await applyFormat(
     pipeline,
     format,
     quality,

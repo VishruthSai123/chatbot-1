@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, FileText } from "lucide-react";
+import { FileSpreadsheet, FileText, Lock } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useState } from "react";
 
@@ -8,7 +8,7 @@ import { GuestAuthModal } from "@/components/chat/guest-auth-modal";
 import { useArtifact } from "@/hooks/use-artifact";
 import { useIsGuest } from "@/hooks/use-is-guest";
 import type { Attachment } from "@/lib/types";
-import { generateUUID } from "@/lib/utils";
+import { cn, generateUUID } from "@/lib/utils";
 import { Spinner } from "../ui/spinner";
 import { CrossSmallIcon } from "./icons";
 
@@ -16,12 +16,14 @@ export const PreviewAttachment = ({
   attachment,
   isUploading = false,
   onRemove,
+  onRequestAuth,
 }: {
   attachment: Attachment;
   isUploading?: boolean;
   onRemove?: () => void;
+  onRequestAuth?: () => void;
 }) => {
-  const { name, url, contentType, documentId } = attachment;
+  const { name, url, contentType, documentId, authRequired } = attachment;
   const { setArtifact } = useArtifact();
   const { isGuest } = useIsGuest();
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
@@ -52,7 +54,14 @@ export const PreviewAttachment = ({
       true;
 
   const handleOpenStudio = useCallback(() => {
-    if (isUploading || !(isImage || isPdf || isSheet || isDoc || isAudio)) {
+    if (isUploading) {
+      return;
+    }
+    if (authRequired) {
+      onRequestAuth?.();
+      return;
+    }
+    if (!(isImage || isPdf || isSheet || isDoc || isAudio)) {
       return;
     }
     if (isGuest) {
@@ -86,6 +95,8 @@ export const PreviewAttachment = ({
     });
   }, [
     isUploading,
+    authRequired,
+    onRequestAuth,
     isImage,
     isPdf,
     isSheet,
@@ -186,7 +197,26 @@ export const PreviewAttachment = ({
         </div>
       )}
 
-      {isUploading ? (
+      {authRequired ? (
+        <button
+          className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-1 rounded-xl bg-black/55 px-1 text-white backdrop-blur-[2px] transition-colors hover:bg-black/65"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (onRequestAuth) {
+              onRequestAuth();
+            } else {
+              setShowAuthModal(true);
+            }
+          }}
+          title="Sign in to attach this file"
+          type="button"
+        >
+          <Lock className="size-4" />
+          <span className="px-1 text-center text-[9px] font-medium leading-tight">
+            Sign in to attach
+          </span>
+        </button>
+      ) : isUploading ? (
         <div
           className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40 backdrop-blur-sm"
           data-testid="input-attachment-loader"
@@ -197,7 +227,10 @@ export const PreviewAttachment = ({
 
       {onRemove && !isUploading && (
         <button
-          className="absolute top-1.5 right-1.5 z-10 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/80 group-hover:opacity-100"
+          className={cn(
+            "absolute top-1.5 right-1.5 z-10 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-opacity hover:bg-black/80",
+            authRequired ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
@@ -209,7 +242,12 @@ export const PreviewAttachment = ({
       )}
 
       <GuestAuthModal
-        featureName="Image Studio"
+        description={
+          authRequired
+            ? "Sign in to attach this file to your message. It stays in the composer while you sign in."
+            : undefined
+        }
+        featureName={authRequired ? "file attachments" : "Image Studio"}
         onOpenChange={setShowAuthModal}
         open={showAuthModal}
       />

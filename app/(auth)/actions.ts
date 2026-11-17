@@ -1,8 +1,11 @@
 "use server";
 
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { z } from "zod";
 
+import { authEmailOrigin } from "@/lib/auth/origin";
+import { sendVerificationForUser } from "@/lib/auth/verification";
 import {
   claimGuestWork,
   createUser,
@@ -15,12 +18,18 @@ import { checkIpRateLimitFor } from "@/lib/ratelimit";
 import { auth, signIn } from "./auth";
 
 const authFormSchema = z.object({
-  email: z.email(),
+  email: z.email().transform((value) => value.trim().toLowerCase()),
   password: z.string().min(6),
 });
 
 export type LoginActionState = {
-  status: "idle" | "in_progress" | "success" | "failed" | "invalid_data";
+  status:
+    | "idle"
+    | "in_progress"
+    | "success"
+    | "failed"
+    | "invalid_data"
+    | "rate_limited";
 };
 
 export const login = async (
@@ -28,6 +37,19 @@ export const login = async (
   formData: FormData
 ): Promise<LoginActionState> => {
   try {
+    const headerStore = await headers();
+    const ip = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim();
+    const allowed = await checkIpRateLimitFor({
+      ip,
+      key: "login",
+      limit: 10,
+      windowSeconds: 5 * 60,
+    });
+
+    if (!allowed) {
+      return { status: "rate_limited" };
+    }
+
     const validatedData = authFormSchema.parse({
       email: formData.get("email"),
       password: formData.get("password"),
@@ -84,7 +106,8 @@ export type RegisterActionState = {
     | "success"
     | "failed"
     | "user_exists"
-    | "invalid_data";
+    | "invalid_data"
+    | "rate_limited";
 };
 
 export const register = async (
@@ -101,7 +124,7 @@ export const register = async (
     });
 
     if (!allowed) {
-      return { status: "failed" } as RegisterActionState;
+      return { status: "rate_limited" } as RegisterActionState;
     }
 
     const validatedData = authFormSchema.parse({
@@ -141,6 +164,27 @@ export const register = async (
     if (account) {
       await ensureEntitlement(account.id).catch((error) => {
         console.warn("Non-fatal: failed to create free entitlement:", error);
+      });
+
+      // Resolve the origin while the request context still exists, then send
+      // after the response so registration is not held up by the mail provider.
+      const origin = await authEmailOrigin().catch(() => undefined);
+
+      after(async () => {
+        try {
+          await sendVerificationForUser({
+            email: account.email,
+            origin,
+            userId: account.id,
+          });
+        } catch (error) {
+          console.warn(
+            JSON.stringify({
+              errorClass: error instanceof Error ? error.name : "UnknownError",
+              event: "registration_verification_email_failed",
+            })
+          );
+        }
       });
     }
 

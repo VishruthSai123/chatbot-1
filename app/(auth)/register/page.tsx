@@ -32,13 +32,22 @@ export default function Page() {
       toast({ description: "Account already exists!", type: "error" });
     } else if (state.status === "failed") {
       toast({ description: "Failed to create account!", type: "error" });
+    } else if (state.status === "rate_limited") {
+      toast({
+        description:
+          "Too many sign-up attempts. Please wait a few minutes and try again.",
+        type: "error",
+      });
     } else if (state.status === "invalid_data") {
       toast({
         description: "Failed validating your submission!",
         type: "error",
       });
     } else if (state.status === "success") {
-      toast({ description: "Account created!", type: "success" });
+      toast({
+        description: "Account created. Check your inbox to verify your email.",
+        type: "success",
+      });
       setIsSuccessful(true);
       updateSession();
       router.replace(returnHref);

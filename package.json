@@ -15,10 +15,15 @@
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:check": "drizzle-kit check",
+    "db:target": "tsx scripts/check-db-target.ts",
+    "keys:check": "tsx scripts/check-ai-keys.ts",
     "db:up": "drizzle-kit up",
     "usage:report": "tsx scripts/usage-report.ts",
     "plan:set": "tsx scripts/set-plan.ts",
     "load:ledger": "node scripts/load-test-ledger.mjs",
+    "load:check": "node scripts/load/check-target.mjs",
+    "load:api": "k6 run scripts/load/k6-api.js",
+    "load:chat": "k6 run scripts/load/k6-chat.js",
     "reconcile": "tsx scripts/reconcile-usage.ts",
     "db:rollback:scale": "node scripts/rollback-scale-rails.mjs",
     "test": "export PLAYWRIGHT=True && pnpm exec playwright test",
@@ -34,8 +39,8 @@
     "@codemirror/state": "^6.7.0",
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.43.5",
-    "@img/sharp-libvips-linux-x64": "1.0.4",
-    "@img/sharp-linux-x64": "0.33.5",
+    "@img/sharp-libvips-linux-x64": "1.3.4",
+    "@img/sharp-linux-x64": "0.35.5",
     "@imgly/background-removal-node": "^1.4.5",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@opentelemetry/api": "^1.9.1",
@@ -47,7 +52,6 @@
     "@streamdown/mermaid": "^1.0.2",
     "@supabase/supabase-js": "^2.118.0",
     "@vercel/analytics": "^2.0.1",
-    "@vercel/blob": "^0.24.1",
     "@vercel/functions": "^3.7.5",
     "@vercel/otel": "^1.12.0",
     "ai": "7.0.141",
@@ -74,8 +78,8 @@
     "motion": "^12.42.2",
     "music-metadata": "^12.2.3",
     "nanoid": "^5.1.16",
-    "next": "16.2.10",
-    "next-auth": "5.0.0-beta.25",
+    "next": "16.4.6",
+    "next-auth": "5.0.0-beta.32",
     "next-themes": "^0.3.0",
     "onnxruntime-node": "1.17.0",
     "orderedmap": "^2.1.1",
@@ -99,7 +103,7 @@
     "redis": "^6.1.0",
     "resumable-stream": "^2.2.12",
     "server-only": "^0.0.1",
-    "sharp": "0.33.5",
+    "sharp": "0.35.5",
     "shiki": "^3.21.0",
     "sonner": "^2.0.7",
     "streamdown": "^2.3.0",
@@ -133,7 +137,7 @@
     "ultracite": "^7.8.4"
   },
   "optionalDependencies": {
-    "@img/sharp-win32-x64": "0.33.5"
+    "@img/sharp-win32-x64": "0.35.5"
   },
   "lint-staged": {
     "*": "corepack pnpm run fix --"
@@ -155,8 +159,14 @@
     },
     "overrides": {
       "@ai-sdk/provider": "4.0.27",
-      "sharp": "0.33.5"
-    }
+      "sharp": "0.35.5"
+    },
+    "onlyBuiltDependencies": [
+      "sharp",
+      "@img/sharp-linux-x64",
+      "@img/sharp-libvips-linux-x64",
+      "@img/sharp-win32-x64"
+    ]
   },
   "engines": {
     "node": "24.x"

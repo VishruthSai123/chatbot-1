@@ -31,6 +31,41 @@ export const user = pgTable("User", {
 
 export type User = InferSelectModel<typeof user>;
 
+/**
+ * Single-use tokens for email verification and password reset.
+ *
+ * Only a SHA-256 hash of the token is stored. The raw token exists in the
+ * email link and in memory for the request that creates it; a database leak
+ * therefore cannot be replayed as a reset link.
+ */
+export const emailToken = pgTable(
+  "EmailToken",
+  {
+    createdAt: timestamp("createdAt", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
+    id: uuid("id").primaryKey().notNull().defaultRandom(),
+    purpose: varchar("purpose", { length: 32 }).notNull(),
+    tokenHash: text("tokenHash").notNull(),
+    usedAt: timestamp("usedAt", { withTimezone: true }),
+    userId: uuid("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => ({
+    expiresIdx: index("EmailToken_expires_idx").on(table.expiresAt),
+    tokenHashIdx: uniqueIndex("EmailToken_tokenHash_key").on(table.tokenHash),
+    userPurposeIdx: index("EmailToken_user_purpose_idx").on(
+      table.userId,
+      table.purpose,
+      table.createdAt
+    ),
+  })
+);
+
+export type EmailToken = InferSelectModel<typeof emailToken>;
+
 export const chat = pgTable("Chat", {
   createdAt: timestamp("createdAt").notNull(),
   id: uuid("id").primaryKey().notNull().defaultRandom(),

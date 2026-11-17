@@ -1,5 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
+
+import { like } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { db } from "@/lib/db/client";
+import { rateLimit } from "@/lib/db/schema";
 import { cleanupInactiveGuests } from "@/lib/maintenance/guest-cleanup";
 import { cleanupQuickAnswerEvents } from "@/lib/maintenance/quick-answer-cleanup";
 import { expireStaleReservations } from "@/lib/usage/ledger";
@@ -10,16 +15,72 @@ export const maxDuration = 60;
  * Scheduled maintenance, protected by a bearer secret. It is public at the
  * proxy only for this path; the secret is the actual gate.
  */
+function authorized(authorization: string): boolean {
+  const expected = [
+    process.env.CRON_SECRET,
+    process.env.MAINTENANCE_CLEANUP_TOKEN,
+  ].filter((value): value is string => Boolean(value));
+
+  const provided = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : "";
+
+  if (!provided) {
+    return false;
+  }
+
+  return expected.some((secret) => {
+    const left = Buffer.from(secret);
+    const right = Buffer.from(provided);
+    return left.length === right.length && timingSafeEqual(left, right);
+  });
+}
+
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization") ?? "";
 
-  if (!secret || authorization !== `Bearer ${secret}`) {
+  if (!authorized(authorization)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") ?? "cleanup";
+
+  if (action === "clear-guest-rate-limits") {
+    const cleared = await db
+      .delete(rateLimit)
+      .where(like(rateLimit.key, "ip-rate-limit:guest-create:%"))
+      .returning({ key: rateLimit.key });
+
+    return NextResponse.json(
+      { action, cleared: cleared.length, success: true },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  if (action === "guest-rate-limit-status") {
+    const rows = await db
+      .select({
+        count: rateLimit.count,
+        key: rateLimit.key,
+        windowStart: rateLimit.windowStart,
+      })
+      .from(rateLimit)
+      .where(like(rateLimit.key, "ip-rate-limit:guest-create:%"));
+
+    return NextResponse.json(
+      {
+        action,
+        rows: rows.map((row) => ({
+          count: row.count,
+          keyTail: row.key.slice(-8),
+          windowStart: row.windowStart,
+        })),
+        success: true,
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   if (action !== "cleanup") {
     return NextResponse.json({ error: "Unknown action" }, { status: 404 });
