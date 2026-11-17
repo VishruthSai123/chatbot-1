@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db/client";
 import { rateLimit } from "@/lib/db/schema";
+import { emailConfiguration } from "@/lib/email/send";
 import { cleanupInactiveGuests } from "@/lib/maintenance/guest-cleanup";
 import { cleanupQuickAnswerEvents } from "@/lib/maintenance/quick-answer-cleanup";
 import { expireStaleReservations } from "@/lib/usage/ledger";
@@ -54,6 +55,47 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       { action, cleared: cleared.length, success: true },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  if (action === "email-status") {
+    const config = emailConfiguration();
+    let domains: Array<{ name?: string; status?: string }> = [];
+    let providerStatus = 0;
+
+    if (config.apiKeyPresent) {
+      try {
+        const response = await fetch("https://api.resend.com/domains", {
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY?.trim()}`,
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        providerStatus = response.status;
+
+        if (response.ok) {
+          const body = (await response.json()) as {
+            data?: Array<{ name?: string; status?: string }>;
+          };
+          domains = (body.data ?? []).map((domain) => ({
+            name: domain.name,
+            status: domain.status,
+          }));
+        }
+      } catch {
+        providerStatus = 0;
+      }
+    }
+
+    return NextResponse.json(
+      {
+        action,
+        config,
+        domains,
+        providerStatus,
+        success: providerStatus === 200,
+      },
       { headers: { "Cache-Control": "no-store" } }
     );
   }
