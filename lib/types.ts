@@ -15,6 +15,7 @@ import type {
   docStats,
   docSummarize,
 } from "./ai/tools/doc-tools";
+import type { editDocument } from "./ai/tools/edit-document";
 import type { getWeather } from "./ai/tools/get-weather";
 import type {
   imageCollage,
@@ -59,6 +60,7 @@ import type {
   sheetRemoveDuplicates,
   sheetSummaryStats,
 } from "./ai/tools/sheet-tools";
+import type { slidesCreate, slidesEdit } from "./ai/tools/slides-tools";
 import type { updateDocument } from "./ai/tools/update-document";
 import type { readUrl, webSearch } from "./ai/tools/web-search";
 import type { Suggestion } from "./db/schema";
@@ -73,6 +75,7 @@ type weatherTool = InferUITool<typeof getWeather>;
 type createDocumentTool = InferUITool<ReturnType<typeof createDocument>>;
 type deviceActionTool = InferUITool<typeof deviceAction>;
 type updateDocumentTool = InferUITool<ReturnType<typeof updateDocument>>;
+type editDocumentTool = InferUITool<ReturnType<typeof editDocument>>;
 type requestSuggestionsTool = InferUITool<
   ReturnType<typeof requestSuggestions>
 >;
@@ -113,6 +116,8 @@ type audioInfoTool = InferUITool<ReturnType<typeof audioInfo>>;
 type audioTranscribeTool = InferUITool<ReturnType<typeof audioTranscribe>>;
 type audioOpenTool = InferUITool<ReturnType<typeof audioOpen>>;
 type downloadMediaTool = InferUITool<ReturnType<typeof downloadMedia>>;
+type slidesCreateTool = InferUITool<ReturnType<typeof slidesCreate>>;
+type slidesEditTool = InferUITool<ReturnType<typeof slidesEdit>>;
 type notebookCreateTool = InferUITool<ReturnType<typeof notebookCreate>>;
 type notebookAskTool = InferUITool<ReturnType<typeof notebookAsk>>;
 type notebookGenerateTool = InferUITool<ReturnType<typeof notebookGenerate>>;
@@ -132,6 +137,7 @@ export type ChatTools = {
   createDocument: createDocumentTool;
   deviceAction: deviceActionTool;
   updateDocument: updateDocumentTool;
+  editDocument: editDocumentTool;
   requestSuggestions: requestSuggestionsTool;
   imageResize: imageResizeTool;
   imageRemoveBg: imageRemoveBgTool;
@@ -177,6 +183,8 @@ export type ChatTools = {
   audioTranscribe: audioTranscribeTool;
   audioOpen: audioOpenTool;
   downloadMedia: downloadMediaTool;
+  slidesCreate: slidesCreateTool;
+  slidesEdit: slidesEditTool;
 };
 
 export type WaitingStatusData = {

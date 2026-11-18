@@ -342,6 +342,31 @@ const PurePreviewMessage = ({
       );
     }
 
+    if (type === "tool-editDocument") {
+      const { toolCallId } = part;
+
+      if (part.output && "error" in part.output) {
+        return (
+          <div
+            className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-500 dark:bg-red-950/50"
+            key={toolCallId}
+          >
+            Error editing document: {String(part.output.error)}
+          </div>
+        );
+      }
+
+      return (
+        <div className="relative" key={toolCallId}>
+          <DocumentPreview
+            args={{ ...part.output, isUpdate: true }}
+            isReadonly={isReadonly}
+            result={part.output}
+          />
+        </div>
+      );
+    }
+
     if (type === "tool-requestSuggestions") {
       const { toolCallId, state } = part;
 
@@ -755,6 +780,75 @@ const PurePreviewMessage = ({
           >
             {`${SEARCH_TOOL_LABELS[type]}...`}
           </Shimmer>
+        </div>
+      );
+    }
+
+    if (type === "tool-imageListPresets") {
+      const { toolCallId, state } = part;
+      const { output } = part as {
+        output?: {
+          message?: string;
+          presets?: {
+            dpi: number;
+            height: number;
+            key: string;
+            name: string;
+            pixelHeight: number;
+            pixelWidth: number;
+            region?: string;
+            unit: string;
+            width: number;
+          }[];
+        };
+      };
+      const presets = output?.presets ?? [];
+
+      return (
+        <div
+          className="w-[min(100%,450px)] rounded-xl border border-border/50 bg-muted/30 p-3 text-xs shadow-sm"
+          key={toolCallId}
+        >
+          <div className="flex items-center gap-1.5 font-medium text-foreground/80">
+            <SparklesIcon size={13} />
+            <span>Photo size presets</span>
+          </div>
+          {state === "output-available" ? (
+            presets.length > 0 ? (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {presets.map((preset) => (
+                  <div
+                    className="flex items-start justify-between gap-3"
+                    key={preset.key}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-foreground/90">
+                        {preset.name}
+                      </p>
+                      {preset.region ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          {preset.region}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {preset.width}×{preset.height} {preset.unit} ·{" "}
+                      {preset.dpi} DPI · {preset.pixelWidth}×
+                      {preset.pixelHeight}px
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1.5 text-muted-foreground">
+                {output?.message ?? "No preset matched that query."}
+              </p>
+            )
+          ) : (
+            <p className="mt-1.5 text-muted-foreground">
+              Looking up photo sizes…
+            </p>
+          )}
         </div>
       );
     }
