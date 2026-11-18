@@ -24,9 +24,11 @@ export function resolveChatModel(input: {
 }): RoutedModel {
   if (input.plan.plan === "free") {
     return {
-      id: "gemini-3.1-flash-lite",
+      id: "gemini-3.5-flash-lite",
       maxInputTokens: 4096,
-      maxOutputTokens: 400,
+      // 400 tokens truncates tool arguments such as a document body. The task
+      // quota, not the output cap, is what keeps the free tier bounded.
+      maxOutputTokens: 4096,
     };
   }
 
@@ -34,7 +36,7 @@ export function resolveChatModel(input: {
     return {
       id: "gemini-3.5-flash-lite",
       maxInputTokens: 8000,
-      maxOutputTokens: 600,
+      maxOutputTokens: 4096,
     };
   }
 
