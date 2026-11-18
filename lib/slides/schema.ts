@@ -180,6 +180,12 @@ export function normaliseDeck(deck: Deck): Deck {
         }
       }
 
+      if (repaired.layout === "bullets" && !repaired.bullets?.length) {
+        // A bullets slide with no bullets renders as a blank card. A section
+        // slide is the honest fallback for a slide that is only a title.
+        repaired.layout = "section";
+      }
+
       if (repaired.quote) {
         repaired.quote = {
           attribution: clamp(repaired.quote.attribution, 70),

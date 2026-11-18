@@ -262,7 +262,32 @@ export const slidesEdit = ({ dataStream, session }: SlidesToolsProps) =>
         });
 
         const slides = [...ref.deck.slides];
-        slides[slideIndex] = output as Slide;
+        const rewritten = output as Slide;
+
+        /*
+         * A model asked to make a slide "shorter" sometimes drops the content
+         * entirely and returns only a title. Keeping the previous body is
+         * better than rendering an empty slide: the request was to shorten the
+         * copy, not to delete it.
+         */
+        if (
+          rewritten.layout === "bullets" &&
+          !rewritten.bullets?.length &&
+          existing.layout === "bullets"
+        ) {
+          rewritten.bullets = existing.bullets;
+        }
+
+        if (
+          rewritten.layout === "two-column" &&
+          (rewritten.columns?.length ?? 0) < 2 &&
+          existing.layout === "two-column" &&
+          existing.columns?.length === 2
+        ) {
+          rewritten.columns = existing.columns;
+        }
+
+        slides[slideIndex] = rewritten;
 
         const deck = normaliseDeck({ ...ref.deck, slides });
 

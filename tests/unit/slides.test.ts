@@ -87,6 +87,14 @@ test.describe("normalising a generated deck", () => {
     expect(output.slides[0].layout).toBe("section");
   });
 
+  test("turns a bullets slide with no bullets into a section", () => {
+    const output = normaliseDeck(
+      deck([{ bullets: [], layout: "bullets", title: "Nothing here" }])
+    );
+
+    expect(output.slides[0].layout).toBe("section");
+  });
+
   test("caps the deck at twenty slides", () => {
     const slides = Array.from({ length: 30 }, (_, index) => ({
       layout: "section" as const,
