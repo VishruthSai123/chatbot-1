@@ -315,7 +315,9 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex min-h-svh w-full flex-1 flex-col overflow-x-hidden bg-sidebar [transform:translate3d(0,0,0)]",
+        // The main surface is its own scroll area. The sidebar must not share
+        // the document scroller with Account/Library content.
+        "relative flex h-dvh min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain bg-sidebar [transform:translate3d(0,0,0)]",
         className
       )}
       {...props}
@@ -382,7 +384,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto [--radius:var(--radius-xl)] group-data-[collapsible=icon]:overflow-hidden",
+        "no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto overscroll-contain [--radius:var(--radius-xl)] group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}
