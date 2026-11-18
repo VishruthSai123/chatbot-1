@@ -4,6 +4,7 @@ import { decodeSlidesRef, encodeSlidesRef } from "../../lib/slides/ref";
 import {
   type Deck,
   normaliseDeck,
+  slideHasSubstance,
   slideIsComplete,
   slideSummary,
 } from "../../lib/slides/schema";
@@ -142,6 +143,46 @@ test.describe("whether a slide is complete", () => {
   test("title and section are always complete", () => {
     expect(slideIsComplete({ layout: "title", title: "x" })).toBe(true);
     expect(slideIsComplete({ layout: "section", title: "x" })).toBe(true);
+  });
+});
+
+test.describe("whether a slide has substance", () => {
+  test("a heading alone is not content", () => {
+    expect(slideHasSubstance({ layout: "section", title: "x" })).toBe(false);
+    expect(slideHasSubstance({ layout: "title", title: "x" })).toBe(false);
+    expect(
+      slideHasSubstance({ bullets: [], layout: "bullets", title: "x" })
+    ).toBe(false);
+  });
+
+  test("bullets, columns, quotes and stats are content", () => {
+    expect(
+      slideHasSubstance({ bullets: ["a"], layout: "bullets", title: "x" })
+    ).toBe(true);
+    expect(
+      slideHasSubstance({
+        columns: [
+          { body: "a", heading: "A" },
+          { body: "b", heading: "B" },
+        ],
+        layout: "two-column",
+        title: "x",
+      })
+    ).toBe(true);
+    expect(
+      slideHasSubstance({
+        layout: "quote",
+        quote: { text: "hi" },
+        title: "x",
+      })
+    ).toBe(true);
+    expect(
+      slideHasSubstance({
+        layout: "stat",
+        stat: { label: "Growth", value: "42%" },
+        title: "x",
+      })
+    ).toBe(true);
   });
 });
 

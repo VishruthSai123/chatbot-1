@@ -19,6 +19,7 @@ import {
   MIN_SLIDES,
   normaliseDeck,
   type Slide,
+  slideHasSubstance,
 } from "@/lib/slides/schema";
 import { themeIdFor } from "@/lib/slides/themes";
 import type { ChatMessage } from "@/lib/types";
@@ -82,6 +83,28 @@ const COPY_RULES = [
 ].join("\n");
 
 /**
+ * The structure a deck must follow to be useful.
+ *
+ * A model left to itself will fill a five-slide deck with section dividers,
+ * which look designed and say nothing. The first attempt is checked for
+ * substance; this instruction is repeated on the one corrective retry.
+ */
+const DECK_STRUCTURE_RULES = [
+  "STRUCTURE (MANDATORY):",
+  "- Slide 1 uses the title layout.",
+  "- The last slide uses the section layout as a closing.",
+  "- Every slide in between uses the bullets layout with 3 to 5 concrete bullets.",
+  "- Do not use the section layout for a content slide.",
+].join("\n");
+
+/** True when the user explicitly asked for a divider rather than content. */
+function asksForDivider(text: string): boolean {
+  return /\b(?:section|divider|title[- ]only|remove (?:the )?bullets|blank)\b/i.test(
+    text
+  );
+}
+
+/**
  * Creates a presentation.
  *
  * The model returns a structured deck rather than prose, so the renderer can
@@ -102,23 +125,51 @@ export const slidesCreate = ({ dataStream, session }: SlidesToolsProps) =>
       const count = Math.min(MAX_SLIDES, Math.max(MIN_SLIDES, slideCount ?? 8));
 
       try {
-        const { output } = await generateText({
-          model: getGroundingModel(),
-          output: Output.object({ schema: generatedDeckSchema }),
-          prompt: [
-            COPY_RULES,
-            "",
-            `TOPIC: ${topic}`,
-            audience ? `AUDIENCE: ${audience}` : "",
-            tone ? `TONE: ${tone}` : "",
-            `SLIDES: exactly ${count}`,
-            theme ? `THEME: ${theme}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        });
+        const generateDeck = (corrective?: string) =>
+          generateText({
+            model: getGroundingModel(),
+            output: Output.object({ schema: generatedDeckSchema }),
+            prompt: [
+              COPY_RULES,
+              "",
+              DECK_STRUCTURE_RULES,
+              corrective ?? "",
+              `TOPIC: ${topic}`,
+              audience ? `AUDIENCE: ${audience}` : "",
+              tone ? `TONE: ${tone}` : "",
+              `SLIDES: exactly ${count}`,
+              theme ? `THEME: ${theme}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          });
 
-        const deck = normaliseDeck(output as Deck);
+        const { output } = await generateDeck();
+        let deck = normaliseDeck(output as Deck);
+        const minimumContent = Math.max(1, Math.min(3, count - 2));
+        const contentCount = deck.slides.filter(slideHasSubstance).length;
+
+        /*
+         * A deck made only of title and section slides looks designed and says
+         * nothing. Retry once with the structure spelled out; a failure here
+         * must not lose the first deck, so it falls back to what we have.
+         */
+        if (deck.slides.length < MIN_SLIDES || contentCount < minimumContent) {
+          try {
+            const { output: retryOutput } = await generateDeck(
+              `The previous attempt returned ${contentCount} content slide${
+                contentCount === 1 ? "" : "s"
+              }. This time every middle slide MUST have 3 to 5 concrete bullets.`
+            );
+            const retryDeck = normaliseDeck(retryOutput as Deck);
+
+            if (retryDeck.slides.length >= MIN_SLIDES) {
+              deck = retryDeck;
+            }
+          } catch (retryError) {
+            console.error("slidesCreate retry failed:", retryError);
+          }
+        }
 
         if (deck.slides.length < MIN_SLIDES) {
           return {
@@ -246,23 +297,65 @@ export const slidesEdit = ({ dataStream, session }: SlidesToolsProps) =>
           };
         }
 
-        const { output } = await generateText({
-          model: getGroundingModel(),
-          output: Output.object({ schema: generatedSlideSchema }),
-          prompt: [
-            COPY_RULES,
-            "",
-            `DECK: ${ref.deck.title}`,
-            `SLIDE ${slideIndex + 1} OF ${ref.deck.slides.length}`,
-            `CURRENT SLIDE (JSON): ${JSON.stringify(existing)}`,
-            "",
-            `WHAT TO CHANGE: ${instruction}`,
-            "Return the whole slide, not just the changed part.",
-          ].join("\n"),
-        });
-
         const slides = [...ref.deck.slides];
-        const rewritten = output as Slide;
+
+        const generateSlide = (corrective?: string) =>
+          generateText({
+            model: getGroundingModel(),
+            output: Output.object({ schema: generatedSlideSchema }),
+            prompt: [
+              COPY_RULES,
+              "",
+              `DECK: ${ref.deck.title}`,
+              `SLIDE ${slideIndex + 1} OF ${ref.deck.slides.length}`,
+              `CURRENT SLIDE (JSON): ${JSON.stringify(existing)}`,
+              "",
+              `WHAT TO CHANGE: ${instruction}`,
+              corrective ?? "",
+              "Return the whole slide, not just the changed part.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          });
+
+        const { output } = await generateSlide();
+        let rewritten = output as Slide;
+        const wantsDivider = asksForDivider(instruction);
+        const lostContent =
+          slideHasSubstance(existing) &&
+          !slideHasSubstance(rewritten) &&
+          !wantsDivider;
+
+        if (lostContent) {
+          try {
+            const { output: retryOutput } = await generateSlide(
+              "The rewrite removed the slide's content. Keep the slide useful: return the bullets layout with 3 to 5 concrete bullets (or the two-column/quote/stat layout with its content). Do not return a section or title-only slide unless the user explicitly asked for a divider."
+            );
+
+            if (slideHasSubstance(retryOutput as Slide)) {
+              rewritten = retryOutput as Slide;
+            }
+          } catch (retryError) {
+            console.error("slidesEdit retry failed:", retryError);
+          }
+        }
+
+        if (
+          slideHasSubstance(existing) &&
+          !slideHasSubstance(rewritten) &&
+          !wantsDivider
+        ) {
+          /*
+           * Last resort: keep the body the user already had and apply the new
+           * heading. A slightly stale slide is better than a blank one.
+           */
+          rewritten = {
+            ...existing,
+            notes: rewritten.notes ?? existing.notes,
+            subtitle: rewritten.subtitle ?? existing.subtitle,
+            title: rewritten.title || existing.title,
+          };
+        }
 
         /*
          * A model asked to make a slide "shorter" sometimes drops the content

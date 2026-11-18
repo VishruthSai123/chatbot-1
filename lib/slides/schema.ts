@@ -129,6 +129,22 @@ export function slideIsComplete(slide: Slide): boolean {
   }
 }
 
+/** Whether a slide carries real content, not just a heading. */
+export function slideHasSubstance(slide: Slide): boolean {
+  switch (slide.layout) {
+    case "bullets":
+      return (slide.bullets?.length ?? 0) > 0;
+    case "two-column":
+      return (slide.columns?.length ?? 0) === 2;
+    case "quote":
+      return Boolean(slide.quote?.text);
+    case "stat":
+      return Boolean(slide.stat?.value);
+    default:
+      return false;
+  }
+}
+
 /**
  * Makes a generated deck safe to render.
  *
