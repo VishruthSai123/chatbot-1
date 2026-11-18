@@ -1092,8 +1092,8 @@ export async function POST(request: Request) {
               activeSheet,
               session,
             }),
-            slidesCreate: slidesCreate({ session }),
-            slidesEdit: slidesEdit({ session }),
+            slidesCreate: slidesCreate({ dataStream, session }),
+            slidesEdit: slidesEdit({ dataStream, session }),
             updateDocument: updateDocument({
               dataStream,
               modelId: chatModel,

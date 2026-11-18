@@ -1,10 +1,14 @@
-import { generateText, Output, tool } from "ai";
+import { generateText, Output, tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
 
 import { getGroundingModel } from "@/lib/ai/search/grounding";
 import { guestRegex } from "@/lib/constants";
-import { getDocumentById, saveDocument } from "@/lib/db/queries";
+import {
+  getDocumentById,
+  getLatestDocumentByKind,
+  saveDocument,
+} from "@/lib/db/queries";
 import { decodeSlidesRef, encodeSlidesRef } from "@/lib/slides/ref";
 import {
   type Deck,
@@ -17,8 +21,10 @@ import {
   type Slide,
 } from "@/lib/slides/schema";
 import { themeIdFor } from "@/lib/slides/themes";
+import type { ChatMessage } from "@/lib/types";
 
 type SlidesToolsProps = {
+  dataStream?: UIMessageStreamWriter<ChatMessage>;
   session: Session;
 };
 
@@ -26,6 +32,34 @@ function checkIsGuest(session: Session): boolean {
   return (
     session.user?.type === "guest" || guestRegex.test(session.user?.email ?? "")
   );
+}
+
+/** Opens or refreshes the Slides Studio with the deck a tool just wrote. */
+function emitSlidesArtifact(
+  dataStream: UIMessageStreamWriter<ChatMessage> | undefined,
+  payload: { content: string; documentId: string; title: string }
+) {
+  if (!dataStream) {
+    return;
+  }
+
+  dataStream.write({ data: "slides", transient: true, type: "data-kind" });
+  dataStream.write({
+    data: payload.documentId,
+    transient: true,
+    type: "data-id",
+  });
+  dataStream.write({
+    data: payload.title,
+    transient: true,
+    type: "data-title",
+  });
+  dataStream.write({
+    data: payload.content,
+    transient: true,
+    type: "data-slidesDelta",
+  });
+  dataStream.write({ data: null, transient: true, type: "data-finish" });
 }
 
 /**
@@ -53,7 +87,7 @@ const COPY_RULES = [
  * The model returns a structured deck rather than prose, so the renderer can
  * guarantee every slide has the content its layout needs.
  */
-export const slidesCreate = ({ session }: SlidesToolsProps) =>
+export const slidesCreate = ({ dataStream, session }: SlidesToolsProps) =>
   tool({
     description:
       "Create a presentation (a deck of slides) about a topic. Use it when the user asks for slides, a deck, a PowerPoint, a presentation or a pitch. Returns a deck that opens in the Slides Studio and can be downloaded as a .pptx file.",
@@ -96,12 +130,24 @@ export const slidesCreate = ({ session }: SlidesToolsProps) =>
         const themeId = themeIdFor(theme ?? deck.theme);
         const documentId = crypto.randomUUID();
 
+        const content = encodeSlidesRef({
+          deck,
+          theme: themeId,
+          title: deck.title,
+        });
+
         await saveDocument({
-          content: encodeSlidesRef({ deck, theme: themeId, title: deck.title }),
+          content,
           id: documentId,
           kind: "slides",
           title: deck.title,
           userId: session.user.id,
+        });
+
+        emitSlidesArtifact(dataStream, {
+          content,
+          documentId,
+          title: deck.title,
         });
 
         return {
@@ -158,10 +204,10 @@ export const slidesCreate = ({ session }: SlidesToolsProps) =>
  * Editing a slide rather than regenerating the deck is what makes a generated
  * presentation usable: the other nine slides stay as they were.
  */
-export const slidesEdit = ({ session }: SlidesToolsProps) =>
+export const slidesEdit = ({ dataStream, session }: SlidesToolsProps) =>
   tool({
     description:
-      "Rewrite one slide of a presentation. Use it when the user says a specific slide should be shorter, clearer, more formal, or say something else. Returns the updated deck.",
+      "Rewrite one slide of the latest presentation, or of a specific one by id. Use it when the user says a slide should be shorter, clearer, more formal, or say something else. Omit documentId to edit the deck most recently created or edited. Returns the updated deck.",
     execute: async ({ documentId, instruction, slideIndex }) => {
       if (checkIsGuest(session)) {
         return {
@@ -171,10 +217,19 @@ export const slidesEdit = ({ session }: SlidesToolsProps) =>
       }
 
       try {
-        const document = await getDocumentById({ id: documentId });
+        const document = documentId
+          ? await getDocumentById({ id: documentId })
+          : await getLatestDocumentByKind({
+              kind: "slides",
+              userId: session.user.id,
+            });
 
         if (!document || document.userId !== session.user.id) {
-          return { error: "That presentation could not be found." };
+          return {
+            error: documentId
+              ? "That presentation could not be found."
+              : "There is no presentation to edit yet. Create one first.",
+          };
         }
 
         const ref = decodeSlidesRef(document.content);
@@ -211,21 +266,29 @@ export const slidesEdit = ({ session }: SlidesToolsProps) =>
 
         const deck = normaliseDeck({ ...ref.deck, slides });
 
+        const content = encodeSlidesRef({
+          ...ref,
+          deck,
+          title: deck.title,
+        });
+
         await saveDocument({
-          content: encodeSlidesRef({
-            ...ref,
-            deck,
-            title: deck.title,
-          }),
-          id: documentId,
+          content,
+          id: document.id,
           kind: "slides",
           title: deck.title,
           userId: session.user.id,
         });
 
+        emitSlidesArtifact(dataStream, {
+          content,
+          documentId: document.id,
+          title: deck.title,
+        });
+
         return {
           deck,
-          documentId,
+          documentId: document.id,
           slideCount: deck.slides.length,
           success: true,
           theme: ref.theme,
@@ -241,7 +304,13 @@ export const slidesEdit = ({ session }: SlidesToolsProps) =>
       }
     },
     inputSchema: z.object({
-      documentId: z.string().uuid().describe("The presentation's document id."),
+      documentId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "The presentation's document id. Omit to edit the most recent deck."
+        ),
       instruction: z
         .string()
         .min(3)

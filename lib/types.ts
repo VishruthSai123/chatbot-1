@@ -214,6 +214,7 @@ export type CustomUIDataTypes = {
   notebookDelta: string;
   docDelta: string;
   audioDelta: string;
+  slidesDelta: string;
 };
 
 export type ChatMessage = UIMessage<
