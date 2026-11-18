@@ -90,6 +90,7 @@ import {
   sheetConvertFormat,
   sheetFilterSort,
   sheetGetInfo,
+  sheetGroupBy,
   sheetRemoveDuplicates,
   sheetSummaryStats,
 } from "@/lib/ai/tools/sheet-tools";
@@ -182,6 +183,19 @@ function textFromUserMessage(message?: PostRequestBody["message"]): string {
  */
 function askedForQuiz(text: string): boolean {
   return /\bquiz\b/i.test(text) || /\btest me\b/i.test(text);
+}
+
+/**
+ * True when the user asked for a new deck.
+ *
+ * The model is forced to `slidesCreate` on the first step. Without that, a
+ * long prompt can make it answer with a slide outline in chat instead of
+ * creating the deck the studio can open and export.
+ */
+function askedForSlides(text: string): boolean {
+  return /\b(?:create|make|build|generate|design|prepare|draft|turn|need)\b[\s\S]{0,100}\b(?:slides?|deck|presentation|powerpoint|pptx|pitch)\b/i.test(
+    text
+  );
 }
 
 function formatResetDate(resetAt: string): string {
@@ -320,7 +334,6 @@ export async function POST(request: Request) {
     }
 
     const plan = await getEntitlement(session.user.id);
-    const isFreePlan = plan.plan === "free";
     if (modelRoutingEnabled()) {
       const routed = resolveChatModel({ plan, requestedModel: chatModel });
       chatModel = routed.id;
@@ -690,71 +703,71 @@ export async function POST(request: Request) {
           clearHealthCheckTimer();
         };
 
-        const quizRequested = askedForQuiz(textFromUserMessage(message));
+        const userText = textFromUserMessage(message);
+        const quizRequested = askedForQuiz(userText);
+        const slideRequested = askedForSlides(userText);
 
         const result = streamText({
           abortSignal: request.signal,
           activeTools: supportsTools
-            ? isFreePlan
-              ? ["webSearch", "readUrl"]
-              : [
-                  "getWeather",
-                  "createDocument",
-                  "editDocument",
-                  "updateDocument",
-                  "requestSuggestions",
-                  "imageResize",
-                  "imageRemoveBg",
-                  "imageCrop",
-                  "imageCompress",
-                  "imageConvert",
-                  "imageUpscaleEnhance",
-                  "imagePixelate",
-                  "imageRotate",
-                  "imageOcr",
-                  "imageListPresets",
-                  "imageStitch",
-                  "imageOverlay",
-                  "imageCollage",
-                  "pdfGetInfo",
-                  "pdfMerge",
-                  "pdfSplit",
-                  "pdfArrange",
-                  "pdfRotatePages",
-                  "pdfExtractText",
-                  "imageToPdf",
-                  "sheetGetInfo",
-                  "sheetFilterSort",
-                  "sheetRemoveDuplicates",
-                  "sheetSummaryStats",
-                  "sheetConvertFormat",
-                  "webSearch",
-                  "readUrl",
-                  "research",
-                  "notebookCreate",
-                  "notebookAsk",
-                  "notebookGenerate",
-                  "notebookQuiz",
-                  "notebookGrade",
-                  "notebookAddSource",
-                  "docRead",
-                  "docSummarize",
-                  "docDiff",
-                  "docStats",
-                  "docConvert",
-                  "audioInfo",
-                  "audioTranscribe",
-                  "audioOpen",
-                  "downloadMedia",
-                  "slidesCreate",
-                  "slidesEdit",
-                  // `as const` keeps the spread a literal, so the whole list
-                  // still infers as tool names rather than widening to string[].
-                  ...(androidBridge ? (["deviceAction"] as const) : []),
-                ]
+            ? [
+                "getWeather",
+                "createDocument",
+                "editDocument",
+                "updateDocument",
+                "requestSuggestions",
+                "imageResize",
+                "imageRemoveBg",
+                "imageCrop",
+                "imageCompress",
+                "imageConvert",
+                "imageUpscaleEnhance",
+                "imagePixelate",
+                "imageRotate",
+                "imageOcr",
+                "imageListPresets",
+                "imageStitch",
+                "imageOverlay",
+                "imageCollage",
+                "pdfGetInfo",
+                "pdfMerge",
+                "pdfSplit",
+                "pdfArrange",
+                "pdfRotatePages",
+                "pdfExtractText",
+                "imageToPdf",
+                "sheetGetInfo",
+                "sheetGroupBy",
+                "sheetFilterSort",
+                "sheetRemoveDuplicates",
+                "sheetSummaryStats",
+                "sheetConvertFormat",
+                "webSearch",
+                "readUrl",
+                "research",
+                "notebookCreate",
+                "notebookAsk",
+                "notebookGenerate",
+                "notebookQuiz",
+                "notebookGrade",
+                "notebookAddSource",
+                "docRead",
+                "docSummarize",
+                "docDiff",
+                "docStats",
+                "docConvert",
+                "audioInfo",
+                "audioTranscribe",
+                "audioOpen",
+                "downloadMedia",
+                "slidesCreate",
+                "slidesEdit",
+                // `as const` keeps the spread a literal, so the whole list
+                // still infers as tool names rather than widening to string[].
+                ...(androidBridge ? (["deviceAction"] as const) : []),
+              ]
             : [],
           instructions: systemPrompt({
-            compact: isFreePlan,
             deviceActionsAvailable: Boolean(androidBridge),
             imageRequirement: imageRequirementHint,
             isGuest: userType === "guest",
@@ -804,7 +817,13 @@ export async function POST(request: Request) {
             });
             stopWaitingStatus();
           },
-          prepareStep: ({ steps }) => {
+          prepareStep: ({ stepNumber, steps }) => {
+            if (stepNumber === 0 && slideRequested) {
+              return {
+                toolChoice: { toolName: "slidesCreate", type: "tool" },
+              };
+            }
+
             if (!quizRequested) {
               return {};
             }
@@ -1054,6 +1073,12 @@ export async function POST(request: Request) {
             }),
             sheetGetInfo: sheetGetInfo({
               activeSheet,
+              dataStream,
+              session,
+            }),
+            sheetGroupBy: sheetGroupBy({
+              activeSheet,
+              chatId: id,
               dataStream,
               session,
             }),

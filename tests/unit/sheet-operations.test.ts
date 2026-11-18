@@ -4,6 +4,7 @@ import {
   coerceRows,
   computeSummaryStats,
   filterRows,
+  groupRows,
   inferColumnType,
   isNullLike,
   removeDuplicateRows,
@@ -232,6 +233,33 @@ test.describe("header handling", () => {
 
   test("names blank headers by position", () => {
     expect(uniqueHeaders(["", "Amount"])).toEqual(["Column 1", "Amount"]);
+  });
+});
+
+test.describe("grouping", () => {
+  test("sums a numeric column by category", () => {
+    expect(groupRows(SALES, "Region", "Revenue", "sum")).toEqual([
+      { group: "North", value: 28_501 },
+      { group: "EMEA", value: 9800 },
+      { group: "APAC", value: 5430 },
+    ]);
+  });
+
+  test("counts every row, including a row with no value", () => {
+    expect(groupRows(SALES, "Region", "Revenue", "count")).toEqual([
+      { group: "North", value: 2 },
+      { group: "EMEA", value: 1 },
+      { group: "APAC", value: 1 },
+      { group: "LATAM", value: 1 },
+    ]);
+  });
+
+  test("averages only the numeric values", () => {
+    expect(groupRows(SALES, "Region", "Revenue", "average")).toEqual([
+      { group: "North", value: 14_250.5 },
+      { group: "EMEA", value: 9800 },
+      { group: "APAC", value: 5430 },
+    ]);
   });
 });
 

@@ -160,7 +160,8 @@ CRITICAL RULES:
       - \`sortColumn\` + \`sortOrder\` ("asc" | "desc") for a sort. You may pass a filter, a sort, or both.
   * For removing duplicate rows ("remove duplicates", "dedupe", "one row per customer"): call \`sheetRemoveDuplicates\`.
       - Omit \`keyColumns\` to treat the entire row as the key. Pass \`keyColumns\` (e.g. \`["Email"]\`) when only some columns identify a duplicate.
-  * For statistics ("average revenue", "what's the total", "how many unique regions", "summary stats"): call \`sheetSummaryStats\`.
+  * For grouped totals ("total sales by region", "average price by category", "count by status"): call \`sheetGroupBy\` with \`groupColumn\`, \`valueColumn\` and \`operation\` ("sum" | "average" | "count" | "min" | "max"). This creates a grouped summary sheet. Do NOT use \`sheetFilterSort\` to aggregate — filtering removes rows.
+  * For overall statistics ("average revenue", "what's the total", "how many unique regions", "summary stats"): call \`sheetSummaryStats\`.
       - Returns count, missing values, unique count, and for numeric columns the mean, median, minimum and maximum.
   * For converting formats ("convert to xlsx", "give me a CSV", "export as JSON"): call \`sheetConvertFormat\` with \`targetFormat\` of "csv", "tsv", "xlsx" or "json".
 - WHOLE-FILE SCOPE: These tools read the entire file, not just the rows visible in the grid. When the user asks about a large file, prefer these tools over guessing from what you can see.
@@ -242,10 +243,9 @@ export const systemPrompt = ({
  */
 const freePlanPrompt = `
 FREE PLAN:
-- Answer in text. Use webSearch only when the user explicitly asks for current or live information, or gives a URL; it shares a 1-per-day allowance with readUrl. Do not search for greetings, definitions, or general knowledge.
-- On-device image/PDF/sheet edits are free and unlimited. If the user asks for an edit, tell them to open the relevant studio instead of calling a hosted file tool.
-- Deep Research, media downloads, slides, notebooks and heavy file tools are paid plans.
-- If a tool returns quota_exceeded or upgrade_required, explain the free limit and when it resets. Never claim the action succeeded.`;
+- Use the matching tool when the user asks for a file, a deck, a notebook or a search result. Keep the chat reply short; the result opens in its studio.
+- On-device image/PDF/sheet edits are free. Hosted file operations share the plan's daily allowance.
+- If a tool returns quota_exceeded or upgrade_required, explain the limit and when it resets. Never claim the action succeeded.`;
 
 /**
  * What the model should do differently for a guest.

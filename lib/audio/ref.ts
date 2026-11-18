@@ -95,6 +95,42 @@ export const AUDIO_EXTENSIONS = [
   ".mov",
 ];
 
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  aac: "audio/aac",
+  flac: "audio/flac",
+  m4a: "audio/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  mp3: "audio/mpeg",
+  mp4: "video/mp4",
+  ogg: "audio/ogg",
+  opus: "audio/ogg",
+  wav: "audio/wav",
+  webm: "audio/webm",
+};
+
+/**
+ * The MIME type Gemini should be told for a stored recording.
+ *
+ * The upload stores only the filename and format, so an older document may not
+ * have a MIME type at all. Infer it from the extension rather than defaulting
+ * every recording to MP3 — a WAV declared as `audio/mpeg` is rejected or
+ * misread by the provider.
+ */
+export function audioMimeType(filename?: string, format?: string): string {
+  const normalizedFormat = format?.toLowerCase();
+
+  if (normalizedFormat && normalizedFormat !== "other") {
+    return (
+      EXTENSION_MIME_TYPES[normalizedFormat] ?? `audio/${normalizedFormat}`
+    );
+  }
+
+  const extension = filename?.split(".").pop()?.toLowerCase();
+
+  return (extension && EXTENSION_MIME_TYPES[extension]) || "audio/mpeg";
+}
+
 /**
  * True when a file is audio or video the studio can open.
  *

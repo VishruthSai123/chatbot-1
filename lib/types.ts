@@ -55,6 +55,7 @@ import type {
   sheetConvertFormat,
   sheetFilterSort,
   sheetGetInfo,
+  sheetGroupBy,
   sheetRemoveDuplicates,
   sheetSummaryStats,
 } from "./ai/tools/sheet-tools";
@@ -91,6 +92,7 @@ type imageStitchTool = InferUITool<ReturnType<typeof imageStitch>>;
 type imageOverlayTool = InferUITool<ReturnType<typeof imageOverlay>>;
 type imageCollageTool = InferUITool<ReturnType<typeof imageCollage>>;
 type sheetGetInfoTool = InferUITool<ReturnType<typeof sheetGetInfo>>;
+type sheetGroupByTool = InferUITool<ReturnType<typeof sheetGroupBy>>;
 type sheetFilterSortTool = InferUITool<ReturnType<typeof sheetFilterSort>>;
 type sheetRemoveDuplicatesTool = InferUITool<
   ReturnType<typeof sheetRemoveDuplicates>
@@ -152,6 +154,7 @@ export type ChatTools = {
   pdfExtractText: pdfExtractTextTool;
   imageToPdf: imageToPdfTool;
   sheetGetInfo: sheetGetInfoTool;
+  sheetGroupBy: sheetGroupByTool;
   sheetFilterSort: sheetFilterSortTool;
   sheetRemoveDuplicates: sheetRemoveDuplicatesTool;
   sheetSummaryStats: sheetSummaryStatsTool;

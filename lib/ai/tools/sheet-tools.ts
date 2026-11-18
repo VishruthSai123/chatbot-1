@@ -9,6 +9,7 @@ import type { SheetFormat } from "@/lib/sheet/ref";
 import {
   applyDedupe,
   applyFilterSort,
+  applyGroupBy,
   applyStats,
   executeConvert,
   persistSheetBytes,
@@ -385,6 +386,115 @@ export const sheetSummaryStats = ({ activeSheet, session }: SheetToolsProps) =>
         .optional()
         .describe("Columns to summarise. Omit for every column."),
       documentId: z.string().optional(),
+    }),
+  });
+
+export const sheetGroupBy = ({
+  activeSheet,
+  chatId,
+  dataStream,
+  session,
+}: SheetToolsProps) =>
+  tool({
+    description:
+      "Group rows by a category column and compute the sum, average, count, minimum or maximum of a value column. Use this for 'total sales by region', 'average price by category' or 'count by status'. It creates a grouped summary sheet, not a filter, so no source rows are lost.",
+    execute: async ({
+      documentId,
+      groupColumn,
+      operation,
+      title,
+      valueColumn,
+    }) => {
+      if (checkIsGuest(session)) {
+        return { error: "Sign in to analyse spreadsheets." };
+      }
+
+      const userId = session.user.id;
+      const source = await openSheet({ activeSheet, documentId, userId });
+
+      if (!source) {
+        return { error: "I could not find that spreadsheet in this chat." };
+      }
+
+      const sheet = selectSheet(source);
+      const missing = [groupColumn, valueColumn].filter(
+        (column) => !sheet.headers.includes(column)
+      );
+
+      if (missing.length > 0) {
+        return {
+          error: `Unknown column${missing.length === 1 ? "" : "s"}: ${missing.join(
+            ", "
+          )}. Available columns: ${sheet.headers.join(", ")}.`,
+        };
+      }
+
+      const grouped = applyGroupBy(source, {
+        groupColumn,
+        operation,
+        valueColumn,
+      });
+
+      if (grouped.groups.length === 0) {
+        return {
+          error: `No numeric values were found in "${valueColumn}".`,
+        };
+      }
+
+      const format: SheetFormat = source.format === "xlsx" ? "xlsx" : "csv";
+      const bytes = await writeSheetFile([grouped.sheet], format);
+      const payload = await persistSheetBytes({
+        bytes,
+        chatId,
+        filename: source.filename,
+        format,
+        sheets: [grouped.sheet],
+        userId,
+      });
+      const nextTitle =
+        title || `${source.title} — ${operation ?? "sum"} by ${groupColumn}`;
+      const nextId = await persistSheetVersion({
+        documentId: source.documentId,
+        payload,
+        title: nextTitle,
+        userId,
+      });
+
+      if (nextId) {
+        emitSheetArtifact(dataStream, {
+          content: sheetRefContent(payload),
+          id: source.documentId,
+          title: nextTitle,
+        });
+      }
+
+      return {
+        documentId: source.documentId,
+        groupColumn,
+        groups: grouped.groups,
+        operation: operation ?? "sum",
+        rows: grouped.groups.length,
+        title: nextTitle,
+        valueColumn,
+        valueHeader: grouped.valueHeader,
+      };
+    },
+    inputSchema: z.object({
+      documentId: z.string().optional(),
+      groupColumn: z
+        .string()
+        .min(1)
+        .describe("The category column, e.g. region or status."),
+      operation: z
+        .enum(["sum", "average", "count", "min", "max"])
+        .optional()
+        .default("sum")
+        .describe("Aggregation to apply to the value column."),
+      title: z.string().max(120).optional(),
+      valueColumn: z
+        .string()
+        .min(1)
+        .describe("The numeric column to aggregate, e.g. revenue."),
     }),
   });
 

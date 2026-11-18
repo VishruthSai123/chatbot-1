@@ -1,7 +1,12 @@
 import "server-only";
 
 import { readAudioInfo, transcribeAudio } from "@/lib/audio/native";
-import { type AudioRef, decodeAudioRef, encodeAudioRef } from "@/lib/audio/ref";
+import {
+  type AudioRef,
+  audioMimeType,
+  decodeAudioRef,
+  encodeAudioRef,
+} from "@/lib/audio/ref";
 import { getDocumentById, isValidUUID, saveDocument } from "@/lib/db/queries";
 import { getArtifactSignedUrl } from "@/lib/storage";
 import { safeStorageFilename } from "@/lib/storage/limits";
@@ -57,7 +62,7 @@ export async function loadAudio({
     documentId,
     duration: ref.duration,
     filename: ref.filename ?? document.title,
-    mimeType: ref.format,
+    mimeType: audioMimeType(ref.filename ?? document.title, ref.format),
     storageKey: ref.storageKey,
     title: ref.title ?? document.title,
     transcript: ref.transcript,
@@ -130,8 +135,11 @@ export async function transcribeDocumentAudio({
     return null;
   }
 
+  const { downloadArtifact } = await import("@/lib/storage");
+  const audioBuffer = await downloadArtifact(audio.storageKey);
+
   const { transcript } = await transcribeAudio({
-    audioUrl: audio.url,
+    audioBuffer,
     instruction,
     mimeType: audio.mimeType,
   });

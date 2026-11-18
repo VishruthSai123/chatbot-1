@@ -9,10 +9,12 @@ import { decodeSlidesRef, encodeSlidesRef } from "@/lib/slides/ref";
 import {
   type Deck,
   deckSchema,
+  generatedDeckSchema,
+  generatedSlideSchema,
   MAX_SLIDES,
   MIN_SLIDES,
   normaliseDeck,
-  slideSchema,
+  type Slide,
 } from "@/lib/slides/schema";
 import { themeIdFor } from "@/lib/slides/themes";
 
@@ -68,7 +70,7 @@ export const slidesCreate = ({ session }: SlidesToolsProps) =>
       try {
         const { output } = await generateText({
           model: getGroundingModel(),
-          output: Output.object({ schema: deckSchema }),
+          output: Output.object({ schema: generatedDeckSchema }),
           prompt: [
             COPY_RULES,
             "",
@@ -82,7 +84,7 @@ export const slidesCreate = ({ session }: SlidesToolsProps) =>
             .join("\n"),
         });
 
-        const deck = normaliseDeck(output);
+        const deck = normaliseDeck(output as Deck);
 
         if (deck.slides.length < MIN_SLIDES) {
           return {
@@ -191,7 +193,7 @@ export const slidesEdit = ({ session }: SlidesToolsProps) =>
 
         const { output } = await generateText({
           model: getGroundingModel(),
-          output: Output.object({ schema: slideSchema }),
+          output: Output.object({ schema: generatedSlideSchema }),
           prompt: [
             COPY_RULES,
             "",
@@ -205,7 +207,7 @@ export const slidesEdit = ({ session }: SlidesToolsProps) =>
         });
 
         const slides = [...ref.deck.slides];
-        slides[slideIndex] = output;
+        slides[slideIndex] = output as Slide;
 
         const deck = normaliseDeck({ ...ref.deck, slides });
 

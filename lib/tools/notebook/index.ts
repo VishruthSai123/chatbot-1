@@ -31,7 +31,6 @@ import {
   sourceCacheKey,
 } from "@/lib/notebook/registry";
 import { planRetrieval } from "@/lib/notebook/retrieval";
-import { quizQuestionSchema } from "@/lib/quiz/schema";
 import { downloadArtifact } from "@/lib/storage";
 
 /**
@@ -611,6 +610,25 @@ export async function generateDeliverable({
 /** How many questions a quiz should have. */
 const QUIZ_LENGTH = 5;
 
+/**
+ * The permissive shape sent to the model.
+ *
+ * Gemini rejects strict array-length and numeric-bound schemas with "too many
+ * states for serving". The prompt asks for four options and a 0–3 index; the
+ * result is repaired and validated below.
+ */
+const generatedQuizSchema = z.object({
+  questions: z.array(
+    z.object({
+      correctIndex: z.number(),
+      explanation: z.string().optional(),
+      options: z.array(z.string()),
+      question: z.string(),
+      sourceTitle: z.string().optional(),
+    })
+  ),
+});
+
 /** Shuffles a list without bias towards the original order. */
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -655,9 +673,7 @@ export async function generateQuiz({
   const { output } = await generateText({
     model: getGroundingModel(),
     output: Output.object({
-      schema: z.object({
-        questions: z.array(quizQuestionSchema.omit({ id: true })),
-      }),
+      schema: generatedQuizSchema,
     }),
     prompt: [
       `Write ${QUIZ_LENGTH} quiz questions about the sources below.`,
@@ -671,34 +687,64 @@ export async function generateQuiz({
     ].join("\n"),
   });
 
+  const generated = output.questions
+    .map((question) => {
+      const options = question.options
+        .map((option) => option.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      const prompt = question.question.trim();
+
+      if (options.length !== 4 || prompt.length < 5) {
+        return null;
+      }
+
+      return {
+        correctIndex: Math.min(
+          3,
+          Math.max(0, Math.trunc(question.correctIndex))
+        ),
+        explanation: question.explanation?.trim() || undefined,
+        options,
+        question: prompt,
+        sourceTitle: question.sourceTitle?.trim() || undefined,
+      };
+    })
+    .filter((question): question is NonNullable<typeof question> =>
+      Boolean(question)
+    )
+    .slice(0, QUIZ_LENGTH);
+
+  if (generated.length === 0) {
+    return { questions: [] };
+  }
+
   // The options are shuffled here rather than by the model: a model asked to
   // shuffle produces the same order every time, and "the answer is always the
   // first option" is a quiz nobody can take seriously.
-  const questions: NotebookQuizQuestion[] = output.questions.map(
-    (question, index) => {
-      const correct =
-        question.options[question.correctIndex] ?? question.options[0];
-      const others = question.options.filter(
-        (_, optionIndex) => optionIndex !== question.correctIndex
-      );
-      const shuffled = shuffle(others);
-      const correctPosition = Math.floor(Math.random() * (shuffled.length + 1));
-      const options = [
-        ...shuffled.slice(0, correctPosition),
-        correct,
-        ...shuffled.slice(correctPosition),
-      ];
+  const questions: NotebookQuizQuestion[] = generated.map((question, index) => {
+    const correct =
+      question.options[question.correctIndex] ?? question.options[0];
+    const others = question.options.filter(
+      (_, optionIndex) => optionIndex !== question.correctIndex
+    );
+    const shuffled = shuffle(others);
+    const correctPosition = Math.floor(Math.random() * (shuffled.length + 1));
+    const options = [
+      ...shuffled.slice(0, correctPosition),
+      correct,
+      ...shuffled.slice(correctPosition),
+    ];
 
-      return {
-        correctIndex: correctPosition,
-        explanation: question.explanation,
-        id: `q${index + 1}`,
-        options,
-        question: question.question,
-        sourceTitle: question.sourceTitle,
-      };
-    }
-  );
+    return {
+      correctIndex: correctPosition,
+      explanation: question.explanation,
+      id: `q${index + 1}`,
+      options,
+      question: question.question,
+      sourceTitle: question.sourceTitle,
+    };
+  });
 
   await saveNotebook({
     documentId,
@@ -762,7 +808,7 @@ export async function gradeQuizAnswer({
     model: getGroundingModel(),
     output: Output.object({
       schema: z.object({
-        feedback: z.string().min(1),
+        feedback: z.string(),
         verdict: z.enum(["correct", "partial", "incorrect"]),
       }),
     }),
@@ -784,7 +830,7 @@ export async function gradeQuizAnswer({
 
   return {
     citation: citations[0],
-    feedback: output.feedback,
+    feedback: output.feedback.trim() || "No feedback was returned.",
     verdict: output.verdict,
   };
 }

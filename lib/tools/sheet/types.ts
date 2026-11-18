@@ -55,6 +55,22 @@ export const statsSchema = z.object({
     .describe("Columns to summarise. Omit for every column."),
 });
 
+export const groupBySchema = z.object({
+  groupColumn: z
+    .string()
+    .min(1)
+    .describe("The category column, e.g. region or status."),
+  operation: z
+    .enum(["sum", "average", "count", "min", "max"])
+    .optional()
+    .default("sum")
+    .describe("Aggregation to apply to the value column."),
+  valueColumn: z
+    .string()
+    .min(1)
+    .describe("The numeric column to aggregate, e.g. revenue."),
+});
+
 export const convertSchema = z.object({
   targetFormat: sheetTargetFormat.describe(
     "Format to write the result in: csv, tsv, xlsx or json."
@@ -77,6 +93,7 @@ export const resolveSchema = z.object({
 export type FilterSortInput = z.input<typeof filterSortSchema>;
 export type DedupeInput = z.input<typeof dedupeSchema>;
 export type StatsInput = z.input<typeof statsSchema>;
+export type GroupByInput = z.input<typeof groupBySchema>;
 export type ConvertInput = z.input<typeof convertSchema>;
 export type RowsInput = z.input<typeof rowsSchema>;
 export type ResolveInput = z.input<typeof resolveSchema>;

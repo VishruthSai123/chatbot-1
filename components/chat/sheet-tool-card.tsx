@@ -16,6 +16,7 @@ import { cn, fetcher } from "@/lib/utils";
 export type SheetToolType =
   | "tool-sheetGetInfo"
   | "tool-sheetFilterSort"
+  | "tool-sheetGroupBy"
   | "tool-sheetRemoveDuplicates"
   | "tool-sheetSummaryStats"
   | "tool-sheetConvertFormat";
@@ -28,6 +29,9 @@ export interface SheetToolOutput {
   error?: string;
   filename?: string;
   format?: string;
+  groupColumn?: string;
+  groups?: { group: string; value: number }[];
+  operation?: string;
   removed?: number;
   rows?: number;
   sheetNames?: string[];
@@ -46,6 +50,8 @@ export interface SheetToolOutput {
   title?: string;
   totalRows?: number;
   url?: string;
+  valueColumn?: string;
+  valueHeader?: string;
 }
 
 interface SheetToolCardProps {
@@ -73,6 +79,11 @@ const TOOL_CONFIG: Record<
     accent: "text-zinc-500",
     icon: "📊",
     label: "Inspect Sheet",
+  },
+  "tool-sheetGroupBy": {
+    accent: "text-violet-500",
+    icon: "🧮",
+    label: "Group & Aggregate",
   },
   "tool-sheetRemoveDuplicates": {
     accent: "text-rose-500",
@@ -326,6 +337,51 @@ export function SheetToolCard({
               <span>{output.sheetNames.length} sheets</span>
             ) : null}
           </div>
+
+          {output?.groups?.length ? (
+            <div className="mt-1 rounded-md border border-violet-500/20 bg-violet-500/5 p-2">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
+                <span className="font-medium text-foreground/80">
+                  {output.operation ?? "sum"} of {output.valueColumn} by{" "}
+                  {output.groupColumn}
+                </span>
+                <span className="font-mono text-muted-foreground">
+                  {output.groups.length} groups
+                </span>
+              </div>
+              <div className="max-h-32 overflow-auto">
+                <table className="w-full font-mono text-[10px]">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      <th className="pb-1 text-left font-medium">
+                        {output.groupColumn}
+                      </th>
+                      <th className="pb-1 text-right font-medium">
+                        {output.valueHeader ?? output.valueColumn}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {output.groups.slice(0, 10).map((entry) => (
+                      <tr key={entry.group}>
+                        <td className="truncate pr-2 text-foreground/90">
+                          {entry.group}
+                        </td>
+                        <td className="text-right tabular-nums text-foreground">
+                          {entry.value.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {output.groups.length > 10 ? (
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  +{output.groups.length - 10} more
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {output?.stats?.length ? (
             <div className="mt-1 rounded-md border border-border/50 bg-muted/40 p-2">

@@ -54,25 +54,41 @@ export async function readAudioInfo(
 }
 
 /**
+ * Gemini accepts inline data up to roughly 20 MB for the whole request. Base64
+ * inflates the bytes by a third, so 12 MB still fits with room for the prompt
+ * and the response.
+ */
+const MAX_INLINE_AUDIO_BYTES = 12 * 1024 * 1024;
+
+/**
  * Transcribes an audio file.
  *
  * The model reads the audio directly, so there is no transcription service, no
  * second key and no per-minute cost.
+ *
+ * The bytes are downloaded here rather than handing the provider a signed URL.
+ * The provider's URL path depends on `undici`, which is not present in the
+ * serverless bundle; passing the bytes keeps transcription working there.
  *
  * The timestamps come from the prompt, not from a provider option. Asking the
  * model to write the timecodes inline produces exactly what the studio needs —
  * the caption track and the seek links are both built from them.
  */
 export async function transcribeAudio({
-  audioUrl,
+  audioBuffer,
   instruction,
   mimeType,
 }: {
-  /** A URL the model can read. */
-  audioUrl: string;
+  audioBuffer: Buffer;
   instruction?: string;
   mimeType?: string;
 }): Promise<{ transcript: string }> {
+  if (audioBuffer.length > MAX_INLINE_AUDIO_BYTES) {
+    throw new Error(
+      "This recording is too large to transcribe in one pass. Split it into shorter files and try again."
+    );
+  }
+
   const { text } = await generateText({
     messages: [
       {
@@ -89,7 +105,7 @@ export async function transcribeAudio({
             type: "text",
           },
           {
-            data: audioUrl,
+            data: audioBuffer,
             mediaType: mimeType ?? "audio/mpeg",
             type: "file",
           },

@@ -392,6 +392,92 @@ export function sortRows(
   });
 }
 
+export type GroupAggregate = "sum" | "average" | "count" | "min" | "max";
+
+export type GroupResult = {
+  group: string;
+  value: number;
+};
+
+/**
+ * Groups rows by one column and aggregates another.
+ *
+ * This is the operation behind "total sales by region" and "count by status".
+ * It is deliberately separate from filter/sort: filtering removes rows, while
+ * grouping keeps every row and returns one result per category.
+ */
+export function groupRows(
+  rows: SheetRow[],
+  groupColumn: string,
+  valueColumn: string,
+  operation: GroupAggregate = "sum"
+): GroupResult[] {
+  const groups = new Map<
+    string,
+    {
+      count: number;
+      max: number;
+      min: number;
+      numericCount: number;
+      sum: number;
+    }
+  >();
+
+  for (const row of rows) {
+    const rawGroup = row[groupColumn];
+    const group = isNullLike(rawGroup) ? "(blank)" : String(rawGroup);
+    const numeric = toNumber(row[valueColumn] ?? null);
+    const entry = groups.get(group) ?? {
+      count: 0,
+      max: Number.NEGATIVE_INFINITY,
+      min: Number.POSITIVE_INFINITY,
+      numericCount: 0,
+      sum: 0,
+    };
+
+    entry.count += 1;
+
+    if (numeric !== null) {
+      entry.numericCount += 1;
+      entry.sum += numeric;
+      entry.max = Math.max(entry.max, numeric);
+      entry.min = Math.min(entry.min, numeric);
+    }
+
+    groups.set(group, entry);
+  }
+
+  const results: GroupResult[] = [];
+
+  for (const [group, entry] of groups) {
+    if (operation === "count") {
+      results.push({ group, value: entry.count });
+      continue;
+    }
+
+    if (entry.numericCount === 0) {
+      continue;
+    }
+
+    const value =
+      operation === "sum"
+        ? entry.sum
+        : operation === "average"
+          ? entry.sum / entry.numericCount
+          : operation === "min"
+            ? entry.min
+            : entry.max;
+
+    results.push({ group, value: Math.round(value * 100) / 100 });
+  }
+
+  return results.sort((left, right) =>
+    operation === "min" || operation === "max"
+      ? left.value - right.value
+      : right.value - left.value
+  );
+}
+
 /**
  * Removes duplicate rows.
  *

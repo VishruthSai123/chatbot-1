@@ -81,24 +81,20 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
     }
   }, [appliedParams]);
 
-  // Calculate approximate file size from base64
-  const approxCurrentKb = Math.round(
-    ((imageSrc.length * 3) / 4 -
-      (imageSrc.endsWith("==") ? 2 : imageSrc.endsWith("=") ? 1 : 0)) /
-      1024
-  );
+  // Calculate approximate file size from base64. An empty source means the
+  // image is still loading; showing 0 KB would read as a failed compression.
+  const base64Kb = (value: string | null | undefined): number | null => {
+    if (!value) {
+      return null;
+    }
 
-  const approxOriginalKb = originalSrc
-    ? Math.round(
-        ((originalSrc.length * 3) / 4 -
-          (originalSrc.endsWith("==")
-            ? 2
-            : originalSrc.endsWith("=")
-              ? 1
-              : 0)) /
-          1024
-      )
-    : approxCurrentKb;
+    const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+
+    return Math.round(((value.length * 3) / 4 - padding) / 1024);
+  };
+
+  const approxCurrentKb = base64Kb(imageSrc);
+  const approxOriginalKb = base64Kb(originalSrc);
 
   const handleRecompress = useCallback(async () => {
     if (isGuest) {
@@ -221,7 +217,10 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
   }, [imageSrc]);
 
   const savingsPct =
-    approxOriginalKb > 0 && approxOriginalKb > approxCurrentKb
+    approxOriginalKb !== null &&
+    approxCurrentKb !== null &&
+    approxOriginalKb > 0 &&
+    approxOriginalKb > approxCurrentKb
       ? Math.round(
           ((approxOriginalKb - approxCurrentKb) / approxOriginalKb) * 100
         )
@@ -238,7 +237,9 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
             </span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="font-semibold text-foreground text-xs tabular-nums">
-                {approxCurrentKb} KB
+                {approxCurrentKb === null
+                  ? "Loading…"
+                  : `${approxCurrentKb} KB`}
               </span>
               {savingsPct !== null && (
                 <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500 border border-emerald-500/20 tabular-nums">
@@ -252,7 +253,7 @@ export const CompressionInspector = memo(function InnerCompressionInspector({
               Original size
             </span>
             <span className="text-muted-foreground text-xs font-medium tabular-nums mt-0.5 block">
-              {approxOriginalKb} KB
+              {approxOriginalKb === null ? "—" : `${approxOriginalKb} KB`}
             </span>
           </div>
         </div>

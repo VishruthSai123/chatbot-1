@@ -380,6 +380,13 @@ export const notebookQuiz = ({ session }: NotebookToolsProps) =>
         };
       }
 
+      if (quiz.questions.length === 0) {
+        return {
+          error:
+            "The quiz could not be generated from those sources. Please try again.",
+        };
+      }
+
       return { documentId: id, questions: quiz.questions };
     },
     inputSchema: z.object({

@@ -17,6 +17,8 @@ import {
   type CellValue,
   computeSummaryStats,
   filterRows,
+  type GroupResult,
+  groupRows,
   removeDuplicateRows,
   type SheetRow,
   sortRows,
@@ -36,6 +38,7 @@ import type {
   ConvertInput,
   DedupeInput,
   FilterSortInput,
+  GroupByInput,
   RowsInput,
   SheetOperationPayload,
   StatsInput,
@@ -354,6 +357,38 @@ export function applyStats(
   const rows: SheetRow[] = sheet.rows;
 
   return computeSummaryStats(rows, headers);
+}
+
+/**
+ * Groups the active sheet and builds a two-column summary sheet.
+ *
+ * The grouped summary is a new sheet version, not a destructive edit: the
+ * original rows stay in the previous version, and the studio can undo it.
+ */
+export function applyGroupBy(
+  source: ResolvedSheetSource,
+  params: GroupByInput,
+  sheetName?: string
+): { groups: GroupResult[]; sheet: LoadedSheet; valueHeader: string } {
+  const sheet = selectSheet(source, sheetName);
+  const operation = params.operation ?? "sum";
+  const groups = groupRows(
+    sheet.rows,
+    params.groupColumn,
+    params.valueColumn,
+    operation
+  );
+  const valueHeader = `${operation}_${params.valueColumn}`;
+  const grouped: LoadedSheet = {
+    headers: [params.groupColumn, valueHeader],
+    name: sheet.name,
+    rows: groups.map(({ group, value }) => ({
+      [params.groupColumn]: group,
+      [valueHeader]: value,
+    })),
+  };
+
+  return { groups, sheet: grouped, valueHeader };
 }
 
 /** Converts the workbook into another format and stores the result. */

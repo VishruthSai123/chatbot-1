@@ -840,6 +840,7 @@ const PurePreviewMessage = ({
       "tool-sheetConvertFormat": "Convert Format",
       "tool-sheetFilterSort": "Filter & Sort",
       "tool-sheetGetInfo": "Inspect Sheet",
+      "tool-sheetGroupBy": "Group & Aggregate",
       "tool-sheetRemoveDuplicates": "Remove Duplicates",
       "tool-sheetSummaryStats": "Summary Stats",
     };
