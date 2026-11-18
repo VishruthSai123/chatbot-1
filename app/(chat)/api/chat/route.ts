@@ -13,6 +13,11 @@ import { after } from "next/server";
 import { createResumableStreamContext } from "resumable-stream";
 import { z } from "zod";
 import { auth, type UserType } from "@/app/(auth)/auth";
+import {
+  askedForQuiz,
+  askedForSlides,
+  askedToEditSlide,
+} from "@/lib/ai/chat-intent";
 import { trimModelMessages } from "@/lib/ai/context";
 import {
   allowedModelIds,
@@ -171,31 +176,6 @@ function textFromUserMessage(message?: PostRequestBody["message"]): string {
     .map((part) => part.text)
     .join("\n")
     .trim();
-}
-
-/**
- * True when the user asked for a quiz in this turn.
- *
- * The check is intentionally broad: the route only acts on it after a notebook
- * was created, and a user who mentions a quiz while building a notebook almost
- * always wants one. Missing the intent leaves the request half-done; the cost
- * of the occasional extra quiz is much lower.
- */
-function askedForQuiz(text: string): boolean {
-  return /\bquiz\b/i.test(text) || /\btest me\b/i.test(text);
-}
-
-/**
- * True when the user asked for a new deck.
- *
- * The model is forced to `slidesCreate` on the first step. Without that, a
- * long prompt can make it answer with a slide outline in chat instead of
- * creating the deck the studio can open and export.
- */
-function askedForSlides(text: string): boolean {
-  return /\b(?:create|make|build|generate|design|prepare|draft|turn|need)\b[\s\S]{0,100}\b(?:slides?|deck|presentation|powerpoint|pptx|pitch)\b/i.test(
-    text
-  );
 }
 
 function formatResetDate(resetAt: string): string {
@@ -706,6 +686,7 @@ export async function POST(request: Request) {
         const userText = textFromUserMessage(message);
         const quizRequested = askedForQuiz(userText);
         const slideRequested = askedForSlides(userText);
+        const slideEditRequested = askedToEditSlide(userText);
 
         const result = streamText({
           abortSignal: request.signal,
@@ -818,6 +799,12 @@ export async function POST(request: Request) {
             stopWaitingStatus();
           },
           prepareStep: ({ stepNumber, steps }) => {
+            if (stepNumber === 0 && slideEditRequested) {
+              return {
+                toolChoice: { toolName: "slidesEdit", type: "tool" },
+              };
+            }
+
             if (stepNumber === 0 && slideRequested) {
               return {
                 toolChoice: { toolName: "slidesCreate", type: "tool" },
