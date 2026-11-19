@@ -17,8 +17,8 @@
 
 ## Execution status board
 
-**Current phase:** Phase 0 — Decisions & baseline  
-**Current state:** Not started. No phase is complete.  
+**Current phase:** Phase 2 gated Settings home/search implemented behind `SETTINGS_HOME_V2`; device and TalkBack passes pending  
+**Current state:** Phase 1 shell plus Phase 2 data foundation and gated Settings home are in place. `SETTINGS_HOME_V2` is still off by default. Library/Tools remain hidden until their Phase 3/4 surfaces exist, and no phase is marked complete until device verification passes.  
 **Update rule:** change `[ ]` to `[x]` only when the phase exit criteria are met and evidence is recorded.
 
 - [ ] **Phase 0 — Decisions & baseline** — sign off the 10 open decisions; record startup/tab/Spire baseline; add feature-flag names.
@@ -30,7 +30,11 @@
 - [ ] **Phase 6 — Hardening** — performance, accessibility, security, localization, regression, `scripts/verify.sh`.
 - [ ] **Phase 7 — Rollout** — staged rollout, monitoring, rollback drill, one stable release cycle.
 
-**Next action:** finish Phase 0 decision sign-off, then start Phase 1A (`NavigationState.kt` + `reduceBack` tests).
+**Next action:** finish the Phase 1/2 device matrix (dock + Settings home), then start Phase 3 Library API work.  
+**Completed sub-slice:** 18 Nov 2026 — Phase 1A foundation: `NavigationState.kt`, `reduceBack`, six feature-flag entries, and 19 reducer tests. Full standard JVM suite: **528 passed, 0 failed**. Both debug flavors compile and assemble.  
+**Phase 1B shell:** 18 Nov 2026 — `SpireAppScaffold`, `SpireBottomDock`, `SpireOrbSpec`, `SpireOrb`, gated `SpireDockDestination`, immersive Spire via `BotDestination`, native/web back bridge, one-time dock tip. `NAVIGATION_DOCK` is still off by default. Library/Tools tabs are intentionally not exposed until Phase 3/4. Device matrix not run.  
+**Phase 2A/2B/2C:** 19 Nov 2026 — `SettingsGroup.kt` owns the seven groups and maps every `SettingsDetailType`, every `AppSettingsDestination` and every `AppSettingsToggleKey` exhaustively. `AppSettingsRepository.loadSettingsWithGroups()` attaches group ownership. `SettingsHomeV2`, seven group pages, settings search with breadcrumbs, the Spire account/AI page and the Floating Orb page are implemented behind `SETTINGS_HOME_V2` (off by default). New pure tests: group ownership (7), settings search/reachability (14), grouped metadata (5), home page keys (5). Full standard JVM suite: **559 passed, 0 failed**. Both debug flavors compile, both debug APKs assemble, and `scripts/verify.sh --no-device` prints `VERIFY PASSED`.  
+**Phase 2 divergences (dated 19 Nov 2026):** group pages reuse the existing detail pages and their rows instead of moving those rows into new files; `Floating Orb` keeps the existing 36–80 dp size range and automatic nearest-edge snap (no new preference key); the long-press action is the existing Quick Ask sheet, so there is no custom radial fan to replace with a popup fallback.
 
 ### Pre-work already present (not a phase completion)
 
@@ -824,37 +828,37 @@ Estimates assume one experienced Android engineer; halve with two working in par
 
 ### 6.1 Phase 1 implementation checklist (the critical path)
 
-- [ ] Create `NavigationState.kt` with `RootTab`, `AppOverlay`, `SettingsState`, `SpireOrigin`.
-- [ ] Write `reduceBack(state)` and unit tests for every row in §4.4.
-- [ ] Add `SpireAppScaffold` with a single owner of bottom insets.
-- [ ] Build `SpireBottomDock` using Material 3 `NavigationBar` + centre orb overlay.
-- [ ] Add `SpireOrbSpec` (size, ring, colours, motion) shared by dock and system orb.
-- [ ] Wire `MainAppDestination` to the new state; keep `ChatWebViewStore` alive across tabs.
-- [ ] Render the dock only on `SEARCH`, `LIBRARY`, `TOOLS`, `SETTINGS`.
-- [ ] Hide the dock in `SPIRE`, settings detail, onboarding, overlay, and IME.
-- [ ] Add `SpireImmersive` full-screen destination; no native header.
-- [ ] Add `SpireDeviceBridge.setBackConsumes(Boolean)` and `ChatWebViewStore.consumeBack()`.
-- [ ] Add web `useAndroidBack` hook; set the flag for artifact/dialog/sheet state.
-- [ ] Implement back sequence: IME → web overlay → WebView history → origin tab.
-- [ ] Track `SpireOrigin` for orb, search, library, share, Live, Quick Ask, external.
-- [ ] Add feature flags and fall back to the old root navigation when off.
-- [ ] Add a one-time dock/orb coach mark.
+- [x] Create `NavigationState.kt` with `RootTab`, `AppOverlay`, `SettingsState`, `SpireOrigin`.
+- [x] Write `reduceBack(state)` and unit tests for every row in §4.4.
+- [x] Add `SpireAppScaffold` with a single owner of bottom insets.
+- [x] Build `SpireBottomDock` with Material 3 styling + centre orb overlay. (Implemented as a custom Surface/Row using Material 3 tokens rather than the `NavigationBar` container, to keep the raised orb and center gap stable.)
+- [x] Add `SpireOrbSpec` (size, ring, colours, motion) shared by dock and system orb.
+- [x] Wire `MainAppDestination` to the new state; keep `ChatWebViewStore` alive across tabs.
+- [ ] Render the dock only on `SEARCH`, `LIBRARY`, `TOOLS`, `SETTINGS`. (Search/Settings exposed now; Library/Tools intentionally gated until Phase 3/4.)
+- [x] Hide the dock in `SPIRE`, settings detail, onboarding, overlay, and IME.
+- [x] Add `SpireImmersive` full-screen destination; no native header.
+- [x] Add `SpireDeviceBridge.setBackConsumes(Boolean)` and `ChatWebViewStore.consumeBack()`.
+- [ ] Add web `useAndroidBack` hook; set the flag for artifact/dialog/sheet state. (Artifact is wired; dialogs/sheets remain.)
+- [x] Implement back sequence: IME → web overlay → WebView history → origin tab.
+- [ ] Track `SpireOrigin` for orb, search, library, share, Live, Quick Ask, external. (Orb/search/share tracked; the deferred entry points remain.)
+- [x] Add feature flags and fall back to the old root navigation when off.
+- [x] Add a one-time dock/orb coach mark.
 - [ ] Verify no WebView reload on tab switch; verify streaming survives.
 - [ ] Run the Phase 1 manual matrix on a small phone, a large phone, and a tablet.
 
 ### 6.2 Phase 2 implementation checklist
 
-- [ ] Create `SettingsGroup` and map every `SettingsDetailType` to a group.
-- [ ] Build `SettingsHome` with the account card, search, and seven group cards.
-- [ ] Extract the existing `SettingsScreen` rows into group pages.
-- [ ] Add `SettingsSearch` across groups, rows, and keywords.
-- [ ] Add breadcrumbs and exact deep links.
-- [ ] Add `SpireSettings` (account, plan/usage, Live, Ask behaviour, visibility).
-- [ ] Add `FloatingOrbSettings` (preview, size, opacity, snap, test, reset, explainer).
-- [ ] Rename the UI to “Floating Orb”; keep preference keys.
-- [ ] Add the system orb visual spec and accessible popup fallback.
-- [ ] Verify every old setting is reachable and searchable.
-- [ ] Verify TalkBack on the settings home, groups, and orb preview.
+- [x] Create `SettingsGroup` and map every `SettingsDetailType` to a group. (Two divergences recorded in the status board: the enum moved to `settings/settingsDetailScreen/SettingsGroup.kt`, and `MORE_OPTIONS` resolves to Search.)
+- [x] Build `SettingsHome` with the account card, search, and seven group cards. (Behind `SETTINGS_HOME_V2`; account status is read from the existing `SpireSessionRepository`.)
+- [x] Extract the existing `SettingsScreen` rows into group pages. (Implemented as curated group entry rows plus reused detail pages/`SettingsMoreOptions`/`BackupRestoreRow` so every old row stays reachable without duplicating controls.)
+- [x] Add `SettingsSearch` across groups, rows, and keywords. (`SettingsSearch.kt`, pure matcher plus the grouped `AppSettingsRepository` catalog.)
+- [x] Add breadcrumbs and exact deep links. (`Settings › Group › Row`; every `SettingsDetailType` still maps to its locked group.)
+- [ ] Add `SpireSettings` (account, plan/usage, Live, Ask behaviour, visibility). (Account status, account & plan link, provider/API key and the Spire AI toggle are implemented. Live and Ask behaviour controls and the web-owned visibility default are deferred to Phase 3 parity.)
+- [ ] Add `FloatingOrbSettings` (preview, size, opacity, snap, test, reset, explainer). (Preview, size, opacity, test actions, position reset and explainer are implemented. Size range and automatic edge snap deliberately keep the existing behaviour; see the status board.)
+- [x] Rename the UI to “Floating Orb”; keep preference keys. (`floating_orb_*` strings are used by the catalog, detail title, Launch options row and the new page; `floating_button_*` preference keys are unchanged.)
+- [x] Add the system orb visual spec and accessible popup fallback. (The system orb already draws `ic_spire_mark` and snaps to the nearest edge; this pass adds the richer TalkBack description. Long-press opens the existing Quick Ask sheet, so no separate radial-fan fallback exists to add.)
+- [x] Verify every old setting is reachable and searchable. (Contract-tested: every `SettingsDetailType` is reachable from the home or a parent detail; every `AppSettingsDestination` and `AppSettingsToggleKey` resolves to a group/owner, and unowned rows are impossible by construction. A device visual walk is still part of the Phase 6 regression pass.)
+- [ ] Verify TalkBack on the settings home, groups, and orb preview. (Pending device pass.)
 
 ### 6.3 Phase 3 implementation checklist
 

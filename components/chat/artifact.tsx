@@ -23,6 +23,7 @@ import { searchArtifact } from "@/artifacts/search/client";
 import { sheetArtifact } from "@/artifacts/sheet/client";
 import { slidesArtifact } from "@/artifacts/slides/client";
 import { textArtifact } from "@/artifacts/text/client";
+import { useAndroidBack } from "@/hooks/use-android-back";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document, Vote } from "@/lib/db/schema";
 import type { Attachment, ChatMessage } from "@/lib/types";
@@ -416,6 +417,14 @@ function PureArtifact({
   const handleClose = useCallback(() => {
     setArtifact((prev) => ({ ...prev, isVisible: false }));
   }, [setArtifact]);
+
+  useAndroidBack(artifact.isVisible, () => {
+    if (!artifact.isVisible) {
+      return false;
+    }
+    handleClose();
+    return true;
+  });
 
   const [isToolbarVisible, setIsToolbarVisible] = useState(true);
 
