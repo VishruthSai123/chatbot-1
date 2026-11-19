@@ -61,6 +61,7 @@ function PureChatHeader({
   return (
     <header
       className="sticky top-0 z-20 flex h-14 w-full shrink-0 items-center gap-1.5 bg-sidebar px-3 sm:gap-2"
+      data-spire-chat-header=""
       data-testid="chat-header"
     >
       <div className="flex min-w-0 flex-1 items-center gap-1.5">

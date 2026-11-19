@@ -17,8 +17,8 @@
 
 ## Execution status board
 
-**Current phase:** Phase 2 gated Settings home/search implemented behind `SETTINGS_HOME_V2`; device and TalkBack passes pending  
-**Current state:** Phase 1 shell plus Phase 2 data foundation and gated Settings home are in place. `SETTINGS_HOME_V2` is still off by default. Library/Tools remain hidden until their Phase 3/4 surfaces exist, and no phase is marked complete until device verification passes.  
+**Current phase:** Phase 3 Library implementation in progress behind `LIBRARY_TAB`; device and parity gates pending  
+**Current state:** Phase 1 shell, Phase 2 Settings home, and the Phase 3 Library data/UI slice are implemented behind flags. `NAVIGATION_DOCK`, `SETTINGS_HOME_V2`, `LIBRARY_TAB` and `SPIRE_IMMERSIVE` remain off by default. No phase is marked complete until device verification passes.  
 **Update rule:** change `[ ]` to `[x]` only when the phase exit criteria are met and evidence is recorded.
 
 - [ ] **Phase 0 — Decisions & baseline** — sign off the 10 open decisions; record startup/tab/Spire baseline; add feature-flag names.
@@ -30,10 +30,13 @@
 - [ ] **Phase 6 — Hardening** — performance, accessibility, security, localization, regression, `scripts/verify.sh`.
 - [ ] **Phase 7 — Rollout** — staged rollout, monitoring, rollback drill, one stable release cycle.
 
-**Next action:** finish the Phase 1/2 device matrix (dock + Settings home), then start Phase 3 Library API work.  
+**Next action:** finish the Phase 1/2 device matrix, then verify Phase 3 export/delete/history parity before enabling `SPIRE_IMMERSIVE`.  
 **Completed sub-slice:** 18 Nov 2026 — Phase 1A foundation: `NavigationState.kt`, `reduceBack`, six feature-flag entries, and 19 reducer tests. Full standard JVM suite: **528 passed, 0 failed**. Both debug flavors compile and assemble.  
 **Phase 1B shell:** 18 Nov 2026 — `SpireAppScaffold`, `SpireBottomDock`, `SpireOrbSpec`, `SpireOrb`, gated `SpireDockDestination`, immersive Spire via `BotDestination`, native/web back bridge, one-time dock tip. `NAVIGATION_DOCK` is still off by default. Library/Tools tabs are intentionally not exposed until Phase 3/4. Device matrix not run.  
 **Phase 2A/2B/2C:** 19 Nov 2026 — `SettingsGroup.kt` owns the seven groups and maps every `SettingsDetailType`, every `AppSettingsDestination` and every `AppSettingsToggleKey` exhaustively. `AppSettingsRepository.loadSettingsWithGroups()` attaches group ownership. `SettingsHomeV2`, seven group pages, settings search with breadcrumbs, the Spire account/AI page and the Floating Orb page are implemented behind `SETTINGS_HOME_V2` (off by default). New pure tests: group ownership (7), settings search/reachability (14), grouped metadata (5), home page keys (5). Full standard JVM suite: **559 passed, 0 failed**. Both debug flavors compile, both debug APKs assemble, and `scripts/verify.sh --no-device` prints `VERIFY PASSED`.  
+**Phase 3A Library:** 19 Nov 2026 — `/api/spire` supports `recent=1`, `limit` (max 50), `cursor`, `kind` and `source` with `(createdAt, id)` cursor paging; `/api/chat/export` returns Markdown; `/api/document` accepts `all=1` for a whole-artifact delete. Android adds `SpireLibraryRepository.recent/delete/exportChat`, `LibraryViewModel`, and the native `LibraryScreen` (search, filters, paging, empty/error/signed-out states, long-press open/share/export/delete with confirmation). Settings → Spire & AI now shows account email/status, plan, daily tasks/searches, storage, sign-in, sign-out and the manage-account link. The dock exposes Library only when `LIBRARY_TAB` is on. 25 new tests cover URL building, page parsing, debounce, paging, delete, export, session/usage parsing and CSRF. Full standard JVM suite: **584 passed, 0 failed**. Web `tsc`, targeted lint and production build are clean.  
+**Immersive parity (dated 19 Nov 2026):** the web chat layout drops the sidebar and header only when the native UA is present **and** the `spire_immersive=1` cookie is set. `ChatWebViewStore` writes that cookie only while `SPIRE_IMMERSIVE` is enabled and clears it otherwise, so the old header path remains the rollback. The flag is still off pending the device matrix.  
+**Phase 3 divergences:** whole-artifact deletion uses the new `all=1` flag instead of the version-delete timestamp, because the existing timestamp endpoint deliberately keeps the first version row.  
 **Phase 2 divergences (dated 19 Nov 2026):** group pages reuse the existing detail pages and their rows instead of moving those rows into new files; `Floating Orb` keeps the existing 36–80 dp size range and automatic nearest-edge snap (no new preference key); the long-press action is the existing Quick Ask sheet, so there is no custom radial fan to replace with a popup fallback.
 
 ### Pre-work already present (not a phase completion)
@@ -862,16 +865,16 @@ Estimates assume one experienced Android engineer; halve with two working in par
 
 ### 6.3 Phase 3 implementation checklist
 
-- [ ] Extend `/api/spire` with `recent`, `cursor`, `limit`, `kind`, `source`.
-- [ ] Add `SpireLibraryRepository.recent(...)` and tests.
-- [ ] Build `LibraryScreen` with loading, empty, error, filters, search, pagination.
-- [ ] Open chats/artifacts in Spire immersive; back returns to Library.
-- [ ] Add `/api/chat/export` and native “Export chat”.
-- [ ] Add delete chat/artifact with confirmation.
-- [ ] Add share.
-- [ ] Add native plan/usage card in Settings.
-- [ ] Add account status and sign-in/sign-out.
-- [ ] Only now enable `SPIRE_IMMERSIVE` by default (with the web header hidden).
+- [x] Extend `/api/spire` with `recent`, `cursor`, `limit`, `kind`, `source`.
+- [x] Add `SpireLibraryRepository.recent(...)` and tests.
+- [x] Build `LibraryScreen` with loading, empty, error, filters, search, pagination. (Behind `LIBRARY_TAB`; load-more uses the last visible row.)
+- [x] Open chats/artifacts in Spire immersive; back returns to Library. (Origin is `SpireOrigin.LIBRARY`.)
+- [x] Add `/api/chat/export` and native “Export chat”. (Shares the Markdown through the system share sheet.)
+- [x] Add delete chat/artifact with confirmation.
+- [x] Add share.
+- [x] Add native plan/usage card in Settings. (Plan label, daily tasks/searches and storage, read from `/api/usage`.)
+- [x] Add account status and sign-in/sign-out. (Email/guest/signed-out status; sign-in opens the web login; sign-out uses the Auth.js CSRF flow and writes the clearing cookies back to the shared CookieManager.)
+- [ ] Only now enable `SPIRE_IMMERSIVE` by default (with the web header hidden). (Immersive layout and cookie gating are implemented; the flag stays off until the device matrix passes.)
 - [ ] Verify export/delete/history parity before flipping the flag.
 
 ### 6.4 Phase 4 implementation checklist
