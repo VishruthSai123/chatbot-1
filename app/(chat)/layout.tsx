@@ -66,12 +66,14 @@ async function SidebarShell({ children }: { children: React.ReactNode }) {
 
   if (isAndroidImmersive) {
     return (
-      <div
-        className="flex min-h-dvh flex-col overflow-hidden bg-sidebar"
-        data-spire-chat-shell="android"
-      >
-        {main}
-      </div>
+      <SidebarProvider defaultOpen={false}>
+        <div
+          className="flex min-h-dvh w-full flex-col overflow-hidden bg-sidebar"
+          data-spire-chat-shell="android"
+        >
+          {main}
+        </div>
+      </SidebarProvider>
     );
   }
 
