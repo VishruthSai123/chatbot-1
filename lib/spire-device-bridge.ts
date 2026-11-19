@@ -20,7 +20,6 @@ export type DeviceActionResult = {
 
 type NativeBridge = {
   requestAction: (requestId: string, action: string, argsJson: string) => void;
-  setBackConsumes?: (consumes: boolean) => void;
 };
 
 declare global {
@@ -30,7 +29,6 @@ declare global {
       status: string,
       message: string
     ) => void;
-    __spireHandleBack?: () => boolean;
     SpireAndroid?: NativeBridge;
   }
 }

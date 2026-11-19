@@ -566,17 +566,10 @@ html[data-embed="android"] a[href*="vercel.com/templates/next.js/chatbot"],
 html[data-embed="android"] a[href*="vercel.com/d?to="] {
   display: none;
 }
-
 /*
- * Immersive Android shell: the native dock/orb replaces the web header.
- * The server only renders this wrapper while SPIRE_IMMERSIVE is enabled.
- */
-[data-spire-chat-shell="android"] [data-spire-chat-header] {
-  display: none;
-}
-/*
- * Keep native scrolling inside the Android shell. When immersive mode is on the
- * header is hidden above; the rollback path keeps it visible.
+ * Keep the website header visible inside the Android shell. The native Spire
+ * top bar sits above the WebView, so the web header naturally starts below it
+ * and keeps the model, visibility, login and export controls available.
  */
 html[data-embed="android"] body {
   overscroll-behavior-y: none;

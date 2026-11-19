@@ -2,7 +2,6 @@ import { z } from "zod";
 import { auth } from "@/app/(auth)/auth";
 import type { ArtifactKind } from "@/components/chat/artifact";
 import {
-  deleteAllDocumentsById,
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
   getDocumentsForUser,
@@ -169,7 +168,6 @@ export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const timestamp = searchParams.get("timestamp");
-  const deleteAll = searchParams.get("all") === "1";
 
   if (!id) {
     return new ChatbotError(
@@ -178,7 +176,7 @@ export async function DELETE(request: Request) {
     ).toResponse();
   }
 
-  if (!(timestamp || deleteAll)) {
+  if (!timestamp) {
     return new ChatbotError(
       "bad_request:api",
       "Parameter timestamp is required."
@@ -195,35 +193,23 @@ export async function DELETE(request: Request) {
 
   const [firstVersion] = documents;
 
-  if (!firstVersion) {
-    return new ChatbotError("not_found:document").toResponse();
-  }
-
   if (firstVersion.userId !== session.user.id) {
     return new ChatbotError("forbidden:document").toResponse();
   }
 
-  let documentsDeleted: Awaited<
-    ReturnType<typeof deleteDocumentsByIdAfterTimestamp>
-  >;
+  const parsedTimestamp = new Date(timestamp);
 
-  if (deleteAll) {
-    documentsDeleted = await deleteAllDocumentsById({ id });
-  } else {
-    const parsedTimestamp = new Date(timestamp as string);
-
-    if (Number.isNaN(parsedTimestamp.getTime())) {
-      return new ChatbotError(
-        "bad_request:api",
-        "Invalid timestamp."
-      ).toResponse();
-    }
-
-    documentsDeleted = await deleteDocumentsByIdAfterTimestamp({
-      id,
-      timestamp: parsedTimestamp,
-    });
+  if (Number.isNaN(parsedTimestamp.getTime())) {
+    return new ChatbotError(
+      "bad_request:api",
+      "Invalid timestamp."
+    ).toResponse();
   }
+
+  const documentsDeleted = await deleteDocumentsByIdAfterTimestamp({
+    id,
+    timestamp: parsedTimestamp,
+  });
 
   /**
    * Remove the files too.

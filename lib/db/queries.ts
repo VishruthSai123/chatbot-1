@@ -329,45 +329,6 @@ export async function searchChatsByUserId({
   }
 }
 
-/** Newest-first chat page for the native Library, keyed by (createdAt, id). */
-export async function getRecentChatsByUserId({
-  id,
-  limit,
-  cursor,
-}: {
-  id: string;
-  limit: number;
-  cursor?: { createdAt: Date; id: string } | null;
-}) {
-  try {
-    return await db
-      .select({
-        createdAt: chat.createdAt,
-        id: chat.id,
-        title: chat.title,
-      })
-      .from(chat)
-      .where(
-        and(
-          eq(chat.userId, id),
-          cursor
-            ? or(
-                lt(chat.createdAt, cursor.createdAt),
-                and(
-                  eq(chat.createdAt, cursor.createdAt),
-                  lt(chat.id, cursor.id)
-                )
-              )
-            : undefined
-        )
-      )
-      .orderBy(desc(chat.createdAt), desc(chat.id))
-      .limit(limit);
-  } catch (error) {
-    throw new ChatbotError("bad_request:database", { cause: error });
-  }
-}
-
 export async function getChatsByUserId({
   id,
   limit,
@@ -712,60 +673,6 @@ export async function getDocumentsForUser({
   }
 }
 
-/** Newest-first document page for the native Library, keyed by (createdAt, id). */
-export async function getRecentDocumentsForUser({
-  cursor,
-  kind,
-  limit,
-  userId,
-}: {
-  cursor?: { createdAt: Date; id: string } | null;
-  kind?:
-    | "audio"
-    | "code"
-    | "doc"
-    | "image"
-    | "notebook"
-    | "pdf"
-    | "sheet"
-    | "slides"
-    | "text";
-  limit: number;
-  userId: string;
-}): Promise<
-  { createdAt: Date; id: string; kind: string | null; title: string }[]
-> {
-  try {
-    return await db
-      .select({
-        createdAt: document.createdAt,
-        id: document.id,
-        kind: document.kind,
-        title: document.title,
-      })
-      .from(document)
-      .where(
-        and(
-          eq(document.userId, userId),
-          kind ? eq(document.kind, kind) : undefined,
-          cursor
-            ? or(
-                lt(document.createdAt, cursor.createdAt),
-                and(
-                  eq(document.createdAt, cursor.createdAt),
-                  lt(document.id, cursor.id)
-                )
-              )
-            : undefined
-        )
-      )
-      .orderBy(desc(document.createdAt), desc(document.id))
-      .limit(limit);
-  } catch (error) {
-    throw new ChatbotError("bad_request:database", { cause: error });
-  }
-}
-
 export async function getDocumentById({ id }: { id: string }) {
   if (!isValidUUID(id)) {
     return;
@@ -823,20 +730,6 @@ export async function getRecentDocumentsByKind({
   } catch (error) {
     console.warn("Failed to query recent documents by kind:", error);
     return [];
-  }
-}
-
-/** Deletes every version of one document. Used by the native Library. */
-export async function deleteAllDocumentsById({ id }: { id: string }) {
-  if (!isValidUUID(id)) {
-    return [];
-  }
-  try {
-    await db.delete(suggestion).where(eq(suggestion.documentId, id));
-
-    return await db.delete(document).where(eq(document.id, id)).returning();
-  } catch (error) {
-    throw new ChatbotError("bad_request:database", { cause: error });
   }
 }
 
