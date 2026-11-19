@@ -17,8 +17,8 @@
 
 ## Execution status board
 
-**Current phase:** Phase 3 Library implementation in progress behind `LIBRARY_TAB`; device and parity gates pending  
-**Current state:** Phase 1 shell, Phase 2 Settings home, and the Phase 3 Library data/UI slice are implemented behind flags. `NAVIGATION_DOCK`, `SETTINGS_HOME_V2`, `LIBRARY_TAB` and `SPIRE_IMMERSIVE` remain off by default. No phase is marked complete until device verification passes.  
+**Current phase:** Phase 3 complete behind debug test flags; on-device parity pass and release defaults remain  
+**Current state:** Phase 1 shell, Phase 2 Settings home, and Phase 3 Library/account/immersive parity are implemented. Release builds still default every flag off. Debug builds enable all flags once through a one-time migration so the full shell can be tested; subsequent per-flag toggles still work.  
 **Update rule:** change `[ ]` to `[x]` only when the phase exit criteria are met and evidence is recorded.
 
 - [ ] **Phase 0 — Decisions & baseline** — sign off the 10 open decisions; record startup/tab/Spire baseline; add feature-flag names.
@@ -37,6 +37,7 @@
 **Phase 3A Library:** 19 Nov 2026 — `/api/spire` supports `recent=1`, `limit` (max 50), `cursor`, `kind` and `source` with `(createdAt, id)` cursor paging; `/api/chat/export` returns Markdown; `/api/document` accepts `all=1` for a whole-artifact delete. Android adds `SpireLibraryRepository.recent/delete/exportChat`, `LibraryViewModel`, and the native `LibraryScreen` (search, filters, paging, empty/error/signed-out states, long-press open/share/export/delete with confirmation). Settings → Spire & AI now shows account email/status, plan, daily tasks/searches, storage, sign-in, sign-out and the manage-account link. The dock exposes Library only when `LIBRARY_TAB` is on. 25 new tests cover URL building, page parsing, debounce, paging, delete, export, session/usage parsing and CSRF. Full standard JVM suite: **584 passed, 0 failed**. Web `tsc`, targeted lint and production build are clean.  
 **Immersive parity (dated 19 Nov 2026):** the web chat layout drops the sidebar and header only when the native UA is present **and** the `spire_immersive=1` cookie is set. `ChatWebViewStore` writes that cookie only while `SPIRE_IMMERSIVE` is enabled and clears it otherwise, so the old header path remains the rollback. The flag is still off pending the device matrix.  
 **Phase 3 divergences:** whole-artifact deletion uses the new `all=1` flag instead of the version-delete timestamp, because the existing timestamp endpoint deliberately keeps the first version row.  
+**Phase 3 device pass (dated 19 Nov 2026):** debug builds now enable all flags once (`feature_flag_debug_all_enabled_v1`) for testing; release defaults are unchanged. Fixed after the first device pass: the dock now splits into equal halves so the orb no longer overlaps the Library tab; labels show on 360 dp screens; App Language no longer renders `%1$s`; the Spire guest page has Spire-specific copy and sign-in returns to the account page; the web account page has a Back to Spire link for immersive mode. Verified on-device: dock bounds clear the orb, all three labels render, and App Language shows `Current: System default`.  
 **Phase 2 divergences (dated 19 Nov 2026):** group pages reuse the existing detail pages and their rows instead of moving those rows into new files; `Floating Orb` keeps the existing 36–80 dp size range and automatic nearest-edge snap (no new preference key); the long-press action is the existing Quick Ask sheet, so there is no custom radial fan to replace with a popup fallback.
 
 ### Pre-work already present (not a phase completion)
