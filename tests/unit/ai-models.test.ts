@@ -10,6 +10,7 @@ import {
   visionModel,
 } from "../../lib/ai/models";
 import { providerForModel } from "../../lib/ai/observability";
+import { PLANS } from "../../lib/plans";
 
 test.describe("model configuration", () => {
   test("defaults chat, title and vision to Gemini 3.5 Flash-Lite", () => {
@@ -31,6 +32,12 @@ test.describe("model configuration", () => {
       tools: true,
       vision: true,
     });
+  });
+
+  test("every plan uses the one supported model", () => {
+    for (const plan of Object.values(PLANS)) {
+      expect(plan.model).toBe(DEFAULT_CHAT_MODEL);
+    }
   });
 
   test("provider labels distinguish the explicit fallback", () => {
