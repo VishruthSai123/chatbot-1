@@ -13,8 +13,8 @@ export function LegalShell({
   updated: string;
 }) {
   return (
-    <div className="legal-scroll h-dvh overflow-y-auto overscroll-contain bg-background text-foreground">
-      <div className="flex min-h-full flex-col">
+    <div className="min-h-dvh bg-background text-foreground">
+      <div className="flex min-h-dvh flex-col">
         <header className="border-border/50 border-b">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-5 py-4">
             <Link className="flex items-center gap-2" href="/">
