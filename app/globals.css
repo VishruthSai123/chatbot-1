@@ -220,6 +220,31 @@
     height: 0;
   }
 
+  /*
+   * Legal pages are normal documents, not the fixed-height chat shell. Give
+   * them a visible scrollbar so it is obvious that the page scrolls, and keep
+   * their scroll isolated from the chat/artifact surfaces.
+   */
+  .legal-scroll {
+    scrollbar-color: var(--border) transparent;
+    scrollbar-width: thin;
+  }
+
+  .legal-scroll::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+    height: 8px;
+  }
+
+  .legal-scroll::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+
+  .legal-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   @media (min-width: 1024px) and (pointer: fine) {
     * {
       scrollbar-width: thin;

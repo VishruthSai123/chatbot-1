@@ -11,7 +11,7 @@ export default function AuthLayout({
   return (
     <div className="flex min-h-dvh w-screen flex-col bg-sidebar xl:flex-row">
       <WebReadySignal />
-      <div className="flex min-h-dvh w-full flex-col overflow-y-auto bg-background p-6 sm:p-8 md:p-16 xl:h-dvh xl:w-[600px] xl:shrink-0 xl:rounded-r-2xl xl:border-r xl:border-border/40">
+      <div className="flex min-h-dvh w-full flex-col overflow-y-auto overscroll-contain bg-background p-6 sm:p-8 md:p-16 xl:h-dvh xl:w-[600px] xl:shrink-0 xl:rounded-r-2xl xl:border-r xl:border-border/40">
         <AuthBackLink />
         <div className="mx-auto my-auto flex w-full max-w-md flex-col gap-10 py-4">
           <div className="flex flex-col gap-2">

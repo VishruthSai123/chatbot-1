@@ -80,7 +80,7 @@ function PureMessages({
         // `m-auto` rather than `items-center`: a centred flex child that is
         // taller than its container overflows past the top and cannot be
         // scrolled back to, which clipped the greeting on a phone.
-        <div className="absolute inset-0 z-10 flex overflow-y-auto px-4 py-8">
+        <div className="absolute inset-0 z-10 flex overflow-y-auto overscroll-contain px-4 py-8">
           <div className="m-auto flex w-full max-w-2xl flex-col gap-6">
             <Greeting />
             <SuggestedActions
@@ -92,7 +92,7 @@ function PureMessages({
       )}
       <div
         className={cn(
-          "absolute inset-0 touch-pan-y overflow-y-auto",
+          "absolute inset-0 touch-pan-y overflow-y-auto overscroll-contain",
           messages.length > 0 ? "bg-background" : "bg-transparent"
         )}
         ref={messagesContainerRef}

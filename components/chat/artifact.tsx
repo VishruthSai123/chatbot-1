@@ -538,7 +538,7 @@ function PureArtifact({
           "relative flex-1 bg-background",
           artifact.kind === "image" || artifact.kind === "pdf"
             ? "overflow-hidden flex flex-col"
-            : "overflow-y-auto"
+            : "overflow-y-auto overscroll-contain"
         )}
         data-slot="artifact-content"
         onScroll={handleArtifactScroll}
