@@ -213,7 +213,8 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Deletion.</strong> You can delete chats, files, and your
-          account from Settings → Account &amp; data. You can also email{" "}
+          account from Settings → Account &amp; data. You can also use the{" "}
+          <a href="/account/delete">account deletion page</a> or email{" "}
           <a href="mailto:support@thesuperior.in">support@thesuperior.in</a>.
         </li>
         <li>

@@ -24,6 +24,7 @@ const PUBLIC_PREFIXES = [
   "/api/quick-answer",
   "/.well-known/",
   "/149e9513-",
+  "/account/",
   "/brand/",
   "/embed-boot.js",
   "/favicon.ico",
