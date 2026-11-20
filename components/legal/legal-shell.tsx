@@ -47,8 +47,7 @@ export function LegalShell({
       <footer className="border-border/50 border-t">
         <div className="mx-auto flex max-w-4xl flex-col gap-3 px-5 py-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-muted-foreground text-xs">
-            © {new Date().getFullYear()} Superior. Spire is an independent
-            product.
+            © 2026 Superior. Spire is an independent product.
           </p>
           <LegalLinks />
         </div>
