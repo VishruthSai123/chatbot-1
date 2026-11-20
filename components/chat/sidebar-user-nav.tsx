@@ -96,6 +96,15 @@ export function SidebarUserNav({ user }: { user: User }) {
                 Account & data
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild data-testid="user-nav-item-legal">
+              <Link
+                className="w-full cursor-pointer text-[13px]"
+                href="/legal"
+                onClick={() => setOpenMobile(false)}
+              >
+                Legal &amp; privacy
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild data-testid="user-nav-item-auth">
               <button
                 className="w-full cursor-pointer text-[13px]"

@@ -7,6 +7,7 @@ import { useActionState, useEffect, useState } from "react";
 import { AuthForm } from "@/components/chat/auth-form";
 import { SubmitButton } from "@/components/chat/submit-button";
 import { toast } from "@/components/chat/toast";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { useAuthReturnHref } from "@/hooks/use-auth-return";
 import { type RegisterActionState, register } from "../actions";
 
@@ -75,6 +76,18 @@ export default function Page() {
           </Link>
         </p>
       </AuthForm>
+      <p className="text-center text-[11px] text-muted-foreground">
+        By creating an account, you agree to our{" "}
+        <Link className="underline underline-offset-4" href="/terms">
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link className="underline underline-offset-4" href="/privacy">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+      <LegalLinks className="justify-center" />
     </>
   );
 }

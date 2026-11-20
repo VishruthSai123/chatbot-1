@@ -11,6 +11,7 @@ import { unstable_serialize } from "swr/infinite";
 import { resendVerificationEmail } from "@/app/(auth)/recovery-actions";
 import { deleteAccount } from "@/app/(chat)/account-actions";
 import { getChatHistoryPaginationKey } from "@/components/chat/sidebar-history";
+import { LegalLinks } from "@/components/legal/legal-links";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -266,6 +267,15 @@ export function AccountSettings({
             "Delete my account"
           )}
         </Button>
+      </section>
+
+      <section className="mt-8 border-border/50 border-t pt-5">
+        <h2 className="font-semibold text-sm">Legal</h2>
+        <p className="mt-1 text-muted-foreground text-xs">
+          Read how Spire handles your data, the rules for using the service, and
+          the open-source notices.
+        </p>
+        <LegalLinks className="mt-3" />
       </section>
 
       <AlertDialog onOpenChange={setShowDeleteChats} open={showDeleteChats}>

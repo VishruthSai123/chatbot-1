@@ -8,6 +8,7 @@ import { useActionState, useEffect, useState } from "react";
 import { AuthForm } from "@/components/chat/auth-form";
 import { SubmitButton } from "@/components/chat/submit-button";
 import { toast } from "@/components/chat/toast";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { useAuthReturnHref } from "@/hooks/use-auth-return";
 import { type LoginActionState, login } from "../actions";
 
@@ -101,6 +102,7 @@ export default function Page() {
           </span>
         </div>
       </AuthForm>
+      <LegalLinks className="justify-center" />
     </>
   );
 }
