@@ -28,12 +28,16 @@ const PUBLIC_PREFIXES = [
   "/embed-boot.js",
   "/favicon.ico",
   "/icons/",
+  "/legal",
+  "/licenses/",
   "/manifest.webmanifest",
   "/opengraph-image",
   "/preview.png",
+  "/privacy",
   "/robots.txt",
   "/sitemap.xml",
   "/sw.js",
+  "/terms",
   "/twitter-image",
 ] as const;
 
