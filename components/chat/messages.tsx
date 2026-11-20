@@ -95,6 +95,7 @@ function PureMessages({
           "absolute inset-0 touch-pan-y overflow-y-auto overscroll-contain",
           messages.length > 0 ? "bg-background" : "bg-transparent"
         )}
+        data-testid="messages-scroll"
         ref={messagesContainerRef}
         style={isArtifactVisible ? { scrollbarWidth: "none" } : undefined}
       >
